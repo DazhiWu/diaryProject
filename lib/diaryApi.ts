@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient'
+import { compressToUTF16, decompressFromUTF16 } from 'lz-string'
 
 export type DiaryEntry = {
   id: number
@@ -136,6 +137,7 @@ export function isOnline(): boolean {
 
 // LocalStorage helpers as fallback
 const STORAGE_KEY = 'diary-entries-backup'
+const MAX_ENTRIES = 50 // Limit the number of entries to prevent quota issues
 
 export function getLocalStorageBackup(): DiaryEntry[] {
   if (typeof window === 'undefined') return []
@@ -143,8 +145,23 @@ export function getLocalStorageBackup(): DiaryEntry[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
-      const parsed = JSON.parse(stored)
-      return parsed.map((entry: any) => ({
+      // Try to decompress first (for backward compatibility with uncompressed data)
+      let parsedData: any[];
+      try {
+        // Try to decompress the data
+        const decompressed = decompressFromUTF16(stored);
+        if (decompressed !== null) {
+          parsedData = JSON.parse(decompressed);
+        } else {
+          // If decompression fails, try parsing directly (old format)
+          parsedData = JSON.parse(stored);
+        }
+      } catch (compressionError) {
+        // If both decompression and direct parsing fail, try direct parsing (old format)
+        parsedData = JSON.parse(stored);
+      }
+      
+      return parsedData.map((entry: any) => ({
         ...entry,
         date: new Date(entry.date),
         modifiedAt: entry.modifiedAt ? new Date(entry.modifiedAt) : null,
@@ -161,10 +178,40 @@ export function getLocalStorageBackup(): DiaryEntry[] {
 export function saveLocalStorageBackup(entries: DiaryEntry[]): void {
   if (typeof window === 'undefined') return
   
+  // Limit the number of entries to prevent quota issues
+  const limitedEntries = entries.slice(0, MAX_ENTRIES)
+  
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
+    const jsonData = JSON.stringify(limitedEntries);
+    const compressedData = compressToUTF16(jsonData);
+    
+    // Check if compressed data exceeds a reasonable size (4MB) before storing
+    if (compressedData.length > 4 * 1024 * 1024) {
+      console.warn('Compressed data too large for localStorage, reducing entry count')
+      // Try with fewer entries
+      const reducedEntries = limitedEntries.slice(0, Math.floor(MAX_ENTRIES / 2))
+      const reducedJsonData = JSON.stringify(reducedEntries);
+      const reducedCompressedData = compressToUTF16(reducedJsonData);
+      localStorage.setItem(STORAGE_KEY, reducedCompressedData)
+    } else {
+      localStorage.setItem(STORAGE_KEY, compressedData)
+    }
   } catch (error) {
-    console.error('Error saving localStorage backup:', error)
+    if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+      console.warn('LocalStorage quota exceeded, attempting to store fewer entries')
+      // Try to store fewer entries
+      try {
+        const reducedEntries = limitedEntries.slice(0, 10)
+        const reducedJsonData = JSON.stringify(reducedEntries);
+        const reducedCompressedData = compressToUTF16(reducedJsonData);
+        localStorage.setItem(STORAGE_KEY, reducedCompressedData)
+        console.info('Successfully stored reduced entry set in localStorage')
+      } catch (retryError) {
+        console.error('Failed to store even reduced entry set in localStorage:', retryError)
+      }
+    } else {
+      console.error('Error saving localStorage backup:', error)
+    }
   }
 }
 
