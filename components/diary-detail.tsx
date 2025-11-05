@@ -57,11 +57,22 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
         body: JSON.stringify({ content: entry.content }),
       });
 
-      const data = await response.json();
-
+      // 先检查响应状态
       if (!response.ok) {
-        throw new Error(data.error || 'AI分析失败，请稍后再试');
+        const errorText = await response.text();
+        console.error("API错误响应:", errorText);
+        throw new Error(`API错误: ${response.status} ${response.statusText}`);
       }
+
+      // 检查内容类型
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const errorText = await response.text();
+        console.error("非JSON响应:", errorText);
+        throw new Error(`服务器返回非JSON响应: ${errorText.substring(0, 100)}...`);
+      }
+
+      const data = await response.json();
 
       // 更新状态
       setAiSummary(data.summary)
