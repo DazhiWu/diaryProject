@@ -1,6 +1,9 @@
 import { analyzeDiaryWithAI, AIAnalysisResult } from '@/lib/aiAnalysis';
 import { NextResponse } from 'next/server';
 
+// 配置运行时为Edge Runtime，以支持Cloudflare Pages部署
+export const runtime = 'edge';
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
