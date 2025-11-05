@@ -59,9 +59,22 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
 
       // 先检查响应状态
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error("API错误响应:", errorText);
-        throw new Error(`API错误: ${response.status} ${response.statusText}`);
+        // 尝试解析错误响应中的JSON消息
+        let errorMessage = `API错误: ${response.status} ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.error) {
+            errorMessage = `API错误: ${response.status} - ${errorData.error}`;
+          }
+        } catch (parseError) {
+          // 如果无法解析JSON，则使用文本响应
+          const errorText = await response.text();
+          if (errorText) {
+            errorMessage = `API错误: ${response.status} - ${errorText.substring(0, 100)}...`;
+          }
+        }
+        console.error("API错误响应:", errorMessage);
+        throw new Error(errorMessage);
       }
 
       // 检查内容类型
@@ -100,6 +113,25 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
       setIsAnalyzing(false)
     }
   }
+  
+  // 新增：测试环境配置的函数
+  const testEnvironment = async () => {
+    try {
+      const response = await fetch('/api/test-env');
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('环境测试结果:', data.data);
+        toast.success(`环境配置检查完成: API密钥${data.data.isConfigured ? '已' : '未'}设置`);
+      } else {
+        console.error('环境测试失败:', data.error);
+        toast.error(`环境测试失败: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('环境测试请求失败:', error);
+      toast.error('环境测试请求失败');
+    }
+  }
 
   const getGridClass = (count: number) => {
     if (count === 1) return "grid-cols-1"
@@ -119,6 +151,11 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
           <Button variant="outline" size="sm" onClick={handleAIAnalysis} className="gap-2" disabled={isAnalyzing}>
             <SparklesIcon className="h-4 w-4" />
             {isAnalyzing ? "Analyzing..." : "AI Analysis"}
+          </Button>
+          {/* 添加测试环境配置的按钮 */}
+          <Button variant="outline" size="sm" onClick={testEnvironment} className="gap-2">
+            <span className="h-4 w-4">🧪</span>
+            Test Env
           </Button>
           <Button variant="outline" size="sm" onClick={() => onEdit(entry)} className="gap-2">
             <EditIcon className="h-4 w-4" />
