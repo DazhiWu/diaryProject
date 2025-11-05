@@ -12,7 +12,7 @@ import type { Entry } from "@/app/page"
 
 type DiaryEntryProps = {
   entry?: Entry
-  onSave: (content: string, subtitle?: string, date?: Date, images?: string[]) => void
+  onSave: (content: string, subtitle: string, date: Date, images: string[]) => void
   onCancel: () => void
 }
 
@@ -20,12 +20,12 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
   const [content, setContent] = useState(entry?.content || "")
   const [subtitle, setSubtitle] = useState(entry?.subtitle || "")
   const [date, setDate] = useState(
-    entry?.date ? entry.date.toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16),
+    entry?.date ? entry.date.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
   )
   const [images, setImages] = useState<string[]>(entry?.images || [])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const maxDate = new Date().toISOString().slice(0, 16)
+  const maxDate = new Date().toISOString().split('T')[0]
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -55,10 +55,12 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
 
   const handleSave = () => {
     if (content.trim()) {
-      onSave(content, subtitle.trim() || undefined, new Date(date), images.length > 0 ? images : undefined)
+      // 统一使用UTC时区处理日期
+      const utcDate = new Date(date);
+      onSave(content, subtitle.trim(), utcDate, images)
       setContent("")
       setSubtitle("")
-      setDate(new Date().toISOString().slice(0, 16))
+      setDate(new Date().toISOString().split('T')[0])
       setImages([])
     }
   }
@@ -75,9 +77,9 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
       <div className="space-y-4">
         <div className="space-y-3">
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground">Date & Time</label>
+            <label className="mb-2 block text-sm font-medium text-foreground">Date</label>
             <Input
-              type="datetime-local"
+              type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
               max={maxDate}

@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient'
 import { compressToUTF16, decompressFromUTF16 } from 'lz-string'
+import { AIAnalysisResult } from './aiAnalysis'
 
 export type DiaryEntry = {
   id: number
@@ -22,9 +23,10 @@ export type SupabaseDiaryEntry = {
 }
 
 function convertFromSupabase(entry: SupabaseDiaryEntry): DiaryEntry {
+  // 统一使用UTC时区处理日期
   return {
     id: entry.id,
-    date: new Date(entry.date),
+    date: new Date(entry.date), // 直接使用UTC日期
     subtitle: entry.subtitle,
     content: entry.content,
     images: entry.images,
@@ -34,19 +36,26 @@ function convertFromSupabase(entry: SupabaseDiaryEntry): DiaryEntry {
 }
 
 function convertToSupabase(entry: Partial<DiaryEntry>): Partial<SupabaseDiaryEntry> {
-  const result: Partial<SupabaseDiaryEntry> = {
-    date: entry.date?.toISOString().split('T')[0], // Convert to date string
-    subtitle: entry.subtitle,
-    content: entry.content,
-    images: entry.images || null,
+  const result: Partial<SupabaseDiaryEntry> = {};
+  
+  // 统一使用UTC时区处理日期
+  if (entry.date) {
+    // 使用toISOString的日期部分，确保日期正确保存到UTC数据库
+    result.date = entry.date.toISOString().split('T')[0];
+  } else {
+    result.date = new Date().toISOString().split('T')[0];
   }
+  
+  result.subtitle = entry.subtitle;
+  result.content = entry.content;
+  result.images = entry.images || null;
   
   // Only include modifiedAt if it's provided
   if (entry.modifiedAt) {
-    result.modifiedAt = entry.modifiedAt.toISOString()
+    result.modifiedAt = entry.modifiedAt.toISOString();
   }
   
-  return result
+  return result;
 }
 
 export async function fetchAllDiaryEntries(): Promise<DiaryEntry[]> {
@@ -115,14 +124,26 @@ export async function updateDiaryEntry(id: number, entry: Partial<DiaryEntry>): 
 
 export async function deleteDiaryEntry(id: number): Promise<void> {
   try {
-    const { error } = await supabase
+    // 先删除相关的AI分析记录
+    const { error: aiAnalysisError } = await supabase
+      .from('diary_AI_analysis')
+      .delete()
+      .eq('diary_id', id)
+
+    if (aiAnalysisError) {
+      console.error('Error deleting AI analysis records:', aiAnalysisError)
+      throw aiAnalysisError
+    }
+
+    // 再删除日记记录
+    const { error: diaryError } = await supabase
       .from('diaryContent')
       .delete()
       .eq('id', id)
 
-    if (error) {
-      console.error('Error deleting diary entry:', error)
-      throw error
+    if (diaryError) {
+      console.error('Error deleting diary entry:', diaryError)
+      throw diaryError
     }
   } catch (error) {
     console.error('Failed to delete diary entry:', error)
@@ -212,6 +233,106 @@ export function saveLocalStorageBackup(entries: DiaryEntry[]): void {
     } else {
       console.error('Error saving localStorage backup:', error)
     }
+  }
+}
+
+
+// AI分析结果类型
+export type AIDiaryAnalysis = {
+  id: number
+  diary_id: number
+  summary: string
+  emotion: string
+  created_at: Date
+}
+
+export type SupabaseAIDiaryAnalysis = {
+  id: number
+  diary_id: number
+  summary: string
+  emotion: string
+  created_at: string
+}
+
+/**
+ * 保存AI分析结果到数据库，并更新日记的subtitle字段
+ * @param analysis AI分析结果
+ */
+export async function saveAIAnalysis(analysis: {
+  diary_id: number
+  summary: string
+  emotion: string
+}): Promise<AIDiaryAnalysis> {
+  try {
+    // 先更新日记的subtitle字段
+    const { error: updateError } = await supabase
+      .from('diaryContent')
+      .update({ subtitle: analysis.summary })
+      .eq('id', analysis.diary_id)
+
+    if (updateError) {
+      console.error('Error updating diary subtitle:', updateError)
+      throw updateError
+    }
+
+    // 再保存AI分析结果
+    const { data, error } = await supabase
+      .from('diary_AI_analysis')
+      .insert([analysis])
+      .select('*')
+      .single()
+
+    if (error) {
+      console.error('Error saving AI analysis:', error)
+      throw error
+    }
+
+    return {
+      id: data.id,
+      diary_id: data.diary_id,
+      summary: data.summary,
+      emotion: data.emotion,
+      created_at: new Date(data.created_at)
+    }
+  } catch (error) {
+    console.error('Failed to save AI analysis:', error)
+    throw error
+  }
+}
+
+/**
+ * 获取指定日记的AI分析结果
+ * @param diaryId 日记ID
+ */
+export async function getAIAnalysisForDiary(diaryId: number): Promise<AIDiaryAnalysis | null> {
+  try {
+    const { data, error } = await supabase
+      .from('diary_AI_analysis')
+      .select('*')
+      .eq('diary_id', diaryId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // 没有找到记录，返回null
+        return null
+      }
+      console.error('Error fetching AI analysis:', error)
+      throw error
+    }
+
+    return {
+      id: data.id,
+      diary_id: data.diary_id,
+      summary: data.summary,
+      emotion: data.emotion,
+      created_at: new Date(data.created_at)
+    }
+  } catch (error) {
+    console.error('Failed to fetch AI analysis:', error)
+    throw error
   }
 }
 

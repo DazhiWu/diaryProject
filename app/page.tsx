@@ -6,6 +6,7 @@ import { DiaryList } from "@/components/diary-list"
 import { CalendarView } from "@/components/calendar-view"
 import { SearchBar } from "@/components/search-bar"
 import { DiaryDetail } from "@/components/diary-detail"
+import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon } from "@/components/icons"
 import { toast } from "sonner"
@@ -24,10 +25,10 @@ import {
 export type Entry = {
   id: number
   date: Date
-  subtitle?: string
+  subtitle: string
   content: string
-  images?: string[]
-  modifiedAt?: Date
+  images: string[]
+  modifiedAt: Date
 }
 
 export default function DiaryApp() {
@@ -37,6 +38,8 @@ export default function DiaryApp() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const entriesPerPage = 5
 
   useEffect(() => {
     loadEntries()
@@ -78,7 +81,7 @@ export default function DiaryApp() {
     }
   }
 
-  const addEntry = async (content: string, subtitle?: string, date?: Date, images?: string[]) => {
+  const addEntry = async (content: string, subtitle: string, date: Date, images: string[]) => {
     const entryDate = date || new Date()
     const defaultSubtitle = subtitle ||
       entryDate.toLocaleString("en-US", {
@@ -113,13 +116,14 @@ export default function DiaryApp() {
         toast.warning("网络离线，日记已保存到本地")
       }
       setView("list")
+      setCurrentPage(1) // 添加新日记后回到第一页
     } catch (error) {
       console.error("Failed to add entry:", error)
       toast.error("添加日记失败")
     }
   }
 
-  const updateEntry = async (id: number, content: string, subtitle?: string, date?: Date, images?: string[]) => {
+  const updateEntry = async (id: number, content: string, subtitle: string, date: Date, images: string[]) => {
     try {
       if (isOnline()) {
         // Update in Supabase
@@ -195,6 +199,16 @@ export default function DiaryApp() {
     return matchesSearch && matchesDate
   })
 
+  // 计算分页数据
+  const totalPages = Math.ceil(filteredEntries.length / entriesPerPage)
+  const startIndex = (currentPage - 1) * entriesPerPage
+  const paginatedEntries = filteredEntries.slice(startIndex, startIndex + entriesPerPage)
+
+  // 当搜索或过滤条件改变时，重置到第一页
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, selectedDate])
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
@@ -227,7 +241,20 @@ export default function DiaryApp() {
             onCancel={() => setView("detail")}
           />
         ) : view === "detail" && selectedEntry ? (
-          <DiaryDetail entry={selectedEntry} onBack={() => setView("list")} onDelete={deleteEntry} onEdit={editEntry} />
+          <DiaryDetail 
+  entry={selectedEntry} 
+  onBack={() => setView("list")} 
+  onDelete={deleteEntry} 
+  onEdit={editEntry} 
+  onUpdateEntry={(id, updates) => {
+    setEntries(entries.map(entry => 
+      entry.id === id ? { ...entry, ...updates } : entry
+    ));
+    if (selectedEntry && selectedEntry.id === id) {
+      setSelectedEntry({ ...selectedEntry, ...updates });
+    }
+  }}
+/>
         ) : (
           <>
             <div className="mb-6 space-y-4">
@@ -263,16 +290,27 @@ export default function DiaryApp() {
             </div>
 
             {view === "list" ? (
-              <DiaryList
-                entries={filteredEntries}
-                onViewDetail={viewEntryDetail}
-                onDelete={deleteEntry}
-                emptyMessage={
-                  searchQuery || selectedDate
-                    ? "No entries found matching your search."
-                    : "No diary entries yet. Start writing your first entry!"
-                }
-              />
+              <>
+                <DiaryList
+                  entries={paginatedEntries}
+                  onViewDetail={viewEntryDetail}
+                  onDelete={deleteEntry}
+                  emptyMessage={
+                    searchQuery || selectedDate
+                      ? "No entries found matching your search."
+                      : "No diary entries yet. Start writing your first entry!"
+                  }
+                />
+                {filteredEntries.length > 0 && (
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                    totalEntries={filteredEntries.length}
+                    entriesPerPage={entriesPerPage}
+                  />
+                )}
+              </>
             ) : (
               <CalendarView
                 entries={entries}
