@@ -254,7 +254,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
                 {entry.modifiedAt && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     Modified:{" "}
-                    {entry.modifiedAt.getUTCFullYear()}-{String(entry.modifiedAt.getUTCMonth() + 1).padStart(2, '0')}-{String(entry.modifiedAt.getUTCDate()).padStart(2, '0')} {String(entry.modifiedAt.getUTCHours()).padStart(2, '0')}:{String(entry.modifiedAt.getUTCMinutes()).padStart(2, '0')}
+                    {entry.modifiedAt.getUTCFullYear()}-{String(entry.modifiedAt.getUTCMonth() + 1).padStart(2, '0')}-{String(entry.modifiedAt.getUTCDate()).padStart(2, '0')} {String(entry.modifiedAt.getUTCHours()+16).padStart(2, '0')}:{String(entry.modifiedAt.getUTCMinutes()).padStart(2, '0')}
                   </p>
                 )}
               </div>

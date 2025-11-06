@@ -10,7 +10,7 @@ interface AuthHook {
 }
 
 // 简单的密码验证（实际应用中应该使用更安全的方式）
-const AUTH_PASSWORD = process.env.NEXT_PUBLIC_AUTH_PASSWORD || 'admin123';
+const AUTH_PASSWORD = process.env.NEXT_PUBLIC_AUTH_PASSWORD;
 
 export const useAuth = (): AuthHook => {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('guest');
