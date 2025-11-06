@@ -29,7 +29,7 @@ export async function analyzeDiaryWithAI(content: string): Promise<AIAnalysisRes
     // 构造提示词，要求生成30字以内的标题和情绪分析
     const prompt = `请分析以下日记内容，提供两个输出：
 1. 标题：根据内容生成一个30字以内的简洁标题
-2. 情绪：分析作者的情绪状态（如开心、悲伤、愤怒、平静等）
+2. 情绪：分析作者的情绪状态（如开心、快乐、悲伤、愤怒、平静、惊讶、困惑、失望、爱、热情、浪漫、放松、创意、灵感、成就、学习、旅行、音乐、梦想、美好等）
 
 日记内容：
 ${content}
@@ -37,7 +37,7 @@ ${content}
 请严格按照以下JSON格式返回结果：
 {
   "summary": "生成的标题",
-  "emotion": "情绪分析结果"
+  "emotion": "情绪分析结果"  // 请使用中文情绪词，可以返回多个情绪，用逗号分隔
 }`;
 
     console.log('发送请求到ModelScope API...');

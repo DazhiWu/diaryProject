@@ -5,7 +5,7 @@ import type React from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ArrowLeftIcon, Trash2Icon, XIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon } from "@/components/icons"
-import { SparklesIcon, SmileIcon } from 'lucide-react'
+import { SparklesIcon, SmileIcon, FrownIcon, HeartIcon, AlertCircleIcon, HelpCircleIcon, StarIcon, CloudRainIcon, ZapIcon, MoonIcon, SunIcon, FlowerIcon, MusicIcon, CoffeeIcon, BookOpenIcon, CameraIcon, PaletteIcon, AwardIcon, LightbulbIcon, RocketIcon } from 'lucide-react'
 import type { Entry } from "@/app/page"
 import { useState, useEffect } from "react"
 import { analyzeDiaryWithAI } from "@/lib/aiAnalysis"
@@ -260,8 +260,16 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
               </div>
               {(aiEmotion || aiSummary) && (
                 <div className="relative group">
-                  <div className="cursor-pointer">
-                    <SmileIcon className="h-6 w-6 text-muted-foreground hover:text-foreground transition-colors" />
+                  <div className="flex space-x-1 cursor-pointer">
+                    {getEmotionIcons(aiEmotion || undefined).slice(0, 3).map(({component: IconComponent, name: iconName}, index) => {
+                      return (
+                        <IconComponent 
+                          key={index} 
+                          className="h-6 w-6 transition-colors"
+                          style={{ color: getEmotionColor(iconName) }}
+                        />
+                      );
+                    })}
                   </div>
                   <div className="absolute right-0 mt-2 w-64 p-3 bg-popover text-popover-foreground text-sm rounded-md shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
                     <div className="font-medium mb-1">AI Analysis Result</div>
@@ -355,4 +363,97 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
       
     </div>
   )
+}
+
+// 从情绪文本中提取情绪关键词并返回对应的图标组件
+function getEmotionIcons(emotionText?: string): Array<{component: React.ComponentType; name: string}> {
+  if (!emotionText) return [{component: SmileIcon, name: 'SmileIcon'}];
+  
+  const emotionIcons: Array<{component: React.ComponentType; name: string}> = [];
+  
+  // 首先尝试按逗号分隔情绪字符串，这适用于数据库中可能存储的逗号分隔情绪列表
+  const emotions = emotionText.split(',').map(e => e.trim().toLowerCase());
+  
+  // 定义情绪关键词和对应的图标映射，同时存储图标名称
+  const emotionMap = [
+    { keywords: ['开心', '快乐', '高兴', '愉快', '愉悦', '兴奋', '欣喜'], icon: SmileIcon, iconName: 'SmileIcon' },
+    { keywords: ['悲伤', '难过', '伤心', '忧郁', '惆怅'], icon: CloudRainIcon, iconName: 'CloudRainIcon' },
+    { keywords: ['生气', '愤怒', '恼火', '暴躁'], icon: AlertCircleIcon, iconName: 'AlertCircleIcon' },
+    { keywords: ['爱', '喜欢', '爱心', '倾心'], icon: HeartIcon, iconName: 'HeartIcon' },
+    { keywords: ['惊讶', '震惊', '吃惊', '诧异'], icon: ZapIcon, iconName: 'ZapIcon' },
+    { keywords: ['困惑', '疑惑', '迷茫', '不解'], icon: HelpCircleIcon, iconName: 'HelpCircleIcon' },
+    { keywords: ['失望', '沮丧', '失落', '挫败'], icon: FrownIcon, iconName: 'FrownIcon' },
+    { keywords: ['平静', '平和', '安宁', '宁静'], icon: MoonIcon, iconName: 'MoonIcon' },
+    { keywords: ['热情', '热烈'], icon: SunIcon, iconName: 'SunIcon' },
+    { keywords: ['浪漫', '温馨'], icon: FlowerIcon, iconName: 'FlowerIcon' },
+    { keywords: ['放松', '悠闲'], icon: CoffeeIcon, iconName: 'CoffeeIcon' },
+    { keywords: ['创意', '创新'], icon: PaletteIcon, iconName: 'PaletteIcon' },
+    { keywords: ['灵感', '启发'], icon: LightbulbIcon, iconName: 'LightbulbIcon' },
+    { keywords: ['成就', '成功'], icon: AwardIcon, iconName: 'AwardIcon' },
+    { keywords: ['学习', '阅读'], icon: BookOpenIcon, iconName: 'BookOpenIcon' },
+    { keywords: ['旅行', '探索'], icon: CameraIcon, iconName: 'CameraIcon' },
+    { keywords: ['音乐', '听歌'], icon: MusicIcon, iconName: 'MusicIcon' },
+    { keywords: ['梦想', '目标'], icon: RocketIcon, iconName: 'RocketIcon' },
+    { keywords: ['美好', '优秀'], icon: StarIcon, iconName: 'StarIcon' },
+  ];
+  
+  // 检查每个拆分后的情绪是否匹配任何预定义情绪
+  for (const emotion of emotions) {
+    // 精确匹配情绪
+    const exactMatch = emotionMap.find(item => 
+      item.keywords.includes(emotion)
+    );
+    
+    if (exactMatch) {
+      emotionIcons.push({component: exactMatch.icon, name: exactMatch.iconName});
+    } else {
+      // 如果没有精确匹配，则进行包含匹配
+      for (const { keywords, icon, iconName } of emotionMap) {
+        if (keywords.some(keyword => emotion.includes(keyword))) {
+          emotionIcons.push({component: icon, name: iconName});
+          break;
+        }
+      }
+    }
+  }
+  
+  // 保持兼容性：如果通过逗号拆分没有找到任何情绪，尝试对整个文本进行关键词匹配
+  if (emotionIcons.length === 0) {
+    const lowerText = emotionText.toLowerCase();
+    for (const { keywords, icon, iconName } of emotionMap) {
+      if (keywords.some(keyword => lowerText.includes(keyword))) {
+        emotionIcons.push({component: icon, name: iconName});
+      }
+    }
+  }
+  
+  // 如果没有匹配的情绪，返回默认图标
+  return emotionIcons.length > 0 ? emotionIcons : [{component: SmileIcon, name: 'SmileIcon'}];
+}
+
+// 获取情绪图标的颜色
+function getEmotionColor(iconName?: string): string {
+  const colorMap: Record<string, string> = {
+    SmileIcon: '#EAB308', // 黄色 - 开心
+    HeartIcon: '#EF4444', // 红色 - 爱心
+    AlertCircleIcon: '#8B5CF6', // 紫色 - 生气
+    CloudRainIcon: '#3B82F6', // 深蓝色 - 悲伤
+    FrownIcon: '#3B82F6', // 蓝色 - 失望
+    HelpCircleIcon: '#6B7280', // 灰色 - 困惑
+    ZapIcon: '#F59E0B', // 橙色 - 惊讶
+    MoonIcon: '#6366F1', // 靛蓝色 - 平静
+    SunIcon: '#F59E0B', // 橙色 - 热情
+    FlowerIcon: '#EC4899', // 粉红色 - 浪漫
+    CoffeeIcon: '#8B5CF6', // 紫色 - 放松
+    PaletteIcon: '#10B981', // 绿色 - 创意
+    LightbulbIcon: '#F59E0B', // 橙色 - 灵感
+    AwardIcon: '#8B5CF6', // 紫色 - 成就
+    BookOpenIcon: '#3B82F6', // 蓝色 - 学习
+    CameraIcon: '#10B981', // 绿色 - 旅行
+    MusicIcon: '#EC4899', // 粉红色 - 音乐
+    RocketIcon: '#10B981', // 绿色 - 梦想
+    StarIcon: '#F59E0B', // 橙色 - 美好
+  };
+  
+  return colorMap[iconName || ''] || '#6B7280'; // 默认灰色
 }
