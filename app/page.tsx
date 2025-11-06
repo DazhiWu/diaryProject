@@ -42,8 +42,32 @@ export default function DiaryApp() {
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false)
-  const { isAuthenticated } = useAuth()
+  const auth = useAuth()
+  const [localAuthState, setLocalAuthState] = useState(auth.isAuthenticated)
   const entriesPerPage = 5
+  
+  // 监听localStorage中认证状态的变化
+  useEffect(() => {
+    // 初始同步认证状态
+    setLocalAuthState(auth.isAuthenticated);
+    
+    // 监听localStorage变化
+    const handleStorageChange = () => {
+      const storedAuthStatus = localStorage.getItem('diaryAppAuthStatus');
+      setLocalAuthState(storedAuthStatus === 'authenticated');
+    };
+    
+    // 添加事件监听器
+    window.addEventListener('storage', handleStorageChange);
+    
+    // 清理函数
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [auth.isAuthenticated]);
+  
+  // 辅助函数获取当前认证状态
+  const isAuthenticated = localAuthState || auth.isAuthenticated;
 
   useEffect(() => {
     loadEntries()
@@ -221,7 +245,9 @@ export default function DiaryApp() {
   }, [searchQuery, selectedDate])
 
   const handleProtectedAction = (action: () => void, actionName: string) => {
-    if (isAuthenticated) {
+    // 再次检查localStorage确保状态最新
+    const storedAuthStatus = localStorage.getItem('diaryAppAuthStatus') === 'authenticated';
+    if (storedAuthStatus || isAuthenticated) {
       action();
     } else {
       toast.error(`请先进行管理员认证才能${actionName}`);
@@ -250,6 +276,9 @@ export default function DiaryApp() {
           </div>
         </div>
       </header>
+      
+      {/* 认证对话框移到header附近，确保在任何视图下都能显示 */}
+      <AuthDialog open={isAuthDialogOpen} onOpenChange={setIsAuthDialogOpen} />
 
       <main className="mx-auto max-w-4xl px-4 py-8">
         {loading ? (
@@ -315,9 +344,6 @@ export default function DiaryApp() {
                   Calendar
                 </Button>
               </div>
-              
-              {/* 认证对话框 */}
-              <AuthDialog open={isAuthDialogOpen} onOpenChange={setIsAuthDialogOpen} />
             </div>
 
             {view === "list" ? (

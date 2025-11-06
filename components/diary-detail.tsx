@@ -24,13 +24,37 @@ type DiaryDetailProps = {
 }
 
 export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: DiaryDetailProps) {
-  const { isAuthenticated } = useAuth()
+  const auth = useAuth()
+  const [localAuthState, setLocalAuthState] = useState(auth.isAuthenticated)
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
   const [aiEmotion, setAiEmotion] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  
+  // 监听localStorage中认证状态的变化
+  useEffect(() => {
+    // 初始同步认证状态
+    setLocalAuthState(auth.isAuthenticated);
+    
+    // 监听localStorage变化
+    const handleStorageChange = () => {
+      const storedAuthStatus = localStorage.getItem('diaryAppAuthStatus');
+      setLocalAuthState(storedAuthStatus === 'authenticated');
+    };
+    
+    // 添加事件监听器
+    window.addEventListener('storage', handleStorageChange);
+    
+    // 清理函数
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [auth.isAuthenticated]);
+  
+  // 辅助函数获取当前认证状态
+  const isAuthenticated = localAuthState || auth.isAuthenticated;
 
   // 页面加载时获取AI分析结果
   useEffect(() => {
@@ -157,7 +181,9 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
   }
 
   const handleProtectedAction = (action: () => void, actionName: string) => {
-    if (isAuthenticated) {
+    // 再次检查localStorage确保状态最新
+    const storedAuthStatus = localStorage.getItem('diaryAppAuthStatus') === 'authenticated';
+    if (storedAuthStatus || isAuthenticated) {
       action();
     } else {
       toast.error(`请先进行管理员认证才能${actionName}`);
