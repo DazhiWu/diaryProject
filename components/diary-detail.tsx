@@ -11,6 +11,9 @@ import { useState, useEffect } from "react"
 import { analyzeDiaryWithAI } from "@/lib/aiAnalysis"
 import { saveAIAnalysis, getAIAnalysisForDiary } from "@/lib/diaryApi"
 import { toast } from "sonner"
+import { useAuth } from "@/hooks/useAuth"
+import { AuthDialog } from "@/components/auth-dialog"
+import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog"
 
 type DiaryDetailProps = {
   entry: Entry
@@ -21,11 +24,13 @@ type DiaryDetailProps = {
 }
 
 export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: DiaryDetailProps) {
+  const { isAuthenticated } = useAuth()
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
   const [aiEmotion, setAiEmotion] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   // 页面加载时获取AI分析结果
   useEffect(() => {
@@ -132,6 +137,17 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
       toast.error('环境测试请求失败');
     }
   }
+  
+  // 处理删除操作
+  const handleDelete = () => {
+    setDeleteDialogOpen(true);
+  };
+  
+  // 确认删除
+  const confirmDelete = () => {
+    onDelete(entry.id);
+    setDeleteDialogOpen(false);
+  };
 
   const getGridClass = (count: number) => {
     if (count === 1) return "grid-cols-1"
@@ -139,6 +155,14 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
     if (count <= 4) return "grid-cols-2"
     return "grid-cols-3"
   }
+
+  const handleProtectedAction = (action: () => void, actionName: string) => {
+    if (isAuthenticated) {
+      action();
+    } else {
+      toast.error(`请先进行管理员认证才能${actionName}`);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -148,23 +172,41 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
           Back to List
         </Button>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleAIAnalysis} className="gap-2" disabled={isAnalyzing}>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => handleProtectedAction(handleAIAnalysis, "使用AI分析")}
+            className="gap-2" 
+          >
             <SparklesIcon className="h-4 w-4" />
             {isAnalyzing ? "Analyzing..." : "AI Analysis"}
           </Button>
+          
           {/* 添加测试环境配置的按钮 */}
-          <Button variant="outline" size="sm" onClick={testEnvironment} className="gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => handleProtectedAction(testEnvironment, "测试环境")}
+            className="gap-2"
+          >
             <span className="h-4 w-4">🧪</span>
             Test Env
           </Button>
-          <Button variant="outline" size="sm" onClick={() => onEdit(entry)} className="gap-2">
+          
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => handleProtectedAction(() => onEdit(entry), "编辑日记")}
+            className="gap-2"
+          >
             <EditIcon className="h-4 w-4" />
             Edit
           </Button>
+          
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onDelete(entry.id)}
+            onClick={() => handleProtectedAction(handleDelete, "删除日记")}
             className="gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
           >
             <Trash2Icon className="h-4 w-4" />
@@ -277,6 +319,14 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
           <p>{error}</p>
         </div>
       )}
+      
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={confirmDelete}
+        entryTitle={entry?.subtitle || "未命名日记"}
+      />
+      
     </div>
   )
 }

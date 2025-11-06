@@ -2,21 +2,63 @@
 
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Trash2Icon, ChevronRightIcon } from "@/components/icons"
+import { PlusIcon, Trash2Icon, ChevronRightIcon } from "@/components/icons"
 import type { Entry } from "@/app/page"
+import { useAuth } from "@/hooks/useAuth"
+import { toast } from "sonner"
+import { useState } from "react"
+import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog"
 
 type DiaryListProps = {
   entries: Entry[]
   onViewDetail: (entry: Entry) => void
   onDelete: (id: number) => void
   emptyMessage: string
+  onNewEntry: () => void
 }
 
-export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage }: DiaryListProps) {
+export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNewEntry }: DiaryListProps) {
+  const { isAuthenticated } = useAuth()
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [entryToDelete, setEntryToDelete] = useState<Entry | null>(null);
+  
+  // 处理受保护的操作
+  const handleProtectedAction = (action: () => void, actionName: string = "执行此操作") => {
+    if (isAuthenticated) {
+      action();
+    } else {
+      toast.error(`请先进行管理员认证才能${actionName}`);
+    }
+  }
+  
+  // 处理删除操作
+  const handleDelete = (entry: Entry) => {
+    setEntryToDelete(entry);
+    setDeleteDialogOpen(true);
+  };
+  
+  // 确认删除
+  const confirmDelete = () => {
+    if (entryToDelete) {
+      onDelete(entryToDelete.id);
+      setDeleteDialogOpen(false);
+      setEntryToDelete(null);
+    }
+  };
+  
   if (entries.length === 0) {
     return (
       <div className="py-12 text-center">
-        <p className="text-muted-foreground">{emptyMessage}</p>
+        <p className="text-muted-foreground mb-6">{emptyMessage}</p>
+        <div className="flex gap-2 justify-center">
+          <Button 
+            onClick={() => handleProtectedAction(onNewEntry)}
+            className="gap-2"
+          >
+            <PlusIcon className="h-4 w-4" />
+            新建日记
+          </Button>
+        </div>
       </div>
     )
   }
@@ -60,7 +102,7 @@ export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage }: Dia
                     size="icon"
                     onClick={(e) => {
                       e.stopPropagation()
-                      onDelete(entry.id)
+                      handleProtectedAction(() => handleDelete(entry), "删除日记")
                     }}
                     className="text-muted-foreground hover:text-destructive"
                   >
@@ -99,6 +141,13 @@ export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage }: Dia
           </div>
         </Card>
       ))}
+      
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={confirmDelete}
+        entryTitle={entryToDelete?.subtitle || "未命名日记"}
+      />
     </div>
   )
 }

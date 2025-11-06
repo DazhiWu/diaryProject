@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button"
 import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon } from "@/components/icons"
 import { toast } from "sonner"
 import { Spinner } from "@/components/ui/spinner"
+import { AuthDialog } from "@/components/auth-dialog"
+import { useAuth } from "@/hooks/useAuth"
 import {
   fetchAllDiaryEntries,
   insertDiaryEntry,
@@ -39,6 +41,8 @@ export default function DiaryApp() {
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
+  const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false)
+  const { isAuthenticated } = useAuth()
   const entriesPerPage = 5
 
   useEffect(() => {
@@ -95,14 +99,21 @@ export default function DiaryApp() {
     try {
       if (isOnline()) {
         // Save to Supabase
-        const newEntry = await insertDiaryEntry({
+        const result = await insertDiaryEntry({
           date: entryDate,
           subtitle: defaultSubtitle,
           content,
           images,
         })
-        setEntries([newEntry, ...entries])
-        toast.success("日记添加成功")
+        
+        if (result.success && result.data) {
+          setEntries([result.data, ...entries])
+          toast.success("日记添加成功")
+        } else {
+          // 显示友好的提醒信息而不是错误
+          toast.info(result.message || "添加日记失败")
+          return // 不切换视图，让用户有机会修改日期
+        }
       } else {
         // Offline mode - temporary entry
         const tempEntry: Entry = {
@@ -209,6 +220,14 @@ export default function DiaryApp() {
     setCurrentPage(1)
   }, [searchQuery, selectedDate])
 
+  const handleProtectedAction = (action: () => void, actionName: string) => {
+    if (isAuthenticated) {
+      action();
+    } else {
+      toast.error(`请先进行管理员认证才能${actionName}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
@@ -218,10 +237,16 @@ export default function DiaryApp() {
               <BookOpenIcon className="h-8 w-8 text-primary" />
               <h1 className="text-2xl font-semibold text-foreground">My Diary</h1>
             </div>
-            <Button onClick={() => setView("new")} size="sm" className="gap-2">
-              <PlusIcon className="h-4 w-4" />
-              New Entry
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* 管理员认证按钮始终显示 */}
+              <Button onClick={() => setIsAuthDialogOpen(true)} variant="outline" size="sm">
+                管理员认证
+              </Button>
+              <Button onClick={() => handleProtectedAction(() => setView("new"), "添加日记")} size="sm" className="gap-2">
+                <PlusIcon className="h-4 w-4" />
+                New Entry
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -271,7 +296,10 @@ export default function DiaryApp() {
                 <Button
                   variant={view === "list" ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setView("list")}
+                  onClick={() => {
+                    setView("list")
+                    setSelectedDate(null)
+                  }}
                   className="gap-2"
                 >
                   <ListIcon className="h-4 w-4" />
@@ -287,6 +315,9 @@ export default function DiaryApp() {
                   Calendar
                 </Button>
               </div>
+              
+              {/* 认证对话框 */}
+              <AuthDialog open={isAuthDialogOpen} onOpenChange={setIsAuthDialogOpen} />
             </div>
 
             {view === "list" ? (
@@ -295,6 +326,7 @@ export default function DiaryApp() {
                   entries={paginatedEntries}
                   onViewDetail={viewEntryDetail}
                   onDelete={deleteEntry}
+                  onNewEntry={() => setView("new")}
                   emptyMessage={
                     searchQuery || selectedDate
                       ? "No entries found matching your search."

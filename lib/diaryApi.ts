@@ -77,7 +77,7 @@ export async function fetchAllDiaryEntries(): Promise<DiaryEntry[]> {
   }
 }
 
-export async function insertDiaryEntry(entry: Partial<DiaryEntry>): Promise<DiaryEntry> {
+export async function insertDiaryEntry(entry: Partial<DiaryEntry>): Promise<{ success: boolean; data?: DiaryEntry; message?: string }> {
   try {
     const supabaseEntry = convertToSupabase(entry)
     
@@ -88,14 +88,18 @@ export async function insertDiaryEntry(entry: Partial<DiaryEntry>): Promise<Diar
       .single()
 
     if (error) {
-      console.error('Error inserting diary entry:', error)
-      throw error
+      // console.error('Error inserting diary entry:', error)
+      // 检查是否是唯一约束冲突
+      if (error.code === '23505') { // PostgreSQL唯一约束冲突错误码
+        return { success: false, message: '该日期已经存在日记，请选择其他日期或编辑现有日记' }
+      }
+      return { success: false, message: '添加日记时发生错误' }
     }
 
-    return convertFromSupabase(data)
+    return { success: true, data: convertFromSupabase(data) }
   } catch (error) {
     console.error('Failed to insert diary entry:', error)
-    throw error
+    return { success: false, message: '添加日记时发生未知错误' }
   }
 }
 
@@ -264,6 +268,17 @@ export async function saveAIAnalysis(analysis: {
   emotion: string
 }): Promise<AIDiaryAnalysis> {
   try {
+    // 先删除之前的AI分析记录，确保只保留最新的结果
+    const { error: deleteError } = await supabase
+      .from('diary_AI_analysis')
+      .delete()
+      .eq('diary_id', analysis.diary_id)
+
+    if (deleteError) {
+      console.error('Error deleting old AI analysis:', deleteError)
+      throw deleteError
+    }
+
     // 先更新日记的subtitle字段
     const { error: updateError } = await supabase
       .from('diaryContent')
@@ -275,7 +290,7 @@ export async function saveAIAnalysis(analysis: {
       throw updateError
     }
 
-    // 再保存AI分析结果
+    // 再保存新的AI分析结果
     const { data, error } = await supabase
       .from('diary_AI_analysis')
       .insert([analysis])
