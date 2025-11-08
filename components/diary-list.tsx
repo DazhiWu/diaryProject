@@ -113,10 +113,10 @@ export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNew
               </div>
 
               {entry.images && entry.images.length > 0 ? (
-                <div className="flex gap-4">
+                <div className="flex flex-col sm:flex-row gap-4">
                   <div
                     className={`grid flex-shrink-0 gap-1 ${getGridClass(entry.images.length)}`}
-                    style={{ width: "160px" }}
+                    style={{ width: "100%", maxWidth: "160px" }}
                   >
                     {entry.images.slice(0, 9).map((image, index) => (
                       <div key={index} className="aspect-square">

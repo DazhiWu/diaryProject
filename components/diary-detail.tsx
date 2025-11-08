@@ -197,7 +197,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
           <ArrowLeftIcon className="h-4 w-4" />
           Back to List
         </Button>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
           <Button 
             variant="outline" 
             size="sm" 
@@ -286,7 +286,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
           </div>
 
           {entry.images && entry.images.length > 0 && (
-            <div className={`grid gap-2 ${getGridClass(entry.images.length)}`}>
+            <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 ${getGridClass(entry.images.length)}`}>
               {entry.images.map((image, index) => (
                 <div
                   key={index}

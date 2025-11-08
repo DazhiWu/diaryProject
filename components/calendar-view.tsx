@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons"
 import type { Entry } from "@/app/page"
 import { cn } from "@/lib/utils"
@@ -64,15 +65,75 @@ export function CalendarView({ entries, onDateSelect }: CalendarViewProps) {
     )
   }
 
+  // 生成年份选项（当前年份前后各10年）
+  const currentYear = new Date().getFullYear()
+  const years = Array.from({ length: 21 }, (_, i) => currentYear - 10 + i)
+  
+  // 生成月份选项
+  const months = [
+    { value: 0, label: "January" },
+    { value: 1, label: "February" },
+    { value: 2, label: "March" },
+    { value: 3, label: "April" },
+    { value: 4, label: "May" },
+    { value: 5, label: "June" },
+    { value: 6, label: "July" },
+    { value: 7, label: "August" },
+    { value: 8, label: "September" },
+    { value: 9, label: "October" },
+    { value: 10, label: "November" },
+    { value: 11, label: "December" },
+  ]
+
+  // 处理年份选择变化
+  const handleYearChange = (value: string) => {
+    const newYear = parseInt(value)
+    setCurrentDate(new Date(newYear, month, 1))
+  }
+
+  // 处理月份选择变化
+  const handleMonthChange = (value: string) => {
+    const newMonth = parseInt(value)
+    setCurrentDate(new Date(year, newMonth, 1))
+  }
+
   return (
     <Card className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-foreground">
-          {currentDate.toLocaleDateString("en-US", {
-            month: "long",
-            year: "numeric",
-          })}
-        </h2>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <h2 className="text-lg font-semibold text-foreground sm:hidden">
+            {currentDate.toLocaleDateString("en-US", {
+              month: "long",
+              year: "numeric",
+            })}
+          </h2>
+          <div className="hidden sm:flex items-center gap-2">
+            <Select value={year.toString()} onValueChange={handleYearChange}>
+              <SelectTrigger className="w-[100px]">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                {years.map((yearOption) => (
+                  <SelectItem key={yearOption} value={yearOption.toString()}>
+                    {yearOption}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={month.toString()} onValueChange={handleMonthChange}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                {months.map((monthOption) => (
+                  <SelectItem key={monthOption.value} value={monthOption.value.toString()}>
+                    {monthOption.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" size="icon" onClick={previousMonth}>
             <ChevronLeftIcon className="h-4 w-4" />
