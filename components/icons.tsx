@@ -221,3 +221,12 @@ export function EditIcon({ className }: { className?: string }) {
     </svg>
   )
 }
+
+// 自定义MehIcon，显示😰表情
+export function MehIcon({ className }: { className?: string }) {
+  return (
+    <div className={className} style={{ fontSize: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      😰
+    </div>
+  )
+}

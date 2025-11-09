@@ -42,6 +42,7 @@ export default function DiaryApp() {
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false)
+  const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date())
   const auth = useAuth()
   const [localAuthState, setLocalAuthState] = useState(auth.isAuthenticated)
   const entriesPerPage = 5
@@ -372,6 +373,8 @@ export default function DiaryApp() {
             ) : (
               <CalendarView
                 entries={entries}
+                currentDate={currentCalendarDate}
+                onDateChange={setCurrentCalendarDate}
                 onDateSelect={(date) => {
                   setSelectedDate(date)
                   setView("list")

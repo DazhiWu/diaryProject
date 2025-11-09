@@ -4,8 +4,9 @@ import type React from "react"
 
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ArrowLeftIcon, Trash2Icon, XIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon } from "@/components/icons"
-import { SparklesIcon, SmileIcon, FrownIcon, HeartIcon, AlertCircleIcon, HelpCircleIcon, StarIcon, CloudRainIcon, ZapIcon, MoonIcon, SunIcon, FlowerIcon, MusicIcon, CoffeeIcon, BookOpenIcon, CameraIcon, PaletteIcon, AwardIcon, LightbulbIcon, RocketIcon } from 'lucide-react'
+import { ArrowLeftIcon, Trash2Icon, XIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon, BookOpenIcon } from "@/components/icons"
+import { SparklesIcon, SmileIcon, FrownIcon, HeartIcon, AlertCircleIcon, HelpCircleIcon, StarIcon, CloudRainIcon, ZapIcon, MoonIcon, SunIcon, FlowerIcon, MusicIcon, CoffeeIcon, CameraIcon, PaletteIcon, AwardIcon, LightbulbIcon, RocketIcon, ActivityIcon } from 'lucide-react'
+import { MehIcon } from './icons'
 import type { Entry } from "@/app/page"
 import { useState, useEffect } from "react"
 import { analyzeDiaryWithAI } from "@/lib/aiAnalysis"
@@ -388,6 +389,7 @@ function getEmotionIcons(emotionText?: string): Array<{component: React.Componen
     { keywords: ['浪漫', '温馨'], icon: FlowerIcon, iconName: 'FlowerIcon' },
     { keywords: ['放松', '悠闲'], icon: CoffeeIcon, iconName: 'CoffeeIcon' },
     { keywords: ['创意', '创新'], icon: PaletteIcon, iconName: 'PaletteIcon' },
+    { keywords: ['焦虑', '不安'], icon: MehIcon, iconName: 'MehIcon' },
     { keywords: ['灵感', '启发'], icon: LightbulbIcon, iconName: 'LightbulbIcon' },
     { keywords: ['成就', '成功'], icon: AwardIcon, iconName: 'AwardIcon' },
     { keywords: ['学习', '阅读'], icon: BookOpenIcon, iconName: 'BookOpenIcon' },
@@ -453,6 +455,7 @@ function getEmotionColor(iconName?: string): string {
     MusicIcon: '#EC4899', // 粉红色 - 音乐
     RocketIcon: '#10B981', // 绿色 - 梦想
     StarIcon: '#F59E0B', // 橙色 - 美好
+    ActivityIcon: '#EF4444', // 红色 - 焦虑/不安
   };
   
   return colorMap[iconName || ''] || '#6B7280'; // 默认灰色

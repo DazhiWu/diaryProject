@@ -10,11 +10,12 @@ import { cn } from "@/lib/utils"
 
 type CalendarViewProps = {
   entries: Entry[]
+  currentDate: Date
+  onDateChange: (date: Date) => void
   onDateSelect: (date: Date) => void
 }
 
-export function CalendarView({ entries, onDateSelect }: CalendarViewProps) {
-  const [currentDate, setCurrentDate] = useState(new Date())
+export function CalendarView({ entries, currentDate, onDateChange, onDateSelect }: CalendarViewProps) {
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
@@ -25,11 +26,11 @@ export function CalendarView({ entries, onDateSelect }: CalendarViewProps) {
   const daysInMonth = lastDayOfMonth.getDate()
 
   const previousMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1))
+    onDateChange(new Date(year, month - 1, 1))
   }
 
   const nextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1))
+    onDateChange(new Date(year, month + 1, 1))
   }
 
   const hasEntryOnDate = (day: number) => {
@@ -65,9 +66,8 @@ export function CalendarView({ entries, onDateSelect }: CalendarViewProps) {
     )
   }
 
-  // 生成年份选项（当前年份前后各10年）
-  const currentYear = new Date().getFullYear()
-  const years = Array.from({ length: 21 }, (_, i) => currentYear - 10 + i)
+  // 生成年份选项（限制在2024-2026年）
+  const years = [2024, 2025, 2026]
   
   // 生成月份选项
   const months = [
@@ -88,13 +88,13 @@ export function CalendarView({ entries, onDateSelect }: CalendarViewProps) {
   // 处理年份选择变化
   const handleYearChange = (value: string) => {
     const newYear = parseInt(value)
-    setCurrentDate(new Date(newYear, month, 1))
+    onDateChange(new Date(newYear, month, 1))
   }
 
   // 处理月份选择变化
   const handleMonthChange = (value: string) => {
     const newMonth = parseInt(value)
-    setCurrentDate(new Date(year, newMonth, 1))
+    onDateChange(new Date(year, newMonth, 1))
   }
 
   return (

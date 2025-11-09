@@ -1,6 +1,8 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons"
 
 type PaginationProps = {
@@ -18,6 +20,7 @@ export function Pagination({
   totalEntries,
   entriesPerPage,
 }: PaginationProps) {
+  const [inputPage, setInputPage] = useState(currentPage.toString())
   const startIndex = (currentPage - 1) * entriesPerPage + 1
   const endIndex = Math.min(currentPage * entriesPerPage, totalEntries)
   
@@ -30,6 +33,22 @@ export function Pagination({
   const handleNext = () => {
     if (currentPage < totalPages) {
       onPageChange(currentPage + 1)
+    }
+  }
+  
+  const handlePageInput = () => {
+    const page = parseInt(inputPage)
+    if (!isNaN(page) && page >= 1 && page <= totalPages) {
+      onPageChange(page)
+    } else {
+      setInputPage(currentPage.toString())
+    }
+  }
+  
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // 只允许输入数字
+    if (/^\d*$/.test(e.target.value) || e.target.value === '') {
+      setInputPage(e.target.value)
     }
   }
   
@@ -118,7 +137,7 @@ export function Pagination({
         显示第 {startIndex} 到 {endIndex} 条，共 {totalEntries} 条记录
       </div>
       
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 flex-wrap justify-center">
         <Button
           variant="outline"
           size="sm"
@@ -142,6 +161,28 @@ export function Pagination({
           下一页
           <ChevronRightIcon className="h-4 w-4" />
         </Button>
+        
+        <div className="flex items-center gap-1 ml-4">
+          <span className="text-sm text-muted-foreground">前往</span>
+          <Input
+            type="text"
+            value={inputPage}
+            onChange={handleInputChange}
+            className="w-16 h-8 text-sm text-center"
+            inputMode="numeric"
+            pattern="[0-9]*"
+          />
+          <span className="text-sm text-muted-foreground">页</span>
+          <Button
+            type="button"
+            onClick={handlePageInput}
+            variant="outline"
+            size="sm"
+            className="ml-1 h-8 px-2"
+          >
+            跳转
+          </Button>
+        </div>
       </div>
     </div>
   )
