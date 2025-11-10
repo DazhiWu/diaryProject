@@ -174,11 +174,31 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
     setDeleteDialogOpen(false);
   };
 
+  // 格式化带有时区偏移的日期时间（保留加16小时的时区调整）
+  const formatDateTimeWithOffset = (date: Date): string => {
+    // 创建日期副本以避免修改原始日期
+    const adjustedDate = new Date(date);
+    // 应用+16小时的时区偏移，会自动处理日期进位
+    adjustedDate.setUTCHours(date.getUTCHours() + 16);
+    
+    // 提取年、月、日
+    const year = adjustedDate.getUTCFullYear();
+    const month = String(adjustedDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(adjustedDate.getUTCDate()).padStart(2, '0');
+    
+    // 提取小时、分钟（已经自动处理24小时制）
+    const hours = String(adjustedDate.getUTCHours()).padStart(2, '0');
+    const minutes = String(adjustedDate.getUTCMinutes()).padStart(2, '0');
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+  }
+  
+  // 根据图片数量确定网格布局类
   const getGridClass = (count: number) => {
     if (count === 1) return "grid-cols-1"
     if (count === 2) return "grid-cols-2"
-    if (count <= 4) return "grid-cols-2"
-    return "grid-cols-3"
+    // 对于3-9张图片，统一使用3列布局
+    return "grid-cols-3";
   }
 
   const handleProtectedAction = (action: () => void, actionName: string) => {
@@ -253,11 +273,10 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
                   {entry.date.getUTCFullYear()}年{String(entry.date.getUTCMonth() + 1).padStart(2, '0')}月{String(entry.date.getUTCDate()).padStart(2, '0')}日
                 </p>
                 {entry.modifiedAt && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Modified:{" "}
-                    {entry.modifiedAt.getUTCFullYear()}-{String(entry.modifiedAt.getUTCMonth() + 1).padStart(2, '0')}-{String(entry.modifiedAt.getUTCDate()).padStart(2, '0')} {String(entry.modifiedAt.getUTCHours()+16).padStart(2, '0')}:{String(entry.modifiedAt.getUTCMinutes()).padStart(2, '0')}
-                  </p>
-                )}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Modified: {formatDateTimeWithOffset(entry.modifiedAt)}
+                    </p>
+                  )}
               </div>
               {(aiEmotion || aiSummary) && (
                 <div className="relative group">
@@ -287,7 +306,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
           </div>
 
           {entry.images && entry.images.length > 0 && (
-            <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 ${getGridClass(entry.images.length)}`}>
+            <div className={`grid gap-2 ${getGridClass(entry.images.length)}`}>
               {entry.images.map((image, index) => (
                 <div
                   key={index}
