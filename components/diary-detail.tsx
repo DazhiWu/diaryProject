@@ -283,11 +283,11 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
                   <div className="flex space-x-1 cursor-pointer">
                     {getEmotionIcons(aiEmotion || undefined).slice(0, 3).map(({component: IconComponent, name: iconName}, index) => {
                       return (
-                        <IconComponent 
-                          key={index} 
-                          className="h-6 w-6 transition-colors"
+                        <span key={index} className="h-6 w-6 inline-block transition-colors"
                           style={{ color: getEmotionColor(iconName) }}
-                        />
+                        >
+                          <IconComponent />
+                        </span>
                       );
                     })}
                   </div>

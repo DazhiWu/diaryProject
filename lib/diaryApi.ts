@@ -77,6 +77,105 @@ export async function fetchAllDiaryEntries(): Promise<DiaryEntry[]> {
   }
 }
 
+// 只获取日历视图所需的关键字段（优化版本）
+export async function fetchCalendarEntries(): Promise<{id: number; date: Date}[]> {
+  try {
+    // 只选择ID和日期字段，大大减少数据传输量
+    const { data, error } = await supabase
+      .from('diaryContent')
+      .select('id, date')
+      .order('date', { ascending: false })
+      
+    if (error) {
+      console.error('Error fetching calendar entries:', error)
+      throw error
+    }
+    
+    // 只返回ID和日期，不需要完整的日记内容
+    return data ? data.map(item => ({
+      id: item.id,
+      date: new Date(item.date)
+    })) : []
+  } catch (error) {
+    console.error('Failed to fetch calendar entries:', error)
+    return []
+  }
+}
+
+// 根据日期查询完整的日记条目
+export async function fetchDiaryEntryByDate(date: Date): Promise<DiaryEntry | null> {
+  try {
+    // 格式化日期为YYYY-MM-DD格式
+    const dateStr = date.toISOString().split('T')[0]
+    
+    const { data, error } = await supabase
+      .from('diaryContent')
+      .select('*')
+      .eq('date', dateStr)
+      .order('modifiedAt', { ascending: false })
+      .limit(1)
+      
+    if (error) {
+      console.error('Error fetching diary entry by date:', error)
+      throw error
+    }
+    
+    // 返回第一个匹配的日记条目（如果有）
+    return data && data.length > 0 ? convertFromSupabase(data[0]) : null
+  } catch (error) {
+    console.error('Failed to fetch diary entry by date:', error)
+    return null
+  }
+}
+
+/**
+ * 分页获取日记条目
+ * @param page 页码（从1开始）
+ * @param pageSize 每页条目数
+ * @param searchQuery 可选的搜索关键词
+ * @returns 分页数据对象，包含数据列表和总数
+ */
+export async function fetchDiaryEntriesWithPagination(
+  page: number = 1,
+  pageSize: number = 10,
+  searchQuery?: string
+): Promise<{ entries: DiaryEntry[], totalCount: number }> {
+  try {
+    // 计算偏移量
+    const offset = (page - 1) * pageSize
+    
+    // 基础查询 - Supabase V2 使用 range 而不是 offset
+    let query = supabase
+      .from('diaryContent')
+      .select('*', { count: 'exact' })
+      .order('date', { ascending: false })
+      .range(offset, offset + pageSize - 1)
+    
+    // 如果有搜索关键词，添加搜索条件
+    if (searchQuery && searchQuery.trim() !== '') {
+      const searchTerm = searchQuery.trim().toLowerCase()
+      query = query.or(
+        `content.ilike.%${searchTerm}%,subtitle.ilike.%${searchTerm}%`
+      )
+    }
+    
+    const { data, error, count } = await query
+    
+    if (error) {
+      console.error('Error fetching paginated diary entries:', error)
+      throw error
+    }
+    
+    return {
+      entries: data ? data.map(convertFromSupabase) : [],
+      totalCount: count || 0
+    }
+  } catch (error) {
+    console.error('Failed to fetch paginated diary entries:', error)
+    throw error
+  }
+}
+
 export async function insertDiaryEntry(entry: Partial<DiaryEntry>): Promise<{ success: boolean; data?: DiaryEntry; message?: string }> {
   try {
     const supabaseEntry = convertToSupabase(entry)
@@ -279,10 +378,26 @@ export async function saveAIAnalysis(analysis: {
       throw deleteError
     }
 
-    // 先更新日记的subtitle字段
+    // 先更新日记的subtitle字段，但保留原有的modifiedAt时间
+    // 首先获取当前日记以保留modifiedAt值
+    const { data: currentDiary, error: fetchError } = await supabase
+      .from('diaryContent')
+      .select('modifiedAt')
+      .eq('id', analysis.diary_id)
+      .single();
+
+    if (fetchError) {
+      console.error('Error fetching current diary:', fetchError);
+      throw fetchError;
+    }
+
+    // 更新subtitle，同时保留原有modifiedAt
     const { error: updateError } = await supabase
       .from('diaryContent')
-      .update({ subtitle: analysis.summary })
+      .update({
+        subtitle: analysis.summary,
+        modifiedAt: currentDiary.modifiedAt // 保留原有的modifiedAt时间
+      })
       .eq('id', analysis.diary_id)
 
     if (updateError) {
