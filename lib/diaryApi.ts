@@ -77,6 +77,52 @@ export async function fetchAllDiaryEntries(): Promise<DiaryEntry[]> {
   }
 }
 
+export async function fetchDiaryEntriesByRange(startDate: Date, endDate: Date): Promise<DiaryEntry[]> {
+  try {
+    const start = startDate.toISOString().split('T')[0]
+    const end = endDate.toISOString().split('T')[0]
+    const { data, error } = await supabase
+      .from('diaryContent')
+      .select('*')
+      .gte('date', start)
+      .lte('date', end)
+      .order('date', { ascending: true })
+    if (error) {
+      throw error
+    }
+    return data ? data.map(convertFromSupabase) : []
+  } catch (error) {
+    console.error('Failed to fetch diary entries by range:', error)
+    throw error
+  }
+}
+
+export async function fetchAIAnalysesByDateRange(startDate: Date, endDate: Date): Promise<AIDiaryAnalysis[]> {
+  try {
+    const start = startDate.toISOString()
+    const end = endDate.toISOString()
+    const { data, error } = await supabase
+      .from('diary_AI_analysis')
+      .select('*')
+      .gte('created_at', start)
+      .lte('created_at', end)
+      .order('created_at', { ascending: true })
+    if (error) {
+      throw error
+    }
+    return (data || []).map((item: SupabaseAIDiaryAnalysis) => ({
+      id: item.id,
+      diary_id: item.diary_id,
+      summary: item.summary,
+      emotion: item.emotion,
+      created_at: new Date(item.created_at)
+    }))
+  } catch (error) {
+    console.error('Failed to fetch AI analyses by date range:', error)
+    throw error
+  }
+}
+
 // 只获取日历视图所需的关键字段（优化版本）
 export async function fetchCalendarEntries(): Promise<{id: number; date: Date}[]> {
   try {

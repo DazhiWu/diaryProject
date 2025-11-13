@@ -8,7 +8,9 @@ import { SearchBar } from "@/components/search-bar"
 import { DiaryDetail } from "@/components/diary-detail"
 import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
-import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon } from "@/components/icons"
+import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon, DownloadIcon } from "@/components/icons"
+import { QuarterlyAnalysis } from "@/components/quarterly-analysis"
+import DiaryDownloader from "@/components/diary-downloader"
 import { toast } from "sonner"
 import { Spinner } from "@/components/ui/spinner"
 import { AuthDialog } from "@/components/auth-dialog"
@@ -53,7 +55,7 @@ export default function DiaryApp() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [allEntries, setAllEntries] = useState<Entry[]>([]) // 用于日历视图的所有条目
   const [totalEntriesCount, setTotalEntriesCount] = useState(0)
-  const [view, setView] = useState<"list" | "calendar" | "new" | "detail" | "edit">("list")
+  const [view, setView] = useState<"list" | "calendar" | "new" | "detail" | "edit" | "quarterly" | "download">("list")
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -390,6 +392,13 @@ export default function DiaryApp() {
                 <PlusIcon className="h-4 w-4" />
                 New Entry
               </Button>
+              <Button onClick={() => handleProtectedAction(() => setView("quarterly"), "访问季度分析")} variant="outline" size="sm" className="gap-2">
+                季度分析【难产了】
+              </Button>
+              <Button onClick={() => handleProtectedAction(() => setView("download"), "下载日记")} variant="outline" size="sm" className="gap-2">
+                <DownloadIcon className="h-4 w-4" />
+                下载日记
+              </Button>
             </div>
           </div>
         </div>
@@ -503,7 +512,7 @@ export default function DiaryApp() {
                   />
                 )}
               </>
-            ) : (
+            ) : view === "calendar" ? (
               <CalendarView
                 entries={allEntries.length > 0 ? allEntries : entries} // 优先使用所有条目
                 currentDate={currentCalendarDate}
@@ -563,6 +572,10 @@ export default function DiaryApp() {
                   }
                 }}
               />
+            ) : view === "download" ? (
+              <DiaryDownloader />
+            ) : (
+              <QuarterlyAnalysis />
             )}
           </>
         )}
