@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons"
+import { ChevronLeftIcon, ChevronRightIcon, SprayIcon } from "@/components/icons"
 import type { Entry } from "@/app/page"
 import { cn } from "@/lib/utils"
 
@@ -38,6 +38,15 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
     return entries.some((entry) => entry.date.toDateString() === date.toDateString())
   }
 
+  // 检查某天是否有包含"asmr"的日记（不区分大小写）
+  const hasAsmrEntryOnDate = (day: number) => {
+    const date = new Date(year, month, day)
+    return entries.some((entry) => 
+      entry.date.toDateString() === date.toDateString() && 
+      entry.subtitle.toLowerCase().includes('asmr')
+    )
+  }
+
   const days = []
   for (let i = 0; i < startingDayOfWeek; i++) {
     days.push(<div key={`empty-${i}`} className="aspect-square" />)
@@ -61,6 +70,11 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
         <span className="text-foreground">{day}</span>
         {hasEntry && (
           <div className="absolute bottom-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-primary" />
+        )}
+        {hasAsmrEntryOnDate(day) && (
+          <div className="absolute top-1 right-1 text-primary">
+            <SprayIcon className="h-3 w-3" />
+          </div>
         )}
       </button>,
     )

@@ -185,18 +185,18 @@ export default function DiaryApp() {
     }
   }
   
-  // 专门为日历视图加载数据（只获取必要的ID和日期字段）
+  // 专门为日历视图加载数据（包含subtitle以支持标题检测）
   const loadAllEntriesForCalendar = async () => {
     try {
       if (isOnline()) {
-        // 使用优化的API只获取日历视图需要的ID和日期字段
+        // 使用优化的API获取日历视图需要的字段，现在包含subtitle
         const calendarData = await fetchCalendarEntries()
         
-        // 为日历视图创建简化的条目对象
+        // 为日历视图创建简化的条目对象，使用实际的subtitle
         const calendarEntries: Entry[] = calendarData.map(item => ({
           id: item.id,
           date: item.date,
-          subtitle: `日记 ${item.date.toLocaleDateString()}`,
+          subtitle: item.subtitle || `日记 ${item.date.toLocaleDateString()}`,
           content: "", // 日历视图不需要完整内容
           images: [],
           modifiedAt: new Date()

@@ -249,3 +249,26 @@ export function MehIcon({ className }: { className?: string }) {
     </div>
   )
 }
+
+// 喷射图标，用于asmr日记标记
+export function SprayIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="m12 15 0 7" />
+      <path d="m10 17 3 4" />
+      <path d="m14 17-3 4" />
+      <path d="m8 20 4-2" />
+      <path d="m16 20-4-2" />
+    </svg>
+  )
+}
