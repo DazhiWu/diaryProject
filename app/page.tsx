@@ -9,7 +9,6 @@ import { DiaryDetail } from "@/components/diary-detail"
 import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon, DownloadIcon } from "@/components/icons"
-import { QuarterlyAnalysis } from "@/components/quarterly-analysis"
 import DiaryDownloader from "@/components/diary-downloader"
 import { toast } from "sonner"
 import { Spinner } from "@/components/ui/spinner"
@@ -55,7 +54,7 @@ export default function DiaryApp() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [allEntries, setAllEntries] = useState<Entry[]>([]) // 用于日历视图的所有条目
   const [totalEntriesCount, setTotalEntriesCount] = useState(0)
-  const [view, setView] = useState<"list" | "calendar" | "new" | "detail" | "edit" | "quarterly" | "download">("list")
+  const [view, setView] = useState<"list" | "calendar" | "new" | "detail" | "edit" | "download">("list")
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -392,9 +391,7 @@ export default function DiaryApp() {
                 <PlusIcon className="h-4 w-4" />
                 New Entry
               </Button>
-              <Button onClick={() => handleProtectedAction(() => setView("quarterly"), "访问季度分析")} variant="outline" size="sm" className="gap-2">
-                季度分析【难产了】
-              </Button>
+              
               <Button onClick={() => handleProtectedAction(() => setView("download"), "下载日记")} variant="outline" size="sm" className="gap-2">
                 <DownloadIcon className="h-4 w-4" />
                 下载日记
@@ -575,7 +572,9 @@ export default function DiaryApp() {
             ) : view === "download" ? (
               <DiaryDownloader />
             ) : (
-              <QuarterlyAnalysis />
+              <div className="text-center py-12 text-muted-foreground">
+                未知视图
+              </div>
             )}
           </>
         )}
