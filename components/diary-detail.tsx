@@ -61,13 +61,23 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
   useEffect(() => {
     const fetchAIAnalysis = async () => {
       try {
+        console.log(`正在获取日记ID ${entry.id} 的AI分析结果...`);
         const analysis = await getAIAnalysisForDiary(entry.id);
         if (analysis) {
+          console.log(`获取到AI分析结果:`, analysis);
           setAiSummary(analysis.summary);
           setAiEmotion(analysis.emotion);
+        } else {
+          console.log(`没有找到日记ID ${entry.id} 的AI分析结果`);
+          // 当没有分析结果时，清空本地状态
+          setAiSummary(null);
+          setAiEmotion(null);
         }
       } catch (error) {
         console.error("获取AI分析结果失败:", error);
+        // 错误时清空本地状态
+        setAiSummary(null);
+        setAiEmotion(null);
       }
     };
 
@@ -77,9 +87,13 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
   const handleAIAnalysis = async () => {
     setIsAnalyzing(true)
     setError(null)
+    // 保存当前状态，以便在出错时恢复
+    const originalSummary = aiSummary;
+    const originalEmotion = aiEmotion;
+    
     try {
       // 通过API路由调用AI分析
-      const response = await fetch('/api/ai-analysis', {
+      const response = await fetch('/api/ai-analysis', { 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -116,31 +130,42 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
       }
 
       const data = await response.json();
-
-      // 更新状态
-      setAiSummary(data.summary)
-      setAiEmotion(data.emotion)
+      console.log(`API返回的AI分析结果:`, data);
       
-      // 保存到数据库
-      await saveAIAnalysis({
+      // 先保存到数据库
+      console.log(`正在保存AI分析结果到数据库...`);
+      const savedAnalysis = await saveAIAnalysis({
         diary_id: entry.id,
         summary: data.summary,
         emotion: data.emotion
-      })
+      });
+      console.log(`AI分析结果保存成功:`, savedAnalysis);
       
       // 更新日记标题
       if (onUpdateEntry) {
         onUpdateEntry(entry.id, { subtitle: data.summary });
       }
       
+      // 重新从数据库获取最新的分析结果，确保数据一致性
+      console.log(`正在从数据库重新获取AI分析结果...`);
+      const analysisFromDb = await getAIAnalysisForDiary(entry.id);
+      if (analysisFromDb) {
+        console.log(`从数据库获取到最新的AI分析结果:`, analysisFromDb);
+        setAiSummary(analysisFromDb.summary);
+        setAiEmotion(analysisFromDb.emotion);
+      }
+      
       toast.success("AI分析完成！");
     } catch (error: any) {
-      console.error("AI分析失败:", error)
-      const errorMessage = error.message || "AI分析失败，请稍后再试"
-      setError(errorMessage)
+      console.error("AI分析失败:", error);
+      const errorMessage = error.message || "AI分析失败，请稍后再试";
+      setError(errorMessage);
+      // 恢复之前的状态
+      setAiSummary(originalSummary);
+      setAiEmotion(originalEmotion);
       toast.error(errorMessage);
     } finally {
-      setIsAnalyzing(false)
+      setIsAnalyzing(false);
     }
   }
   

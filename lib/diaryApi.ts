@@ -408,7 +408,7 @@ export type SupabaseAIDiaryAnalysis = {
 }
 
 /**
- * 保存AI分析结果到数据库，并更新日记的subtitle字段
+ * 保存AI分析结果到数据库
  * @param analysis AI分析结果
  */
 export async function saveAIAnalysis(analysis: {
@@ -428,34 +428,7 @@ export async function saveAIAnalysis(analysis: {
       throw deleteError
     }
 
-    // 先更新日记的subtitle字段，但保留原有的modifiedAt时间
-    // 首先获取当前日记以保留modifiedAt值
-    const { data: currentDiary, error: fetchError } = await supabase
-      .from('diaryContent')
-      .select('modifiedAt')
-      .eq('id', analysis.diary_id)
-      .single();
-
-    if (fetchError) {
-      console.error('Error fetching current diary:', fetchError);
-      throw fetchError;
-    }
-
-    // 更新subtitle，同时保留原有modifiedAt
-    const { error: updateError } = await supabase
-      .from('diaryContent')
-      .update({
-        subtitle: analysis.summary,
-        modifiedAt: currentDiary.modifiedAt // 保留原有的modifiedAt时间
-      })
-      .eq('id', analysis.diary_id)
-
-    if (updateError) {
-      console.error('Error updating diary subtitle:', updateError)
-      throw updateError
-    }
-
-    // 再保存新的AI分析结果
+    // 保存新的AI分析结果
     const { data, error } = await supabase
       .from('diary_AI_analysis')
       .insert([analysis])
@@ -495,7 +468,13 @@ export async function getAIAnalysisForDiary(diaryId: number): Promise<AIDiaryAna
       .single()
 
     if (error) {
-      if (error.code === 'PGRST116') {
+      // 检查多种情况，确保没有找到记录时返回null
+      // PGRST116是Supabase未找到记录的错误码
+      // 同时检查HTTP状态码406 Not Acceptable，这也是未找到记录时的常见状态码
+      if (error.code === 'PGRST116' || 
+          (error as any).status === 406 ||
+          (error.message && error.message.includes('Not Acceptable')) ||
+          (error.message && error.message.includes('406'))) {
         // 没有找到记录，返回null
         return null
       }
@@ -510,8 +489,15 @@ export async function getAIAnalysisForDiary(diaryId: number): Promise<AIDiaryAna
       emotion: data.emotion,
       created_at: new Date(data.created_at)
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to fetch AI analysis:', error)
+    // 同样在catch块中检查406错误
+    if (error.status === 406 || 
+        (error.message && error.message.includes('Not Acceptable')) ||
+        (error.message && error.message.includes('406'))) {
+      // 没有找到记录，返回null
+      return null
+    }
     throw error
   }
 }

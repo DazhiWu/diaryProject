@@ -11,6 +11,7 @@ const client = new OpenAI({
   apiKey: MODELSCOPE_API_KEY,
 });
 
+
 // AI分析结果类型
 export type AIAnalysisResult = {
   summary: string;
@@ -49,23 +50,32 @@ ${content}
 }`;
 
     console.log('发送请求到ModelScope API...');
-    console.log('使用的模型: deepseek-ai/DeepSeek-V3.2-Exp');
+    console.log('使用的模型: deepseek-ai/DeepSeek-V3.2');
     
-    const response = await client.chat.completions.create({
-      model: 'deepseek-ai/DeepSeek-V3.2-Exp',
+    const response = await (client.chat.completions.create as any)({
+      model: 'deepseek-ai/DeepSeek-V3.2',
       messages: [
         {
           role: 'user',
           content: prompt
         }
       ],
-      temperature: 0.7,
+      stream: false,
+      extra_body: {
+        enable_thinking: true
+      }
     });
 
     console.log('收到API响应:', JSON.stringify(response, null, 2));
     
     // 获取AI响应
     const aiResponse = response.choices[0]?.message?.content;
+    // 使用类型断言访问reasoning_content字段
+    const reasoningContent = response.choices[0]?.message?.reasoning_content;
+    
+    if (reasoningContent) {
+      console.log('AI思考过程:', reasoningContent);
+    }
     
     if (!aiResponse) {
       throw new Error('AI分析未返回有效结果');
@@ -100,12 +110,12 @@ ${content}
     }
     
     // 检查是否是认证问题
-    if (error.response && error.response.status === 401) {
+    if ((error.response && error.response.status === 401) || error.status === 401) {
       throw new Error('API认证失败，请检查API密钥是否正确');
     }
     
     // 检查是否是API配额问题
-    if (error.response && error.response.status === 429) {
+    if ((error.response && error.response.status === 429) || error.status === 429) {
       throw new Error('API调用次数超限，请稍后重试');
     }
     
@@ -114,6 +124,9 @@ ${content}
       console.error('HTTP错误状态:', error.response.status);
       console.error('HTTP错误数据:', error.response.data);
       throw new Error(`API调用失败，状态码: ${error.response.status}`);
+    } else if (error.status) {
+      console.error('HTTP错误状态:', error.status);
+      throw new Error(`API调用失败，状态码: ${error.status}`);
     }
     
     throw new Error('AI分析失败，请稍后重试');
