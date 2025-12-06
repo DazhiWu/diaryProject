@@ -408,7 +408,7 @@ export type SupabaseAIDiaryAnalysis = {
 }
 
 /**
- * 保存AI分析结果到数据库
+ * 保存AI分析结果到数据库，并更新日记的subtitle字段
  * @param analysis AI分析结果
  */
 export async function saveAIAnalysis(analysis: {
@@ -426,6 +426,33 @@ export async function saveAIAnalysis(analysis: {
     if (deleteError) {
       console.error('Error deleting old AI analysis:', deleteError)
       throw deleteError
+    }
+
+    // 先更新日记的subtitle字段，但保留原有的modifiedAt时间
+    // 首先获取当前日记以保留modifiedAt值
+    const { data: currentDiary, error: fetchError } = await supabase
+      .from('diaryContent')
+      .select('modifiedAt')
+      .eq('id', analysis.diary_id)
+      .single();
+
+    if (fetchError) {
+      console.error('Error fetching current diary:', fetchError);
+      throw fetchError;
+    }
+
+    // 更新subtitle，同时保留原有modifiedAt
+    const { error: updateError } = await supabase
+      .from('diaryContent')
+      .update({
+        subtitle: analysis.summary,
+        modifiedAt: currentDiary.modifiedAt // 保留原有的modifiedAt时间
+      })
+      .eq('id', analysis.diary_id)
+
+    if (updateError) {
+      console.error('Error updating diary subtitle:', updateError)
+      throw updateError
     }
 
     // 保存新的AI分析结果

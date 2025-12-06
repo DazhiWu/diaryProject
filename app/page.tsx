@@ -470,7 +470,11 @@ export default function DiaryApp() {
         ) : view === "detail" && selectedEntry ? (
           <DiaryDetail 
   entry={selectedEntry} 
-  onBack={() => setView("list")} 
+  onBack={() => {
+    setView("list");
+    // 从详情页返回列表页时，强制刷新列表数据
+    loadEntries();
+  }} 
   onDelete={deleteEntry} 
   onEdit={editEntry} 
   onUpdateEntry={(id, updates) => {
