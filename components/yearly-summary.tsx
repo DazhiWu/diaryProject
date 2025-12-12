@@ -18,6 +18,7 @@ import { Label } from './ui/label'
 import { toast } from 'sonner'
 import {
   fetchYearlySummary,
+  fetchInvestmentImages,
   saveYearlySummary,
   addImportantEvent,
   updateImportantEvent,
@@ -55,6 +56,8 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   
   // 加载状态
   const [isLoading, setIsLoading] = useState(false)
+  // 图片加载状态
+  const [isImagesLoading, setIsImagesLoading] = useState(false)
   
   // 当前图片索引
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
@@ -65,9 +68,9 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [editingEvent, setEditingEvent] = useState<ImportantEvent | null>(null)
   const [editingAnalysis, setEditingAnalysis] = useState<AIAnalysisSection | null>(null)
   
-  // 数据加载
+  // 数据加载 - 核心数据（重要事件和AI分析）
   useEffect(() => {
-    const loadYearlySummary = async () => {
+    const loadCoreData = async () => {
       setIsLoading(true)
       try {
         const data = await fetchYearlySummary(selectedYear)
@@ -91,8 +94,33 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       }
     }
     
-    loadYearlySummary()
+    loadCoreData()
   }, [selectedYear])
+
+  // 数据加载 - 图片数据（延迟加载，核心数据加载完成后再加载）
+  useEffect(() => {
+    // 只有当核心数据加载完成后，才加载图片
+    if (!isLoading) {
+      const loadImages = async () => {
+        setIsImagesLoading(true)
+        try {
+          const images = await fetchInvestmentImages(selectedYear)
+          setYearlySummary(prev => ({
+            ...prev,
+            investmentImages: images
+          }))
+          setCurrentImageIndex(0)
+        } catch (error) {
+          console.error('Error loading investment images:', error)
+          // 图片加载失败不显示错误提示，因为不影响核心功能
+        } finally {
+          setIsImagesLoading(false)
+        }
+      }
+      
+      loadImages()
+    }
+  }, [selectedYear, isLoading])
 
   // 表单状态
   const [eventForm, setEventForm] = useState({
@@ -270,9 +298,12 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           await deleteAIAnalysisOpinion(Number(opinion.id))
         }
         
-        // 再添加新观点
+        // 再添加新观点（过滤掉空观点）
+        const validOpinions = analysisForm.opinions.filter(opinion => 
+          opinion.content.trim() !== '' || opinion.analysis.trim() !== ''
+        );
         const newOpinions = await Promise.all(
-          analysisForm.opinions.map(async (opinion) => {
+          validOpinions.map(async (opinion) => {
             return await addAIAnalysisOpinion(Number(updatedAnalysis.id), {
               content: opinion.content,
               analysis: opinion.analysis
@@ -295,9 +326,12 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           content: analysisForm.content
         })
         
-        // 添加观点
+        // 添加观点（过滤掉空观点）
+        const validOpinions = analysisForm.opinions.filter(opinion => 
+          opinion.content.trim() !== '' || opinion.analysis.trim() !== ''
+        );
         const newOpinions = await Promise.all(
-          analysisForm.opinions.map(async (opinion) => {
+          validOpinions.map(async (opinion) => {
             return await addAIAnalysisOpinion(Number(updatedAnalysis.id), {
               content: opinion.content,
               analysis: opinion.analysis
@@ -508,7 +542,15 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <div className="space-y-3">
                       {analysis.opinions.map((opinion, index) => (
                         <div key={opinion.id} className="p-3 bg-muted rounded-lg">
-                          <div><strong>{opinion.content}</strong>：{opinion.analysis}</div>
+                          <div>
+                            {opinion.content ? (
+                              <>
+                                <strong>{opinion.content}</strong>：{opinion.analysis}
+                              </>
+                            ) : (
+                              opinion.analysis
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -524,48 +566,61 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <h2 className="text-2xl font-bold mb-4">投资</h2>
               
               <div className="space-y-4">
-                {/* 只有当有图片时才显示图片轮播 */}
-                {yearlySummary.investmentImages.length > 0 ? (
-                  <div className="relative">
-                    <div className="flex justify-center items-center mb-4">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={handlePrevImage}
-                        className="absolute left-0"
-                        disabled={yearlySummary.investmentImages.length <= 1}
-                      >
-                        <ChevronLeftIcon className="h-6 w-6" />
-                      </Button>
+                {/* 显示图片轮播或加载状态 */}
+                <div className="relative">
+                  <div className="flex justify-center items-center mb-4">
+                    {/* 只有当图片数量大于1时才显示导航按钮 */}
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handlePrevImage}
+                      className="absolute left-0"
+                      disabled={yearlySummary.investmentImages.length <= 1 || isImagesLoading}
+                    >
+                      <ChevronLeftIcon className="h-6 w-6" />
+                    </Button>
+                    
+                    <div className="w-full max-w-md aspect-video border rounded-lg overflow-hidden bg-muted relative">
+                      {/* 图片加载中状态 */}
+                      {isImagesLoading && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-muted">
+                          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                          <span className="ml-2 text-sm text-muted-foreground">图片加载中...</span>
+                        </div>
+                      )}
                       
-                      <div className="w-full max-w-md aspect-video border rounded-lg overflow-hidden">
+                      {/* 图片内容 */}
+                      {!isImagesLoading && yearlySummary.investmentImages.length > 0 ? (
                         <img
                           src={yearlySummary.investmentImages[currentImageIndex].url}
                           alt={yearlySummary.investmentImages[currentImageIndex].alt}
                           className="w-full h-full object-cover"
                         />
-                      </div>
-                      
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={handleNextImage}
-                        className="absolute right-0"
-                        disabled={yearlySummary.investmentImages.length <= 1}
-                      >
-                        <ChevronRightIcon className="h-6 w-6" />
-                      </Button>
+                      ) : !isImagesLoading && yearlySummary.investmentImages.length === 0 ? (
+                        <div className="h-full flex items-center justify-center">
+                          <span className="text-muted-foreground">暂无图片</span>
+                        </div>
+                      ) : null}
                     </div>
                     
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleNextImage}
+                      className="absolute right-0"
+                      disabled={yearlySummary.investmentImages.length <= 1 || isImagesLoading}
+                    >
+                      <ChevronRightIcon className="h-6 w-6" />
+                    </Button>
+                  </div>
+                  
+                  {/* 图片计数 - 只有当图片加载完成且有图片时才显示 */}
+                  {!isImagesLoading && yearlySummary.investmentImages.length > 0 && (
                     <div className="text-center text-sm text-muted-foreground">
                       {currentImageIndex + 1} / {yearlySummary.investmentImages.length}
                     </div>
-                  </div>
-                ) : (
-                  <div className="w-full max-w-md aspect-video border rounded-lg overflow-hidden bg-muted flex items-center justify-center">
-                    <span className="text-muted-foreground">暂无图片</span>
-                  </div>
-                )}
+                  )}
+                </div>
                 
                 {/* 上传图片按钮始终显示 */}
                 <div className="flex justify-center">

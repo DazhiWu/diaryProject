@@ -102,7 +102,7 @@ function convertToSupabaseInvestmentImage(image: Omit<InvestmentImage, 'id'>): a
 const yearlySummaryCache: Record<string, { data: YearlySummary | null; timestamp: number }> = {}
 const CACHE_DURATION = 5 * 60 * 1000 // 5分钟缓存
 
-// 获取指定年份的年度总结
+// 获取指定年份的年度总结（不包含图片，快速返回核心数据）
 export async function fetchYearlySummary(year: string): Promise<YearlySummary | null> {
   // 检查缓存
   const cached = yearlySummaryCache[year]
@@ -140,7 +140,7 @@ export async function fetchYearlySummary(year: string): Promise<YearlySummary | 
 
     const summaryId = summaryData.id
 
-    // 2. 并行获取所有数据，减少网络请求次数
+    // 2. 并行获取核心数据（重要事件和AI分析）
     const parallelStartTime = performance.now()
     const eventsPromise = supabase
       .from('important_events')
@@ -161,23 +161,12 @@ export async function fetchYearlySummary(year: string): Promise<YearlySummary | 
         return result
       })
     
-    const imagesPromise = supabase
-      .from('investment_images')
-      .select('*')
-      .eq('yearly_summary_id', summaryId)
-      .order('created_at', { ascending: true })
-      .then(result => {
-        console.log(`Images fetch time: ${performance.now() - parallelStartTime}ms`)
-        return result
-      })
-    
-    const [eventsResult, aiResult, imagesResult] = await Promise.all([eventsPromise, aiPromise, imagesPromise])
+    const [eventsResult, aiResult] = await Promise.all([eventsPromise, aiPromise])
     console.log(`Parallel fetch time total: ${performance.now() - parallelStartTime}ms`)
 
     // 处理结果
     if (eventsResult.error) throw eventsResult.error
     if (aiResult.error) throw aiResult.error
-    if (imagesResult.error) throw imagesResult.error
 
     // 构建AI分析数据
     const processStartTime = performance.now()
@@ -193,12 +182,12 @@ export async function fetchYearlySummary(year: string): Promise<YearlySummary | 
     }))
     console.log(`Data processing time: ${performance.now() - processStartTime}ms`)
 
-    // 构建返回数据
+    // 构建返回数据（初始投资图片为空数组，后续单独获取）
     const result: YearlySummary = {
       year,
       importantEvents: eventsResult.data.map(convertFromSupabaseImportantEvent),
       aiAnalyses,
-      investmentImages: imagesResult.data.map(convertFromSupabaseInvestmentImage)
+      investmentImages: []
     }
 
     // 缓存结果
@@ -209,6 +198,50 @@ export async function fetchYearlySummary(year: string): Promise<YearlySummary | 
   } catch (error) {
     console.error('Error fetching yearly summary:', error)
     return null
+  }
+}
+
+// 获取指定年份的投资图片
+export async function fetchInvestmentImages(year: string): Promise<InvestmentImage[]> {
+  try {
+    console.log(`Fetching investment images for year ${year}...`)
+    const startTime = performance.now()
+
+    // 1. 获取年度总结ID
+    const { data: summaryData, error: summaryError } = await supabase
+      .from('yearly_summaries')
+      .select('id')
+      .eq('year', year)
+      .single()
+
+    if (summaryError) {
+      // 如果没有找到记录，返回空数组
+      if (summaryError.code === 'PGRST116') {
+        console.log(`No summary found for year ${year}, returning empty images array`)
+        return []
+      }
+      throw summaryError
+    }
+
+    const summaryId = summaryData.id
+
+    // 2. 获取投资图片
+    const imagesStartTime = performance.now()
+    const { data: imagesData, error: imagesError } = await supabase
+      .from('investment_images')
+      .select('*')
+      .eq('yearly_summary_id', summaryId)
+      .order('created_at', { ascending: true })
+    
+    console.log(`Images fetch time: ${performance.now() - imagesStartTime}ms`)
+    console.log(`Total images fetch time for year ${year}: ${performance.now() - startTime}ms`)
+
+    if (imagesError) throw imagesError
+
+    return imagesData.map(convertFromSupabaseInvestmentImage)
+  } catch (error) {
+    console.error('Error fetching investment images:', error)
+    return []
   }
 }
 
