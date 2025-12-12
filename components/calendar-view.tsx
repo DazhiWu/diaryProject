@@ -19,6 +19,9 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
+  
+  // 定义最小日期为2024年11月1日
+  const minDate = new Date(2024, 10, 1) // 月份从0开始，10代表11月
 
   const firstDayOfMonth = new Date(year, month, 1)
   const lastDayOfMonth = new Date(year, month + 1, 0)
@@ -26,7 +29,11 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
   const daysInMonth = lastDayOfMonth.getDate()
 
   const previousMonth = () => {
-    onDateChange(new Date(year, month - 1, 1))
+    const newDate = new Date(year, month - 1, 1)
+    // 确保不会导航到最小日期之前的月份
+    if (newDate >= minDate) {
+      onDateChange(newDate)
+    }
   }
 
   const nextMonth = () => {
@@ -56,22 +63,25 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
     const hasEntry = hasEntryOnDate(day)
     const date = new Date(year, month, day)
     const isToday = date.toDateString() === new Date().toDateString()
+    const isBeforeMinDate = date < minDate
 
     days.push(
       <button
         key={day}
-        onClick={() => onDateSelect(date)}
+        onClick={() => !isBeforeMinDate && onDateSelect(date)}
         className={cn(
-          "relative aspect-square rounded-lg border border-border p-2 text-sm transition-colors hover:bg-accent",
+          "relative aspect-square rounded-lg border border-border p-2 text-sm transition-colors",
           isToday && "border-primary bg-primary/5",
           hasEntry && "font-semibold",
+          isBeforeMinDate ? "cursor-not-allowed opacity-50 text-muted-foreground" : "hover:bg-accent",
         )}
+        disabled={isBeforeMinDate}
       >
-        <span className="text-foreground">{day}</span>
-        {hasEntry && (
+        <span className={cn("text-foreground", isBeforeMinDate && "text-muted-foreground")}>{day}</span>
+        {hasEntry && !isBeforeMinDate && (
           <div className="absolute bottom-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-primary" />
         )}
-        {hasAsmrEntryOnDate(day) && (
+        {hasAsmrEntryOnDate(day) && !isBeforeMinDate && (
           <div className="absolute top-1 right-1 text-primary">
             <SprayIcon className="h-3 w-3" />
           </div>
@@ -83,32 +93,51 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
   // 生成年份选项（限制在2024-2026年）
   const years = [2024, 2025, 2026]
   
-  // 生成月份选项
-  const months = [
-    { value: 0, label: "January" },
-    { value: 1, label: "February" },
-    { value: 2, label: "March" },
-    { value: 3, label: "April" },
-    { value: 4, label: "May" },
-    { value: 5, label: "June" },
-    { value: 6, label: "July" },
-    { value: 7, label: "August" },
-    { value: 8, label: "September" },
-    { value: 9, label: "October" },
-    { value: 10, label: "November" },
-    { value: 11, label: "December" },
-  ]
+  // 生成月份选项（2024年只显示11月和12月，其他年份显示全部月份）
+  const months = year === 2024 
+    ? [
+        { value: 10, label: "November" },
+        { value: 11, label: "December" },
+      ]
+    : [
+        { value: 0, label: "January" },
+        { value: 1, label: "February" },
+        { value: 2, label: "March" },
+        { value: 3, label: "April" },
+        { value: 4, label: "May" },
+        { value: 5, label: "June" },
+        { value: 6, label: "July" },
+        { value: 7, label: "August" },
+        { value: 8, label: "September" },
+        { value: 9, label: "October" },
+        { value: 10, label: "November" },
+        { value: 11, label: "December" },
+      ]
 
   // 处理年份选择变化
   const handleYearChange = (value: string) => {
     const newYear = parseInt(value)
-    onDateChange(new Date(newYear, month, 1))
+    let newMonth = month
+    
+    // 如果选择的是2024年，确保月份不早于11月
+    if (newYear === 2024) {
+      newMonth = Math.max(newMonth, 10) // 10代表11月
+    }
+    
+    onDateChange(new Date(newYear, newMonth, 1))
   }
 
   // 处理月份选择变化
   const handleMonthChange = (value: string) => {
     const newMonth = parseInt(value)
-    onDateChange(new Date(year, newMonth, 1))
+    let newDay = 1
+    
+    // 如果是2024年11月，确保日期不早于1日
+    if (year === 2024 && newMonth === 10) {
+      newDay = 1
+    }
+    
+    onDateChange(new Date(year, newMonth, newDay))
   }
 
   return (

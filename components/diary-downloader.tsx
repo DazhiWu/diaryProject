@@ -16,8 +16,13 @@ interface DiaryDownloaderProps {
 }
 
 const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
+  // 定义最小日期为2024年11月1日
+  const minDate = new Date('2024-11-01');
+
   // 日期状态管理
-  const [startDate, setStartDate] = useState<Date | undefined>(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)); // 默认30天前
+  // 默认开始日期为30天前，但不早于最小日期
+  const defaultStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const [startDate, setStartDate] = useState<Date | undefined>(defaultStartDate < minDate ? minDate : defaultStartDate);
   const [endDate, setEndDate] = useState<Date | undefined>(new Date()); // 默认今天
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +114,11 @@ const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
             onSelect={onChange}
             className="rounded-md border"
             initialFocus
+            captionLayout="dropdown"
+            fromDate={minDate}
+            toDate={new Date()}
+            startMonth={minDate}
+            endMonth={new Date()}
           />
         </PopoverContent>
       </Popover>

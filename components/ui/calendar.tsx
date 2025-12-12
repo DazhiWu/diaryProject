@@ -25,6 +25,42 @@ function Calendar({
 }) {
   const defaultClassNames = getDefaultClassNames()
 
+  // Custom DropdownNav component to reorder year and month dropdowns
+  const CustomDropdownNav = (dropdownNavProps: any) => {
+    // Extract the children passed by DayPicker
+    const originalChildren = React.Children.toArray(dropdownNavProps.children);
+    
+    // Create a map to hold the dropdown components
+    const dropdownMap = new Map();
+    
+    // Separate the children into dropdowns and other elements
+    originalChildren.forEach((child) => {
+      if (React.isValidElement(child)) {
+        // Check if it's a months dropdown or years dropdown
+        if (child.type.name === 'MonthsDropdown') {
+          dropdownMap.set('months', child);
+        } else if (child.type.name === 'YearsDropdown') {
+          dropdownMap.set('years', child);
+        } else {
+          dropdownMap.set('other', (dropdownMap.get('other') || []).concat(child));
+        }
+      }
+    });
+    
+    // Reorder: years first, then months, then others
+    const reorderedChildren = [
+      dropdownMap.get('years'),
+      dropdownMap.get('months'),
+      ...(dropdownMap.get('other') || [])
+    ].filter(Boolean);
+    
+    return (
+      <div {...dropdownNavProps}>
+        {reorderedChildren}
+      </div>
+    );
+  };
+
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
@@ -165,6 +201,7 @@ function Calendar({
             </td>
           )
         },
+        DropdownNav: CustomDropdownNav,
         ...components,
       }}
       {...props}

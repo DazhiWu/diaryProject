@@ -10,6 +10,7 @@ import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon, DownloadIcon } from "@/components/icons"
 import DiaryDownloader from "@/components/diary-downloader"
+import YearlySummary from "@/components/yearly-summary"
 import { toast } from "sonner"
 import { Spinner } from "@/components/ui/spinner"
 import { AuthDialog } from "@/components/auth-dialog"
@@ -54,7 +55,7 @@ export default function DiaryApp() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [allEntries, setAllEntries] = useState<Entry[]>([]) // 用于日历视图的所有条目
   const [totalEntriesCount, setTotalEntriesCount] = useState(0)
-  const [view, setView] = useState<"list" | "calendar" | "new" | "detail" | "edit" | "download">("list")
+  const [view, setView] = useState<"list" | "calendar" | "new" | "detail" | "edit" | "download" | "yearly-summary">("list")
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -62,7 +63,10 @@ export default function DiaryApp() {
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false)
-  const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date())
+  // 定义最小日期为2024年11月1日
+  const minDate = new Date(2024, 10, 1)
+  // 确保初始日历日期不早于最小日期
+  const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date() >= minDate ? new Date() : minDate)
   const auth = useAuth()
   const [localAuthState, setLocalAuthState] = useState(auth.isAuthenticated)
   const entriesPerPage = 5
@@ -396,6 +400,11 @@ export default function DiaryApp() {
                 <DownloadIcon className="h-4 w-4" />
                 下载日记
               </Button>
+              
+              <Button onClick={() => handleProtectedAction(() => setView("yearly-summary"), "查看年度总结")} variant="outline" size="sm" className="gap-2">
+                <BookOpenIcon className="h-4 w-4" />
+                年度总结
+              </Button>
             </div>
           </div>
         </div>
@@ -575,6 +584,8 @@ export default function DiaryApp() {
               />
             ) : view === "download" ? (
               <DiaryDownloader />
+            ) : view === "yearly-summary" ? (
+              <YearlySummary onBack={() => setView("list")} />
             ) : (
               <div className="text-center py-12 text-muted-foreground">
                 未知视图
