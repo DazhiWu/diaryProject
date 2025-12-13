@@ -10,7 +10,7 @@ import { MehIcon } from './icons'
 import type { Entry } from "@/app/page"
 import { useState, useEffect } from "react"
 import { analyzeDiaryWithAI } from "@/lib/aiAnalysis"
-import { saveAIAnalysis, getAIAnalysisForDiary } from "@/lib/diaryApi"
+import { saveAIAnalysis, getAIAnalysisForDiary, updateDiaryEntry } from "@/lib/diaryApi"
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/useAuth"
 import { AuthDialog } from "@/components/auth-dialog"
@@ -145,6 +145,11 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
       if (onUpdateEntry) {
         onUpdateEntry(entry.id, { subtitle: data.summary });
       }
+      
+      // 将AI生成的标题更新到数据库的diaryContent表
+      console.log(`正在更新日记ID ${entry.id} 的标题到数据库...`);
+      await updateDiaryEntry(entry.id, { subtitle: data.summary });
+      console.log(`日记标题更新到数据库成功`);
       
       // 重新从数据库获取最新的分析结果，确保数据一致性
       console.log(`正在从数据库重新获取AI分析结果...`);

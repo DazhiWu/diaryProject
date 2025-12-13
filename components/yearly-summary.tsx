@@ -19,7 +19,6 @@ import { toast } from 'sonner'
 import {
   fetchYearlySummary,
   fetchInvestmentImages,
-  saveYearlySummary,
   addImportantEvent,
   updateImportantEvent,
   deleteImportantEvent,
@@ -27,16 +26,11 @@ import {
   updateAIAnalysisSection,
   deleteAIAnalysisSection,
   addAIAnalysisOpinion,
-  updateAIAnalysisOpinion,
   deleteAIAnalysisOpinion,
   addInvestmentImage,
-  updateInvestmentImage,
-  deleteInvestmentImage,
   type YearlySummary as YearlySummaryType,
   type ImportantEvent,
-  type AIAnalysisSection,
-  type AIAnalysisOpinion,
-  type InvestmentImage
+  type AIAnalysisSection
 } from '@/lib/yearlySummaryApi'
 
 
@@ -540,7 +534,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   
                   {analysis.opinions.length > 0 && (
                     <div className="space-y-3">
-                      {analysis.opinions.map((opinion, index) => (
+                      {analysis.opinions.map((opinion) => (
                         <div key={opinion.id} className="p-3 bg-muted rounded-lg">
                           <div>
                             {opinion.content ? (
