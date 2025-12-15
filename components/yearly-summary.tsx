@@ -173,15 +173,24 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   // 处理重要事件
   const handleAddEvent = () => {
     setEditingEvent(null)
-    setEventForm({ startDate: '', endDate: '', description: '' })
+    // 初始化日期为当前选择年份的1月1日
+    const initialDate = `${selectedYear}-01-01`
+    setEventForm({ startDate: initialDate, endDate: initialDate, description: '' })
     setIsEventDialogOpen(true)
   }
 
   const handleEditEvent = (event: ImportantEvent) => {
     setEditingEvent(event)
+    
+    // 确保年份是当前选择的年份
+    const formatDateWithCurrentYear = (dateStr: string) => {
+      const [, month, day] = dateStr.split('-')
+      return `${selectedYear}-${month}-${day}`
+    }
+    
     setEventForm({
-      startDate: event.startDate,
-      endDate: event.endDate,
+      startDate: formatDateWithCurrentYear(event.startDate),
+      endDate: formatDateWithCurrentYear(event.endDate),
       description: event.description
     })
     setIsEventDialogOpen(true)
@@ -454,37 +463,45 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </div>
             
             <div className="space-y-3">
-              {yearlySummary.importantEvents.map((event) => (
-                <div
-                  key={event.id}
-                  className="flex items-center gap-3 p-3 border rounded-lg"
-                >
-                  <div className="flex-1">
-                    <div className="flex gap-2 text-sm text-muted-foreground">
-                      <span>{event.startDate}</span>
-                      <span>至</span>
-                      <span>{event.endDate}</span>
+              {yearlySummary.importantEvents.map((event) => {
+                // 格式化日期为mm/dd格式
+                const formatDate = (dateStr: string) => {
+                  const [, month, day] = dateStr.split('-')
+                  return `${month}/${day}`
+                }
+                
+                return (
+                  <div
+                    key={event.id}
+                    className="flex items-center gap-3 p-3 border rounded-lg"
+                  >
+                    <div className="flex-1">
+                      <div className="flex gap-2 text-sm text-muted-foreground">
+                        <span>{formatDate(event.startDate)}</span>
+                        <span>至</span>
+                        <span>{formatDate(event.endDate)}</span>
+                      </div>
+                      <div className="text-base font-medium">{event.description}</div>
                     </div>
-                    <div className="text-base font-medium">{event.description}</div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditEvent(event)}
+                      >
+                        <EditIcon className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteEvent(Number(event.id))}
+                      >
+                        <Trash2Icon className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEditEvent(event)}
-                    >
-                      <EditIcon className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteEvent(Number(event.id))}
-                    >
-                      <Trash2Icon className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </Card>
 
@@ -651,6 +668,8 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 type="date"
                 value={eventForm.startDate}
                 onChange={(e) => setEventForm({ ...eventForm, startDate: e.target.value })}
+                min={`${selectedYear}-01-01`}
+                max={`${selectedYear}-12-31`}
               />
             </div>
             
@@ -661,6 +680,8 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 type="date"
                 value={eventForm.endDate}
                 onChange={(e) => setEventForm({ ...eventForm, endDate: e.target.value })}
+                min={`${selectedYear}-01-01`}
+                max={`${selectedYear}-12-31`}
               />
             </div>
             

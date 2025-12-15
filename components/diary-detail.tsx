@@ -22,9 +22,12 @@ type DiaryDetailProps = {
   onDelete: (id: number) => void
   onEdit: (entry: Entry) => void
   onUpdateEntry?: (id: number, updates: Partial<Entry>) => void
+  previousEntry?: Entry | null
+  nextEntry?: Entry | null
+  onNavigateToEntry: (entry: Entry) => void
 }
 
-export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: DiaryDetailProps) {
+export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, previousEntry, nextEntry, onNavigateToEntry }: DiaryDetailProps) {
   const auth = useAuth()
   const [localAuthState, setLocalAuthState] = useState(auth.isAuthenticated)
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null)
@@ -403,6 +406,27 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry }: 
           <p>{error}</p>
         </div>
       )}
+      
+      <div className="flex justify-between mt-4">
+        <Button 
+          variant="outline" 
+          onClick={() => previousEntry && onNavigateToEntry(previousEntry)}
+          disabled={!previousEntry}
+          className="gap-2"
+        >
+          <ChevronLeftIcon className="h-4 w-4" />
+          上一篇
+        </Button>
+        <Button 
+          variant="outline" 
+          onClick={() => nextEntry && onNavigateToEntry(nextEntry)}
+          disabled={!nextEntry}
+          className="gap-2"
+        >
+          下一篇
+          <ChevronRightIcon className="h-4 w-4" />
+        </Button>
+      </div>
       
       <DeleteConfirmDialog
         open={deleteDialogOpen}

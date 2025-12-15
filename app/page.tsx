@@ -110,12 +110,11 @@ export default function DiaryApp() {
     }
   }, [currentPage, debouncedSearchQuery, view])
   
-  // 当切换到日历视图时，加载所有数据
+  // 在应用启动时加载所有日记条目，用于上下篇导航
   useEffect(() => {
-    if (view === "calendar") {
-      loadAllEntriesForCalendar()
-    }
-  }, [view])
+    // 无论当前视图是什么，都加载所有日记条目用于导航
+    loadAllEntriesForCalendar()
+  }, [])
 
   const loadEntries = async () => {
     setLoading(true)
@@ -493,6 +492,50 @@ export default function DiaryApp() {
     if (selectedEntry && selectedEntry.id === id) {
       setSelectedEntry({ ...selectedEntry, ...updates });
     }
+  }}
+  // 使用内联表达式计算上一篇和下一篇日记
+  previousEntry={(() => {
+    // 使用allEntries数组，它包含了所有有日记的日期
+    // 按日期排序（从早到晚）
+    const sortedEntries = [...allEntries].sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+    // 找到当前日记的索引
+    const currentIndex = sortedEntries.findIndex(entry => entry.id === selectedEntry.id);
+    // 上一篇：日期比当前小的日记（索引减1）
+    return currentIndex > 0 ? sortedEntries[currentIndex - 1] : null;
+  })()}
+  nextEntry={(() => {
+    // 使用allEntries数组，它包含了所有有日记的日期
+    // 按日期排序（从早到晚）
+    const sortedEntries = [...allEntries].sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+    // 找到当前日记的索引
+    const currentIndex = sortedEntries.findIndex(entry => entry.id === selectedEntry.id);
+    // 下一篇：日期比当前大的日记（索引加1）
+    return currentIndex < sortedEntries.length - 1 ? sortedEntries[currentIndex + 1] : null;
+  })()}
+  onNavigateToEntry={async (entry) => {
+    // 导航到指定的日记
+    // 首先获取完整的日记内容
+    try {
+      // 使用fetchDiaryEntryByDate函数获取完整的日记内容
+      const fullEntry = await fetchDiaryEntryByDate(entry.date);
+      if (fullEntry) {
+        setSelectedEntry(convertToEntry(fullEntry));
+      } else {
+        // 如果获取失败，使用当前entry（可能缺少content和images）
+        setSelectedEntry(entry);
+        toast.error("获取日记内容失败");
+      }
+    } catch (error) {
+      console.error("获取日记内容失败:", error);
+      // 如果获取失败，使用当前entry（可能缺少content和images）
+      setSelectedEntry(entry);
+      toast.error("获取日记内容失败");
+    }
+    // 不需要改变view，因为已经在detail视图
   }}
 />
         ) : (

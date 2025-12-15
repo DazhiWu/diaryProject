@@ -39,11 +39,10 @@ function convertToSupabase(entry: Partial<DiaryEntry>): Partial<SupabaseDiaryEnt
   const result: Partial<SupabaseDiaryEntry> = {};
   
   // 统一使用UTC时区处理日期
+  // 只有在entry.date存在时才生成date字段，避免在更新操作中意外更改日期
   if (entry.date) {
     // 使用toISOString的日期部分，确保日期正确保存到UTC数据库
     result.date = entry.date.toISOString().split('T')[0];
-  } else {
-    result.date = new Date().toISOString().split('T')[0];
   }
   
   result.subtitle = entry.subtitle;
