@@ -43,7 +43,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   // 认证状态
   const auth = useAuth()
-  const { isAuthenticated, isAdmin, isViewer, isGuest } = auth
+  const { isAuthenticated, isAdmin, isViewer } = auth
 
   // 状态管理
   const [yearlySummary, setYearlySummary] = useState<YearlySummaryType>({
@@ -60,6 +60,9 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   
   // 当前图片索引
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  
+  // 事件视图模式：list（列表）或 timeline（时间轴）
+  const [eventViewMode, setEventViewMode] = useState<'list' | 'timeline'>('list')
 
   // 模态框状态
   const [isEventDialogOpen, setIsEventDialogOpen] = useState(false)
@@ -457,63 +460,190 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <Card className="p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">重要事件</h2>
-              {/* 添加事件按钮 - 只有管理员才能显示 */}
-              {isAdmin && (
-                <Button
-                  variant="default"
-                  onClick={handleAddEvent}
-                  className="gap-2"
-                >
-                  <PlusIcon className="h-4 w-4" />
-                  添加事件
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {/* 视图切换按钮组 */}
+                <div className="flex bg-muted p-1 rounded-lg">
+                  <Button
+                    variant={eventViewMode === 'list' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setEventViewMode('list')}
+                    className="h-8 px-3"
+                  >
+                    列表视图
+                  </Button>
+                  <Button
+                    variant={eventViewMode === 'timeline' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setEventViewMode('timeline')}
+                    className="h-8 px-3"
+                  >
+                    时间轴视图
+                  </Button>
+                </div>
+                
+                {/* 添加事件按钮 - 只有管理员才能显示 */}
+                {isAdmin && (
+                  <Button
+                    variant="default"
+                    onClick={handleAddEvent}
+                    className="gap-2 h-8"
+                  >
+                    <PlusIcon className="h-4 w-4" />
+                    添加事件
+                  </Button>
+                )}
+              </div>
             </div>
             
-            <div className="space-y-3">
-              {yearlySummary.importantEvents.map((event) => {
-                // 格式化日期为mm/dd格式
-                const formatDate = (dateStr: string) => {
-                  const [, month, day] = dateStr.split('-')
-                  return `${month}/${day}`
-                }
-                
-                return (
-                  <div
-                    key={event.id}
-                    className="flex items-center gap-3 p-3 border rounded-lg"
-                  >
-                    <div className="flex-1">
-                      <div className="flex gap-2 text-sm text-muted-foreground">
-                        <span>{formatDate(event.startDate)}</span>
-                        <span>至</span>
-                        <span>{formatDate(event.endDate)}</span>
+            {/* 根据视图模式渲染不同的事件列表 */}
+            {eventViewMode === 'list' ? (
+              // 列表视图
+              <div className="space-y-3">
+                {yearlySummary.importantEvents.map((event) => {
+                  // 格式化日期为mm/dd格式
+                  const formatDate = (dateStr: string) => {
+                    const [, month, day] = dateStr.split('-')
+                    return `${month}/${day}`
+                  }
+                  
+                  return (
+                    <div
+                      key={event.id}
+                      className="flex items-center gap-3 p-3 border rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <div className="flex gap-2 text-sm text-muted-foreground">
+                          <span>{formatDate(event.startDate)}</span>
+                          <span>至</span>
+                          <span>{formatDate(event.endDate)}</span>
+                        </div>
+                        <div className="text-base font-medium">{event.description}</div>
                       </div>
-                      <div className="text-base font-medium">{event.description}</div>
+                      {/* 事件操作按钮 - 只有管理员才能显示 */}
+                      {isAdmin && (
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEditEvent(event)}
+                          >
+                            <EditIcon className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteEvent(Number(event.id))}
+                          >
+                            <Trash2Icon className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                    {/* 事件操作按钮 - 只有管理员才能显示 */}
-                    {isAdmin && (
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEditEvent(event)}
-                        >
-                          <EditIcon className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteEvent(Number(event.id))}
-                        >
-                          <Trash2Icon className="h-4 w-4" />
-                        </Button>
+                  )
+                })}
+              </div>
+            ) : (
+              // 时间轴视图
+              <div className="relative">
+                {/* 左侧内容 - 偶数项显示 */}
+                {/* 右侧内容 - 奇数项显示 */}
+                {/* 时间轴节点 */}
+                <div className="space-y-16">
+                  {yearlySummary.importantEvents.map((event, index) => {
+                    // 格式化日期为月日格式，如1月18日
+                    const formatDateChinese = (dateStr: string) => {
+                      const [, month, day] = dateStr.split('-')
+                      return `${parseInt(month)}月${parseInt(day)}日`
+                    }
+                    
+                    // 生成时间段，如1月18日-1月19日
+                    const getTimeRange = () => {
+                      const startDate = formatDateChinese(event.startDate)
+                      const endDate = formatDateChinese(event.endDate)
+                      return startDate === endDate ? startDate : `${startDate}-${endDate}`
+                    }
+                    
+                    // 处理事件描述，取第一个句子为标题，后续为详情
+                    const processDescription = () => {
+                      // 按句号分割句子
+                      const sentences = event.description.split(/[。！？]/)
+                      // 取第一个非空句子作为标题
+                      const title = sentences.find(s => s.trim()) || ''
+                      // 剩余句子作为详情
+                      const detail = sentences.slice(1).filter(s => s.trim()).join('。') + '。'
+                      return { title, detail: detail === '。' ? '' : detail }
+                    }
+                    
+                    const { title, detail } = processDescription()
+                    const timeRange = getTimeRange()
+                    
+                    // 奇数项在右侧，偶数项在左侧
+                    const isRight = index % 2 === 0
+                    
+                    return (
+                      <div
+                        key={event.id}
+                        className="flex items-center gap-0"
+                      >
+                        {/* 左侧内容 - 偶数项显示 */}
+                        {!isRight && (
+                          <div className="flex-1">
+                            <div className="relative p-6 rounded-xl bg-background border border-primary/20 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden">
+                              {/* 顶部装饰线条 */}
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-primary/70 to-primary/30"></div>
+                              
+                              <div className="flex items-center justify-between text-sm text-primary mb-4">
+                                <span className="font-semibold">{timeRange}</span>
+                                <span className="px-3 py-1 bg-primary/10 text-primary text-xs rounded-full">生活</span>
+                              </div>
+                              <h3 className="text-xl font-bold mb-4 text-foreground">{title}</h3>
+                              {detail && (
+                                <p className="text-sm text-muted-foreground leading-relaxed">
+                                  {detail}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* 占位元素 - 奇数项左侧占位 */}
+                        {isRight && <div className="flex-1"></div>}
+                        
+                        {/* 时间轴节点 */}
+                        <div className="relative z-10 flex items-center justify-center w-4 h-4 bg-primary rounded-full shadow-lg"></div>
+                        
+                        {/* 右侧内容 - 奇数项显示 */}
+                        {isRight && (
+                          <div className="flex-1">
+                            <div className="relative p-6 rounded-xl bg-background border border-primary/20 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden">
+                              {/* 顶部装饰线条 */}
+                              <div className="absolute top-0 right-0 w-full h-1 bg-gradient-to-l from-primary via-primary/70 to-primary/30"></div>
+                              
+                              <div className="flex items-center justify-between text-sm text-primary mb-4">
+                                <span className="font-semibold">{timeRange}</span>
+                                <span className="px-3 py-1 bg-primary/10 text-primary text-xs rounded-full">成就</span>
+                              </div>
+                              <h3 className="text-xl font-bold mb-4 text-foreground">{title}</h3>
+                              {detail && (
+                                <p className="text-sm text-muted-foreground leading-relaxed">
+                                  {detail}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* 占位元素 - 偶数项右侧占位 */}
+                        {!isRight && <div className="flex-1"></div>}
                       </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+                    )
+                  })}
+                </div>
+                
+                {/* 中央时间轴线 - 连接所有红点 */}
+                <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-primary/50 transform -translate-x-1/2 z-0"></div>
+              </div>
+            )}
           </Card>
 
           {/* AI读后感栏目 */}
