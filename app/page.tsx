@@ -67,32 +67,47 @@ export default function DiaryApp() {
   const minDate = new Date(2024, 10, 1)
   // 确保初始日历日期不早于最小日期
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date() >= minDate ? new Date() : minDate)
+// 认证状态
   const auth = useAuth()
-  const [localAuthState, setLocalAuthState] = useState(auth.isAuthenticated)
   const entriesPerPage = 5
   
-  // 监听localStorage中认证状态的变化
+  // 直接使用useAuth钩子返回的认证状态
+  const isAuthenticated = auth.isAuthenticated;
+  const isAdmin = auth.isAdmin;
+  const isViewer = auth.isViewer;
+  const isGuest = !isAuthenticated;
+
+  // 确保认证状态已经从localStorage加载完成
+  const [authReady, setAuthReady] = useState(false);
+
+  // 当认证状态就绪后，初始化数据加载
   useEffect(() => {
-    // 初始同步认证状态
-    setLocalAuthState(auth.isAuthenticated);
-    
-    // 监听localStorage变化
-    const handleStorageChange = () => {
-      const storedAuthStatus = localStorage.getItem('diaryAppAuthStatus');
-      setLocalAuthState(storedAuthStatus === 'authenticated');
+    // 只有当authLevel不是初始值'guest'，或者我们确定localStorage中确实没有认证信息时，才标记为就绪
+    const checkAuthReady = () => {
+      if (typeof window !== 'undefined') {
+        const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel');
+        // 如果有存储的认证信息，或者组件已经渲染了一段时间，就认为认证状态就绪
+        setAuthReady(true);
+      }
     };
+
+    // 立即检查一次
+    checkAuthReady();
     
-    // 添加事件监听器
-    window.addEventListener('storage', handleStorageChange);
-    
-    // 清理函数
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, [auth.isAuthenticated]);
-  
-  // 辅助函数获取当前认证状态
-  const isAuthenticated = localAuthState || auth.isAuthenticated;
+    // 给一个小延迟，确保所有初始化操作都完成
+    const timer = setTimeout(() => {
+      setAuthReady(true);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [auth.authLevel]);
+
+  // 当认证状态就绪或变化时重新加载日记列表，确保分页显示正确
+  useEffect(() => {
+    if (authReady) {
+      loadEntries();
+    }
+  }, [auth.authLevel, authReady]);
 
   // 实现搜索防抖功能
   useEffect(() => {
@@ -105,32 +120,39 @@ export default function DiaryApp() {
 
   // 当页面、防抖搜索条件改变时重新加载分页数据
   useEffect(() => {
-    if (view !== "calendar") {
+    if (view !== "calendar" && authReady) {
       loadEntries()
     }
-  }, [currentPage, debouncedSearchQuery, view])
+  }, [currentPage, debouncedSearchQuery, view, authReady])
   
   // 在应用启动时加载所有日记条目，用于上下篇导航
   useEffect(() => {
-    // 无论当前视图是什么，都加载所有日记条目用于导航
-    loadAllEntriesForCalendar()
-  }, [])
+    if (authReady) {
+      // 无论当前视图是什么，都加载所有日记条目用于导航
+      loadAllEntriesForCalendar()
+    }
+  }, [authReady])
 
   const loadEntries = async () => {
     setLoading(true)
+    // 在函数开始时捕获当前的认证状态，避免异步过程中状态变化导致的问题
+    const currentIsGuest = isGuest;
+    const currentCurrentPage = currentPage;
+    const currentEntriesPerPage = entriesPerPage;
+    
     try {
       if (isOnline()) {
         // 使用分页API获取数据，支持搜索
         const result = await fetchDiaryEntriesWithPagination(
-          currentPage,
-          entriesPerPage,
+          currentIsGuest ? 1 : currentCurrentPage, // 访客只能看第一页
+          currentIsGuest ? 5 : currentEntriesPerPage, // 访客只能看5条
           debouncedSearchQuery
         )
         
         setEntries(result.entries.map(convertToEntry))
-        setTotalEntriesCount(result.totalCount)
+        setTotalEntriesCount(currentIsGuest ? 5 : result.totalCount) // 访客显示最多5条
         
-        if (result.entries.length > 0 && currentPage === 1) {
+        if (result.entries.length > 0 && currentCurrentPage === 1) {
           toast.success("日记加载成功")
         }
       } else {
@@ -143,14 +165,15 @@ export default function DiaryApp() {
           (entry.subtitle && entry.subtitle.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
         )
         
-        const startIndex = (currentPage - 1) * entriesPerPage
+        const startIndex = currentIsGuest ? 0 : (currentCurrentPage - 1) * currentEntriesPerPage
+        const endIndex = currentIsGuest ? 5 : startIndex + currentEntriesPerPage
         const paginatedOfflineEntries = filteredOfflineEntries.slice(
           startIndex,
-          startIndex + entriesPerPage
+          endIndex
         )
         
         setEntries(paginatedOfflineEntries.map(convertToEntry))
-        setTotalEntriesCount(filteredOfflineEntries.length)
+        setTotalEntriesCount(currentIsGuest ? Math.min(5, filteredOfflineEntries.length) : filteredOfflineEntries.length)
         
         if (localEntries.length > 0) {
           toast.warning("网络离线，显示本地缓存")
@@ -168,14 +191,15 @@ export default function DiaryApp() {
           (entry.subtitle && entry.subtitle.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
         )
       
-      const startIndex = (currentPage - 1) * entriesPerPage
+      const startIndex = currentIsGuest ? 0 : (currentCurrentPage - 1) * currentEntriesPerPage
+      const endIndex = currentIsGuest ? 5 : startIndex + currentEntriesPerPage
       const paginatedOfflineEntries = filteredOfflineEntries.slice(
         startIndex,
-        startIndex + entriesPerPage
+        endIndex
       )
       
       setEntries(paginatedOfflineEntries.map(convertToEntry))
-      setTotalEntriesCount(filteredOfflineEntries.length)
+      setTotalEntriesCount(currentIsGuest ? Math.min(5, filteredOfflineEntries.length) : filteredOfflineEntries.length)
       
       if (localEntries.length > 0) {
         toast.error("加载失败，显示本地缓存")
@@ -190,6 +214,10 @@ export default function DiaryApp() {
   // 专门为日历视图加载数据（包含subtitle以支持标题检测）
   const loadAllEntriesForCalendar = async () => {
     try {
+      // 在函数开始时捕获当前的认证状态，避免异步过程中状态变化导致的问题
+      const currentIsGuest = isGuest;
+      const currentEntriesPerPage = entriesPerPage;
+      
       if (isOnline()) {
         // 使用优化的API获取日历视图需要的字段，现在包含subtitle
         const calendarData = await fetchCalendarEntries()
@@ -207,9 +235,9 @@ export default function DiaryApp() {
         setAllEntries(calendarEntries)
         
         // 对于首页视图，仍然使用分页API获取完整数据
-        const firstPageData = await fetchDiaryEntriesWithPagination(1, entriesPerPage, "")
+        const firstPageData = await fetchDiaryEntriesWithPagination(1, currentIsGuest ? 5 : currentEntriesPerPage, "")
         setEntries(firstPageData.entries.map(convertToEntry))
-        setTotalEntriesCount(firstPageData.totalCount)
+        setTotalEntriesCount(currentIsGuest ? 5 : firstPageData.totalCount)
         
         // 可选：定期更新本地缓存，但不立即同步所有数据
         // 只在有网络连接时的空闲时间更新缓存
@@ -223,14 +251,19 @@ export default function DiaryApp() {
         const localEntries = getLocalStorageBackup()
         const convertedEntries = localEntries.map(convertToEntry)
         setAllEntries(convertedEntries)
-        setEntries(convertedEntries.slice(0, entriesPerPage))
-        setTotalEntriesCount(convertedEntries.length)
+        setEntries(convertedEntries.slice(0, currentIsGuest ? 5 : currentEntriesPerPage))
+        setTotalEntriesCount(currentIsGuest ? 5 : convertedEntries.length)
       }
     } catch (error) {
       console.error("Failed to load calendar entries:", error)
       // 失败时使用本地缓存
       const localEntries = getLocalStorageBackup()
-      setAllEntries(localEntries.map(convertToEntry))
+      const convertedEntries = localEntries.map(convertToEntry)
+      // 确保在错误处理时也使用正确的认证状态
+      const currentIsGuest = isGuest;
+      setAllEntries(convertedEntries)
+      setEntries(convertedEntries.slice(0, currentIsGuest ? 5 : entriesPerPage))
+      setTotalEntriesCount(currentIsGuest ? 5 : convertedEntries.length)
     }
   }
 
@@ -366,10 +399,11 @@ export default function DiaryApp() {
     setCurrentPage(1)
   }, [debouncedSearchQuery, selectedDate])
 
-  const handleProtectedAction = (action: () => void, actionName: string) => {
+  const handleProtectedAction = (action: () => void, actionName: string, requiredLevel: 'viewer' | 'admin' = 'admin') => {
     // 再次检查localStorage确保状态最新
-    const storedAuthStatus = localStorage.getItem('diaryAppAuthStatus') === 'authenticated';
-    if (storedAuthStatus || isAuthenticated) {
+    const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel') as 'guest' | 'viewer' | 'admin' || 'guest';
+    
+    if (storedAuthLevel === 'admin' || (requiredLevel === 'viewer' && storedAuthLevel === 'viewer')) {
       action();
     } else {
       toast.error(`请先进行管理员认证才能${actionName}`);
@@ -378,29 +412,36 @@ export default function DiaryApp() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
+      <header className="border-b border-border bg-card/80 backdrop-blur-sm shadow-sm">
         <div className="mx-auto max-w-4xl px-4 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <BookOpenIcon className="h-8 w-8 text-primary" />
-              <h1 className="text-2xl font-semibold text-foreground">My Diary</h1>
+              <BookOpenIcon className="h-9 w-9 text-primary" />
+              <h1 className="text-2xl font-semibold text-foreground tracking-tight">致致日记</h1>
             </div>
             <div className="flex items-center gap-2">
-              {/* 管理员认证按钮始终显示 */}
-              <Button onClick={() => setIsAuthDialogOpen(true)} variant="outline" size="sm">
-                管理员认证
-              </Button>
-              <Button onClick={() => handleProtectedAction(() => setView("new"), "添加日记")} size="sm" className="gap-2">
-                <PlusIcon className="h-4 w-4" />
-                New Entry
+              {/* 用户认证按钮始终显示 */}
+              <Button onClick={() => setIsAuthDialogOpen(true)} variant="ghost" size="sm" className="text-muted-foreground hover:text-primary">
+                用户认证
               </Button>
               
-              <Button onClick={() => handleProtectedAction(() => setView("download"), "下载日记")} variant="outline" size="sm" className="gap-2">
-                <DownloadIcon className="h-4 w-4" />
-                下载日记
-              </Button>
+              {/* 只有在认证后显示写日记和下载按钮 */}
+              {isAuthenticated && (
+                <>
+                  <Button onClick={() => handleProtectedAction(() => setView("new"), "添加日记")} size="sm" className="gap-2 bg-primary/90 hover:bg-primary">
+                    <PlusIcon className="h-4 w-4" />
+                    写日记
+                  </Button>
+                  
+                  <Button onClick={() => handleProtectedAction(() => setView("download"), "下载日记")} variant="outline" size="sm" className="gap-2">
+                    <DownloadIcon className="h-4 w-4" />
+                    下载
+                  </Button>
+                </>
+              )}
               
-              <Button onClick={() => handleProtectedAction(() => setView("yearly-summary"), "查看年度总结")} variant="outline" size="sm" className="gap-2">
+              {/* 年度总结按钮始终显示，不需要认证 */}
+              <Button onClick={() => setView("yearly-summary")} variant="outline" size="sm" className="gap-2">
                 <BookOpenIcon className="h-4 w-4" />
                 年度总结
               </Button>
@@ -413,18 +454,22 @@ export default function DiaryApp() {
       <AuthDialog open={isAuthDialogOpen} onOpenChange={setIsAuthDialogOpen} />
 
       <main className="mx-auto max-w-4xl px-4 py-8">
-        {/* 确保搜索栏始终可见，即使在加载状态 */}
+        {/* 列表和日历视图下的内容 */}
         {(view === "list" || view === "calendar") && (
           <div className="mb-6 space-y-4">
-            <SearchBar
-              value={searchQuery}
-              onChange={setSearchQuery}
-              onClear={() => {
-                setSearchQuery("")
-                setSelectedDate(null)
-              }}
-            />
+            {/* 搜索栏仅在非访客下可见 */}
+            {!isGuest && (
+              <SearchBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                onClear={() => {
+                  setSearchQuery("")
+                  setSelectedDate(null)
+                }}
+              />
+            )}
 
+            {/* 视图切换按钮对所有用户可见 */}
             <div className="flex gap-2">
               <Button
                 variant={view === "list" ? "default" : "outline"}
@@ -436,7 +481,7 @@ export default function DiaryApp() {
                 className="gap-2"
               >
                 <ListIcon className="h-4 w-4" />
-                List
+                列表视图
               </Button>
               <Button
                 variant={view === "calendar" ? "default" : "outline"}
@@ -445,7 +490,7 @@ export default function DiaryApp() {
                 className="gap-2"
               >
                 <CalendarIcon className="h-4 w-4" />
-                Calendar
+                日历视图
               </Button>
             </div>
           </div>
@@ -495,9 +540,11 @@ export default function DiaryApp() {
   }}
   // 使用内联表达式计算上一篇和下一篇日记
   previousEntry={(() => {
-    // 使用allEntries数组，它包含了所有有日记的日期
+    // 获取当前显示的日记列表，对于访客来说，这是最近5篇
+    const allowedEntries = entries;
+    
     // 按日期排序（从早到晚）
-    const sortedEntries = [...allEntries].sort((a, b) => 
+    const sortedEntries = [...allowedEntries].sort((a, b) => 
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
     // 找到当前日记的索引
@@ -506,9 +553,11 @@ export default function DiaryApp() {
     return currentIndex > 0 ? sortedEntries[currentIndex - 1] : null;
   })()}
   nextEntry={(() => {
-    // 使用allEntries数组，它包含了所有有日记的日期
+    // 获取当前显示的日记列表，对于访客来说，这是最近5篇
+    const allowedEntries = entries;
+    
     // 按日期排序（从早到晚）
-    const sortedEntries = [...allEntries].sort((a, b) => 
+    const sortedEntries = [...allowedEntries].sort((a, b) => 
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
     // 找到当前日记的索引
@@ -570,7 +619,7 @@ export default function DiaryApp() {
                 entries={allEntries.length > 0 ? allEntries : entries} // 优先使用所有条目
                 currentDate={currentCalendarDate}
                 onDateChange={setCurrentCalendarDate}
-                onDateSelect={(date) => {
+                onDateSelect={async (date) => {
                   setSelectedDate(date)
                   
                   // 首先从allEntries中检查该日期是否有日记（allEntries包含所有日期的精简信息）
@@ -578,41 +627,64 @@ export default function DiaryApp() {
                     return new Date(entry.date).toDateString() === date.toDateString()
                   })
                   
-                  if (hasEntryForDate) {
-                    // 如果该日期有日记，直接从数据库查询该日期的完整日记数据
-                    setLoading(true)
-                    
-                    // 使用日期筛选查询该日期的日记
-                        const fetchEntryByDate = async () => {
-                          try {
-                            // 使用新添加的fetchDiaryEntryByDate函数直接从数据库查询该日期的日记
-                            const diaryEntry = await fetchDiaryEntryByDate(date)
-                            
-                            if (diaryEntry) {
-                              // 将Supabase返回的DiaryEntryType转换为页面使用的Entry类型
-                              const entryToShow = convertToEntry(diaryEntry)
-                              setSelectedEntry(entryToShow)
-                              setView("detail")
-                            } else {
-                              // 虽然allEntries显示有日记，但实际查询没找到
-                              setView("list")
-                              toast.info(`未找到${date.toLocaleDateString()}的日记详情`, {
-                                action: {
-                                  label: "创建日记",
-                                  onClick: () => setView("new")
-                                }
-                              })
-                            }
-                      } catch (error) {
-                        console.error('Error fetching diary entry by date:', error)
-                        toast.error('加载日记失败，请重试')
-                        setView("list")
-                      } finally {
-                        setLoading(false)
-                      }
+                  // 检查该日期的日记是否在访客允许查看的范围内
+                  const isAllowedToView = async () => {
+                    if (!isGuest) {
+                      return true; // 非访客可以查看所有日记
                     }
                     
-                    fetchEntryByDate()
+                    // 获取访客可以查看的日记ID列表
+                    const firstPageEntries = await fetchDiaryEntriesWithPagination(1, 5, "");
+                    const allowedEntryIds = new Set(firstPageEntries.entries.map(entry => entry.id));
+                    
+                    // 检查该日期的日记是否在允许查看的范围内
+                    const diaryEntry = await fetchDiaryEntryByDate(date);
+                    return diaryEntry ? allowedEntryIds.has(diaryEntry.id) : false;
+                  };
+                  
+                  if (hasEntryForDate) {
+                    // 检查访客是否有权限查看该日记
+                    setLoading(true);
+                    
+                    const canView = await isAllowedToView();
+                    
+                    if (canView) {
+                      // 如果该日期有日记且访客有权限查看，直接从数据库查询该日期的完整日记数据
+                      const fetchEntryByDate = async () => {
+                        try {
+                          // 使用新添加的fetchDiaryEntryByDate函数直接从数据库查询该日期的日记
+                          const diaryEntry = await fetchDiaryEntryByDate(date);
+                          
+                          if (diaryEntry) {
+                            // 将Supabase返回的DiaryEntryType转换为页面使用的Entry类型
+                            const entryToShow = convertToEntry(diaryEntry);
+                            setSelectedEntry(entryToShow);
+                            setView("detail");
+                          } else {
+                            // 虽然allEntries显示有日记，但实际查询没找到
+                            setView("list");
+                            toast.info(`未找到${date.toLocaleDateString()}的日记详情`, {
+                              action: {
+                                label: "创建日记",
+                                onClick: () => setView("new")
+                              }
+                            });
+                          }
+                        } catch (error) {
+                          console.error('Error fetching diary entry by date:', error);
+                          toast.error('加载日记失败，请重试');
+                          setView("list");
+                        } finally {
+                          setLoading(false);
+                        }
+                      };
+                      
+                      fetchEntryByDate();
+                    } else {
+                      // 访客无权查看该日记
+                      setLoading(false);
+                      toast.error('您没有权限查看此日记，请先进行认证');
+                    }
                   } else {
                     // 如果该日期确实没有日记
                     setView("list")

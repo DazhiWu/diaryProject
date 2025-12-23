@@ -18,13 +18,14 @@ type DiaryListProps = {
 }
 
 export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNewEntry }: DiaryListProps) {
-  const { isAuthenticated } = useAuth()
+  const auth = useAuth()
+  const { isAdmin, isViewer, isAuthenticated } = auth
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [entryToDelete, setEntryToDelete] = useState<Entry | null>(null);
   
   // 处理受保护的操作
-  const handleProtectedAction = (action: () => void, actionName: string = "执行此操作") => {
-    if (isAuthenticated) {
+  const handleProtectedAction = (action: () => void, actionName: string = "执行此操作", requiredLevel: 'viewer' | 'admin' = 'admin') => {
+    if (isAdmin || (requiredLevel === 'viewer' && isViewer)) {
       action();
     } else {
       toast.error(`请先进行管理员认证才能${actionName}`);
@@ -78,7 +79,7 @@ export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNew
   return (
     <div className="space-y-4">
       {entries.map((entry) => (
-        <Card key={entry.id} className="overflow-hidden transition-shadow hover:shadow-md">
+        <Card key={entry.id} className="overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-gradient-to-br from-card to-card/90 border-border/80">
           <div 
             onClick={() => onViewDetail(entry)} 
             className="w-full text-left cursor-pointer"
@@ -86,9 +87,9 @@ export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNew
             <div className="p-6">
               <div className="mb-3 flex items-start justify-between">
                 <div>
-                  <p className="text-lg font-semibold text-foreground">{entry.subtitle}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {new Date(entry.date).toLocaleDateString("en-US", {
+                  <p className="text-lg font-semibold text-foreground tracking-tight">{entry.subtitle}</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {new Date(entry.date).toLocaleDateString("zh-CN", {
                       weekday: "long",
                       year: "numeric",
                       month: "long",
@@ -96,44 +97,47 @@ export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNew
                     })}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleProtectedAction(() => handleDelete(entry), "删除日记")
-                    }}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2Icon className="h-4 w-4" />
-                  </Button>
+                <div className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-opacity">
+                  {/* 只有管理员才能显示删除按钮 */}
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleProtectedAction(() => handleDelete(entry), "删除日记")
+                      }}
+                      className="text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+                    >
+                      <Trash2Icon className="h-4 w-4" />
+                    </Button>
+                  )}
                   <ChevronRightIcon className="h-5 w-5 text-muted-foreground" />
                 </div>
               </div>
 
               {entry.images && entry.images.length > 0 ? (
-                <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex flex-col sm:flex-row gap-4 mt-3">
                   <div
-                    className={`grid flex-shrink-0 gap-1 ${getGridClass(entry.images.length)}`}
-                    style={{ width: "100%", maxWidth: "160px" }}
+                    className={`grid flex-shrink-0 gap-1.5 ${getGridClass(entry.images.length)}`}
+                    style={{ width: "100%", maxWidth: "140px" }}
                   >
                     {entry.images.slice(0, 9).map((image, index) => (
-                      <div key={index} className="aspect-square">
+                      <div key={index} className="aspect-square rounded-md overflow-hidden shadow-sm transition-transform hover:scale-105">
                         <img
                           src={image || "/placeholder.svg"}
-                          alt={`Preview ${index + 1}`}
-                          className="h-full w-full rounded object-cover"
+                          alt={`预览 ${index + 1}`}
+                          className="h-full w-full object-cover"
                         />
                       </div>
                     ))}
                   </div>
-                  <p className="flex-1 whitespace-pre-wrap text-base leading-relaxed text-muted-foreground">
+                  <p className="flex-1 whitespace-pre-wrap text-base leading-relaxed text-muted-foreground line-clamp-3">
                     {getPreviewContent(entry.content)}
                   </p>
                 </div>
               ) : (
-                <p className="whitespace-pre-wrap text-base leading-relaxed text-muted-foreground">
+                <p className="whitespace-pre-wrap text-base leading-relaxed text-muted-foreground line-clamp-4 mt-3">
                   {getPreviewContent(entry.content)}
                 </p>
               )}

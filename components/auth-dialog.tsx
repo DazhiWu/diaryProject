@@ -14,15 +14,20 @@ interface AuthDialogProps {
 
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const [password, setPassword] = useState('');
-  const { authenticateUser } = useAuth();
+  const auth = useAuth();
+  const { authenticateUser, isAdmin } = auth;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     if (authenticateUser(password)) {
-      toast.success('认证成功！现在您可以添加、编辑和删除日记了。');
+      toast.success('认证成功！页面将自动刷新以应用权限设置。');
       onOpenChange(false);
       setPassword('');
+      // 认证成功后主动刷新页面，确保所有组件都能获取到最新的认证状态
+      setTimeout(() => {
+        window.location.reload();
+      }, 500); // 给toast显示留一点时间
     } else {
       toast.error('密码错误，请重试。');
     }
@@ -32,12 +37,12 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>管理员认证</DialogTitle>
+          <DialogTitle>用户认证</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="password" className="text-sm font-medium">
-              请输入管理员密码
+              请输入认证密码
             </label>
             <Input
               id="password"

@@ -29,7 +29,6 @@ type DiaryDetailProps = {
 
 export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, previousEntry, nextEntry, onNavigateToEntry }: DiaryDetailProps) {
   const auth = useAuth()
-  const [localAuthState, setLocalAuthState] = useState(auth.isAuthenticated)
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
@@ -37,28 +36,11 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
   const [error, setError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   
-  // 监听localStorage中认证状态的变化
-  useEffect(() => {
-    // 初始同步认证状态
-    setLocalAuthState(auth.isAuthenticated);
-    
-    // 监听localStorage变化
-    const handleStorageChange = () => {
-      const storedAuthStatus = localStorage.getItem('diaryAppAuthStatus');
-      setLocalAuthState(storedAuthStatus === 'authenticated');
-    };
-    
-    // 添加事件监听器
-    window.addEventListener('storage', handleStorageChange);
-    
-    // 清理函数
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, [auth.isAuthenticated]);
-  
-  // 辅助函数获取当前认证状态
-  const isAuthenticated = localAuthState || auth.isAuthenticated;
+  // 直接使用useAuth钩子返回的认证状态
+  const isAuthenticated = auth.isAuthenticated;
+  const isAdmin = auth.isAdmin;
+  const isViewer = auth.isViewer;
+  const isGuest = !isAuthenticated;
 
   // 页面加载时获取AI分析结果
   useEffect(() => {
@@ -234,10 +216,10 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
     return "grid-cols-3";
   }
 
-  const handleProtectedAction = (action: () => void, actionName: string) => {
+  const handleProtectedAction = (action: () => void, actionName: string, requiredLevel: 'viewer' | 'admin' = 'admin') => {
     // 再次检查localStorage确保状态最新
-    const storedAuthStatus = localStorage.getItem('diaryAppAuthStatus') === 'authenticated';
-    if (storedAuthStatus || isAuthenticated) {
+    const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel') as 'guest' | 'viewer' | 'admin' || 'guest';
+    if (storedAuthLevel === 'admin' || (requiredLevel === 'viewer' && storedAuthLevel === 'viewer')) {
       action();
     } else {
       toast.error(`请先进行管理员认证才能${actionName}`);
@@ -245,78 +227,90 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={onBack} className="gap-2">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <Button variant="ghost" onClick={onBack} className="gap-2 hover:text-primary transition-colors">
           <ArrowLeftIcon className="h-4 w-4" />
-          Back to List
+          返回列表
         </Button>
         <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => handleProtectedAction(handleAIAnalysis, "使用AI分析")}
-            className="gap-2" 
-          >
-            <SparklesIcon className="h-4 w-4" />
-            {isAnalyzing ? "Analyzing..." : "AI Analysis"}
-          </Button>
+          {/* AI分析和测试环境按钮对viewer和admin都可见，但操作受保护 */}
+          {isAuthenticated && (
+            <>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => handleProtectedAction(handleAIAnalysis, "使用AI分析")}
+                className="gap-2 hover:text-primary hover:bg-primary/5"
+              >
+                <SparklesIcon className="h-4 w-4" />
+                {isAnalyzing ? "分析中..." : "AI分析"}
+              </Button>
+              
+              {/* 添加测试环境配置的按钮 */}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => handleProtectedAction(testEnvironment, "测试环境")}
+                className="gap-2 hover:text-primary hover:bg-primary/5"
+              >
+                <span className="h-4 w-4">🧪</span>
+                测试环境
+              </Button>
+            </>
+          )}
           
-          {/* 添加测试环境配置的按钮 */}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => handleProtectedAction(testEnvironment, "测试环境")}
-            className="gap-2"
-          >
-            <span className="h-4 w-4">🧪</span>
-            Test Env
-          </Button>
-          
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => handleProtectedAction(() => onEdit(entry), "编辑日记")}
-            className="gap-2"
-          >
-            <EditIcon className="h-4 w-4" />
-            Edit
-          </Button>
-          
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleProtectedAction(handleDelete, "删除日记")}
-            className="gap-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-          >
-            <Trash2Icon className="h-4 w-4" />
-            Delete
-          </Button>
+          {/* 只有管理员才能显示编辑和删除按钮 */}
+          {isAdmin && (
+            <>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => handleProtectedAction(() => onEdit(entry), "编辑日记")}
+                className="gap-2 hover:text-primary hover:bg-primary/5"
+              >
+                <EditIcon className="h-4 w-4" />
+                编辑
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleProtectedAction(handleDelete, "删除日记")}
+                className="gap-2 text-destructive hover:bg-destructive/5 hover:text-destructive"
+              >
+                <Trash2Icon className="h-4 w-4" />
+                删除
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="p-6">
-          <div className="mb-6">
-            <div className="flex justify-between items-start">
+      <Card className="overflow-hidden transition-all duration-300 hover:shadow-lg bg-gradient-to-br from-card to-card/90 border-border/80">
+        <div className="p-8">
+          <div className="mb-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-start gap-4">
               <div>
-                <p className="text-xl font-semibold text-foreground">{entry.subtitle}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {/* 统一使用UTC时区显示日期 */}
-                  {entry.date.getUTCFullYear()}年{String(entry.date.getUTCMonth() + 1).padStart(2, '0')}月{String(entry.date.getUTCDate()).padStart(2, '0')}日
-                </p>
-                {entry.modifiedAt && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Modified: {formatDateTimeWithOffset(entry.modifiedAt)}
-                    </p>
-                  )}
+                <h1 className="text-2xl font-semibold text-foreground tracking-tight leading-tight">{entry.subtitle}</h1>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                  <p>
+                    {/* 统一使用UTC时区显示日期 */}
+                    {entry.date.getUTCFullYear()}年{String(entry.date.getUTCMonth() + 1).padStart(2, '0')}月{String(entry.date.getUTCDate()).padStart(2, '0')}日
+                  </p>
+                  {entry.modifiedAt && (
+                      <p className="text-xs text-muted-foreground">
+                        修改于: {formatDateTimeWithOffset(entry.modifiedAt)}
+                      </p>
+                    )}
+                </div>
               </div>
               {(aiEmotion || aiSummary) && (
-                <div className="relative group">
-                  <div className="flex space-x-1 cursor-pointer">
+                <div className="relative group mt-2 md:mt-0">
+                  <div className="flex space-x-1.5 cursor-pointer">
                     {getEmotionIcons(aiEmotion || undefined).slice(0, 3).map(({component: IconComponent, name: iconName}, index) => {
                       return (
-                        <span key={index} className="h-6 w-6 inline-block transition-colors"
+                        <span key={index} className="h-6 w-6 inline-block transition-transform hover:scale-110" 
                           style={{ color: getEmotionColor(iconName) }}
                         >
                           <IconComponent />
@@ -324,32 +318,36 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
                       );
                     })}
                   </div>
-                  <div className="absolute right-0 mt-2 w-64 p-3 bg-popover text-popover-foreground text-sm rounded-md shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-                    <div className="font-medium mb-1">AI Analysis Result</div>
+                  <div className="absolute right-0 mt-2 w-64 p-4 bg-popover text-popover-foreground text-sm rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 pointer-events-none">
+                    <div className="font-medium mb-1.5">AI 分析结果</div>
                     {aiEmotion && <p className="mb-1"><span className="font-medium">情绪:</span> {aiEmotion}</p>}
-                    {aiSummary && <p><span className="font-medium">摘要:</span> {aiSummary}</p>}
+                    {aiSummary && <p className="line-clamp-3"><span className="font-medium">摘要:</span> {aiSummary}</p>}
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="relative mb-6">
-            <p className="whitespace-pre-wrap text-base leading-relaxed text-foreground/80">{entry.content}</p>
+          <div className="relative mb-8">
+            <div className="whitespace-pre-wrap text-base leading-relaxed text-foreground/90 text-justify">
+              {entry.content.split('\n').map((line, index) => (
+                <p key={index} className="mb-2 last:mb-0">{line}</p>
+              ))}
+            </div>
           </div>
 
           {entry.images && entry.images.length > 0 && (
-            <div className={`grid gap-2 ${getGridClass(entry.images.length)}`}>
+            <div className={`grid gap-3 ${getGridClass(entry.images.length)}`}>
               {entry.images.map((image, index) => (
                 <div
                   key={index}
-                  className="relative aspect-square cursor-pointer overflow-hidden rounded-md"
+                  className="relative aspect-square cursor-pointer overflow-hidden rounded-lg shadow-sm transition-all duration-300 hover:shadow-md hover:scale-105"
                   onClick={() => setSelectedImageIndex(index)}
                 >
                   <img
                     src={image}
-                    alt={`Diary image ${index + 1}`}
-                    className="h-full w-full object-cover transition-transform hover:scale-105"
+                    alt={`日记图片 ${index + 1}`}
+                    className="h-full w-full object-cover transition-transform duration-700 hover:scale-110"
                   />
                 </div>
               ))}
@@ -357,12 +355,12 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
           )}
 
           {selectedImageIndex !== null && entry.images && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
               <div className="relative max-h-[90vh] max-w-[90vw]">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="absolute -left-12 top-1/2 -translate-y-1/2 text-white hover:bg-white/20"
+                  className="absolute -left-12 top-1/2 -translate-y-1/2 text-white hover:bg-white/20 transition-all"
                   onClick={() =>
                     setSelectedImageIndex(
                       (selectedImageIndex - 1 + entry.images!.length) % entry.images!.length
@@ -373,13 +371,13 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
                 </Button>
                 <img
                   src={entry.images[selectedImageIndex]}
-                  alt="Enlarged view"
-                  className="max-h-[90vh] max-w-[90vw] object-contain"
+                  alt="放大查看"
+                  className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
                 />
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="absolute -right-12 top-1/2 -translate-y-1/2 text-white hover:bg-white/20"
+                  className="absolute -right-12 top-1/2 -translate-y-1/2 text-white hover:bg-white/20 transition-all"
                   onClick={() =>
                     setSelectedImageIndex((selectedImageIndex + 1) % entry.images!.length)
                   }
@@ -389,7 +387,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="absolute -top-12 right-0 text-white hover:bg-white/20"
+                  className="absolute -top-12 right-0 text-white hover:bg-white/20 transition-all"
                   onClick={() => setSelectedImageIndex(null)}
                 >
                   <XIcon className="h-6 w-6" />
@@ -401,18 +399,18 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
       </Card>
       
       {error && (
-        <div className="bg-destructive/10 border border-destructive/50 rounded-md p-4 text-destructive">
+        <div className="bg-destructive/10 border border-destructive/50 rounded-lg p-4 text-destructive transition-all">
           <p className="font-medium">AI分析出错：</p>
           <p>{error}</p>
         </div>
       )}
       
-      <div className="flex justify-between mt-4">
+      <div className="flex justify-between mt-6">
         <Button 
           variant="outline" 
           onClick={() => previousEntry && onNavigateToEntry(previousEntry)}
           disabled={!previousEntry}
-          className="gap-2"
+          className="gap-2 transition-all hover:text-primary hover:bg-primary/5"
         >
           <ChevronLeftIcon className="h-4 w-4" />
           上一篇
@@ -421,7 +419,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
           variant="outline" 
           onClick={() => nextEntry && onNavigateToEntry(nextEntry)}
           disabled={!nextEntry}
-          className="gap-2"
+          className="gap-2 transition-all hover:text-primary hover:bg-primary/5"
         >
           下一篇
           <ChevronRightIcon className="h-4 w-4" />

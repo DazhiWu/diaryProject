@@ -16,6 +16,7 @@ import { PlusIcon, Trash2Icon, EditIcon, ChevronLeftIcon, ChevronRightIcon } fro
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog'
 import { Label } from './ui/label'
 import { toast } from 'sonner'
+import { useAuth } from '@/hooks/useAuth'
 import {
   fetchYearlySummary,
   fetchInvestmentImages,
@@ -39,6 +40,10 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   // 年份选择状态
   const [selectedYear, setSelectedYear] = useState('2024')
   const availableYears = ['2024', '2025']
+
+  // 认证状态
+  const auth = useAuth()
+  const { isAuthenticated, isAdmin, isViewer, isGuest } = auth
 
   // 状态管理
   const [yearlySummary, setYearlySummary] = useState<YearlySummaryType>({
@@ -452,14 +457,17 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <Card className="p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">重要事件</h2>
-              <Button
-                variant="default"
-                onClick={handleAddEvent}
-                className="gap-2"
-              >
-                <PlusIcon className="h-4 w-4" />
-                添加事件
-              </Button>
+              {/* 添加事件按钮 - 只有管理员才能显示 */}
+              {isAdmin && (
+                <Button
+                  variant="default"
+                  onClick={handleAddEvent}
+                  className="gap-2"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  添加事件
+                </Button>
+              )}
             </div>
             
             <div className="space-y-3">
@@ -483,22 +491,25 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                       </div>
                       <div className="text-base font-medium">{event.description}</div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEditEvent(event)}
-                      >
-                        <EditIcon className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteEvent(Number(event.id))}
-                      >
-                        <Trash2Icon className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {/* 事件操作按钮 - 只有管理员才能显示 */}
+                    {isAdmin && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEditEvent(event)}
+                        >
+                          <EditIcon className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteEvent(Number(event.id))}
+                        >
+                          <Trash2Icon className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -509,14 +520,17 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <Card className="p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">AI读后感</h2>
-              <Button
-                variant="default"
-                onClick={handleAddAnalysis}
-                className="gap-2"
-              >
-                <PlusIcon className="h-4 w-4" />
-                添加内容
-              </Button>
+              {/* 添加内容按钮 - 只有管理员才能显示 */}
+              {isAdmin && (
+                <Button
+                  variant="default"
+                  onClick={handleAddAnalysis}
+                  className="gap-2"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  添加内容
+                </Button>
+              )}
             </div>
             
             <div className="space-y-4">
@@ -527,22 +541,25 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 >
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="text-xl font-bold">{analysis.title}</h3>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEditAnalysis(analysis)}
-                      >
-                        <EditIcon className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteAnalysis(Number(analysis.id))}
-                      >
-                        <Trash2Icon className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {/* AI读后感操作按钮 - 只有管理员才能显示 */}
+                    {isAdmin && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEditAnalysis(analysis)}
+                        >
+                          <EditIcon className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteAnalysis(Number(analysis.id))}
+                        >
+                          <Trash2Icon className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   
                   <div className="mb-4">
@@ -633,20 +650,22 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   )}
                 </div>
                 
-                {/* 上传图片按钮始终显示 */}
-                <div className="flex justify-center">
-                  <div className="relative">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
-                    <Button variant="outline">
-                      上传图片
-                    </Button>
+                {/* 上传图片按钮 - 只有管理员才能显示 */}
+                {isAdmin && (
+                  <div className="flex justify-center">
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                      <Button variant="outline">
+                        上传图片
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </Card>
           )}

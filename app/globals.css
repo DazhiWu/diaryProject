@@ -4,34 +4,34 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(0.98 0.002 264);
-  --foreground: oklch(0.2 0.01 264);
+  --background: oklch(0.98 0.005 80);
+  --foreground: oklch(0.15 0.01 30);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.01 264);
+  --card-foreground: oklch(0.15 0.01 30);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.01 264);
-  --primary: oklch(0.35 0.08 264);
-  --primary-foreground: oklch(0.98 0.002 264);
-  --secondary: oklch(0.92 0.005 264);
-  --secondary-foreground: oklch(0.2 0.01 264);
-  --muted: oklch(0.95 0.005 264);
-  --muted-foreground: oklch(0.5 0.01 264);
-  --accent: oklch(0.88 0.01 264);
-  --accent-foreground: oklch(0.2 0.01 264);
+  --popover-foreground: oklch(0.15 0.01 30);
+  --primary: oklch(0.6 0.18 30);
+  --primary-foreground: oklch(0.98 0.005 80);
+  --secondary: oklch(0.93 0.01 60);
+  --secondary-foreground: oklch(0.15 0.01 30);
+  --muted: oklch(0.96 0.005 60);
+  --muted-foreground: oklch(0.5 0.01 30);
+  --accent: oklch(0.88 0.05 45);
+  --accent-foreground: oklch(0.15 0.01 30);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.88 0.005 264);
-  --input: oklch(0.88 0.005 264);
-  --ring: oklch(0.35 0.08 264);
+  --border: oklch(0.88 0.01 60);
+  --input: oklch(0.88 0.01 60);
+  --ring: oklch(0.6 0.18 30);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary: oklch(0.6 0.18 30);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
@@ -40,25 +40,25 @@
 }
 
 .dark {
-  --background: oklch(0.15 0.01 264);
-  --foreground: oklch(0.95 0.005 264);
-  --card: oklch(0.18 0.01 264);
-  --card-foreground: oklch(0.95 0.005 264);
-  --popover: oklch(0.18 0.01 264);
-  --popover-foreground: oklch(0.95 0.005 264);
-  --primary: oklch(0.65 0.12 264);
-  --primary-foreground: oklch(0.15 0.01 264);
-  --secondary: oklch(0.25 0.01 264);
-  --secondary-foreground: oklch(0.95 0.005 264);
-  --muted: oklch(0.22 0.01 264);
-  --muted-foreground: oklch(0.6 0.01 264);
-  --accent: oklch(0.28 0.015 264);
-  --accent-foreground: oklch(0.95 0.005 264);
+  --background: oklch(0.12 0.01 30);
+  --foreground: oklch(0.95 0.005 80);
+  --card: oklch(0.16 0.01 30);
+  --card-foreground: oklch(0.95 0.005 80);
+  --popover: oklch(0.16 0.01 30);
+  --popover-foreground: oklch(0.95 0.005 80);
+  --primary: oklch(0.65 0.15 45);
+  --primary-foreground: oklch(0.12 0.01 30);
+  --secondary: oklch(0.22 0.01 30);
+  --secondary-foreground: oklch(0.95 0.005 80);
+  --muted: oklch(0.18 0.01 30);
+  --muted-foreground: oklch(0.65 0.01 80);
+  --accent: oklch(0.25 0.02 45);
+  --accent-foreground: oklch(0.95 0.005 80);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.25 0.01 264);
-  --input: oklch(0.25 0.01 264);
-  --ring: oklch(0.65 0.12 264);
+  --border: oklch(0.22 0.01 30);
+  --input: oklch(0.22 0.01 30);
+  --ring: oklch(0.65 0.15 45);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -119,6 +119,36 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-serif;
   }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-sans font-medium tracking-tight;
+  }
+}
+
+/* 添加一些个性化的装饰效果 */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 20% 50%, rgba(255, 200, 100, 0.05) 0%, transparent 50%),
+              radial-gradient(circle at 80% 20%, rgba(255, 150, 50, 0.05) 0%, transparent 50%),
+              radial-gradient(circle at 40% 80%, rgba(200, 100, 50, 0.05) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* 添加平滑滚动效果 */
+html {
+  scroll-behavior: smooth;
+}
+
+/* 添加一些过渡效果 */
+* {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
 }
