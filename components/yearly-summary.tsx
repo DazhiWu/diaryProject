@@ -62,10 +62,10 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   
   // 事件视图模式：list（列表）或 timeline（时间轴）
-  const [eventViewMode, setEventViewMode] = useState<'list' | 'timeline'>('list')
+  const [eventViewMode, setEventViewMode] = useState<'list' | 'timeline'>('timeline')
   
   // AI读后感视图模式：card（卡片）或 screen（大屏）
-  const [analysisViewMode, setAnalysisViewMode] = useState<'card' | 'screen'>('card')
+  const [analysisViewMode, setAnalysisViewMode] = useState<'card' | 'screen'>('screen')
   
   // 当前选中的AI分析ID
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | number | null>(null)
@@ -386,7 +386,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
   }
 
-  // 处理投资图片
+  // 处理图片信息
   const handlePrevImage = () => {
     setCurrentImageIndex(prev => 
       prev === 0 ? 
@@ -477,6 +477,189 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </div>
       ) : (
         <>
+          {/* AI读后感栏目 */}
+          <Card className="p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">AI读后感</h2>
+              <div className="flex items-center gap-2">
+                {/* 视图切换按钮组 */}
+                <div className="flex bg-muted p-1 rounded-lg">
+                  <Button
+                    variant={analysisViewMode === 'card' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setAnalysisViewMode('card')}
+                    className="h-8 px-3"
+                  >
+                    卡片视图
+                  </Button>
+                  <Button
+                    variant={analysisViewMode === 'screen' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setAnalysisViewMode('screen')}
+                    className="h-8 px-3"
+                  >
+                    大屏视图
+                  </Button>
+                </div>
+                
+                {/* 添加内容按钮 - 只有管理员才能显示 */}
+                {isAdmin && (
+                  <Button
+                    variant="default"
+                    onClick={handleAddAnalysis}
+                    className="gap-2"
+                  >
+                    <PlusIcon className="h-4 w-4" />
+                    添加内容
+                  </Button>
+                )}
+              </div>
+            </div>
+            
+            {/* 根据视图模式渲染不同的AI读后感UI */}
+            {analysisViewMode === 'card' ? (
+              /* 卡片视图 */
+              <div className="space-y-4">
+                {yearlySummary.aiAnalyses.map((analysis) => (
+                  <div
+                    key={analysis.id}
+                    className="p-4 border rounded-lg"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="text-xl font-bold">{analysis.title}</h3>
+                      {/* AI读后感操作按钮 - 只有管理员才能显示 */}
+                      {isAdmin && (
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEditAnalysis(analysis)}
+                          >
+                            <EditIcon className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteAnalysis(Number(analysis.id))}
+                          >
+                            <Trash2Icon className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="mb-4">
+                      {analysis.content}
+                    </div>
+                    
+                    {analysis.opinions.length > 0 && (
+                      <div className="space-y-3">
+                        {analysis.opinions.map((opinion) => (
+                          <div key={opinion.id} className="p-3 bg-muted rounded-lg">
+                            <div>
+                              {opinion.content ? (
+                                <>
+                                  <strong>{opinion.content}</strong>：{opinion.analysis}
+                                </>
+                              ) : (
+                                opinion.analysis
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* 大屏视图 */
+              <div className="relative">
+                {yearlySummary.aiAnalyses.length > 0 ? (
+                  yearlySummary.aiAnalyses.slice(1, -1).map((analysis) => (
+                    <div
+                      key={analysis.id}
+                      className={`transition-all duration-500 ease-in-out ${selectedAnalysisId === analysis.id ? 'block' : 'hidden'}`}
+                    >
+                      {/* 大屏展示容器 - 包含所有内容 */}
+                      <div className="relative rounded-xl overflow-hidden bg-gradient-to-br from-orange-900/40 to-red-900/40 border border-orange-500/40 p-8 min-h-[500px] flex flex-col">
+                        {/* AI Deep Analysis 标签 */}
+                        <div className="flex justify-center mb-6">
+                          <div className="px-4 py-1 bg-orange-600/80 text-white rounded-full text-sm font-medium flex items-center gap-1">
+                            <span className="text-orange-300">✨</span>
+                            AI Deep Analysis
+                          </div>
+                        </div>
+                        
+                        {/* 选择分析内容 - 嵌入到显示框中 */}
+                        <div className="mb-8">
+                          <div className="flex flex-wrap gap-2 justify-center">
+                            {yearlySummary.aiAnalyses.slice(1, -1).map((item) => (
+                              <Button
+                                key={item.id}
+                                variant={selectedAnalysisId === item.id ? 'default' : 'outline'}
+                                onClick={() => {
+                                  setSelectedAnalysisId(item.id)
+                                  // 点击小标题按钮默认显示第一个观点内容
+                                  const firstOpinion = yearlySummary.aiAnalyses.find(anal => anal.id === item.id)?.opinions[0]
+                                  setSelectedOpinionId(firstOpinion?.id || null)
+                                }}
+                                className="px-4 py-2 bg-orange-800/50 hover:bg-orange-700/50 text-white border-orange-600/50"
+                              >
+                                {item.title.length > 2 ? item.title.substring(2) : item.title}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        {/* 中央标题 - 截取掉前两个中文 */}
+                        <h3 className="text-4xl font-bold text-center text-orange-200 mb-8">
+                          {analysis.title.length > 2 ? analysis.title.substring(2) : analysis.title}
+                        </h3>
+                        
+                        {/* 分析内容 - 垂直居中 */}
+                        <div className="flex-1 flex items-center justify-center text-center text-orange-100 text-lg leading-relaxed mb-8 px-8">
+                          {selectedOpinionId ? (
+                            analysis.opinions.find(op => op.id === selectedOpinionId)?.analysis || ''
+                          ) : (
+                            analysis.opinions.length > 0 ? analysis.opinions[0].analysis : analysis.content
+                          )}
+                        </div>
+                        
+                        {/* 底部标签按钮组 */}
+                        <div className="flex flex-wrap gap-2 justify-center">
+                          {analysis.opinions.map((opinion) => (
+                            <div 
+                              key={opinion.id} 
+                              className={`px-4 py-2 rounded-full text-sm transition-all cursor-pointer ${selectedOpinionId === opinion.id ? 'bg-orange-600/80 text-white' : 'bg-orange-800/50 hover:bg-orange-700/50 text-white'}`}
+                              onClick={() => setSelectedOpinionId(opinion.id)}
+                            >
+                              {opinion.content || opinion.analysis}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  /* 无数据提示 */
+                  <div className="flex flex-col items-center justify-center py-16 bg-muted rounded-lg">
+                    <p className="text-muted-foreground">暂无AI读后感数据</p>
+                    {isAdmin && (
+                      <Button
+                        variant="default"
+                        onClick={handleAddAnalysis}
+                        className="mt-4"
+                      >
+                        添加内容
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+
           {/* 重要事件栏目 */}
           <Card className="p-6">
             <div className="flex justify-between items-center mb-4">
@@ -667,193 +850,10 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             )}
           </Card>
 
-          {/* AI读后感栏目 */}
-          <Card className="p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold">AI读后感</h2>
-              <div className="flex items-center gap-2">
-                {/* 视图切换按钮组 */}
-                <div className="flex bg-muted p-1 rounded-lg">
-                  <Button
-                    variant={analysisViewMode === 'card' ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setAnalysisViewMode('card')}
-                    className="h-8 px-3"
-                  >
-                    卡片视图
-                  </Button>
-                  <Button
-                    variant={analysisViewMode === 'screen' ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setAnalysisViewMode('screen')}
-                    className="h-8 px-3"
-                  >
-                    大屏视图
-                  </Button>
-                </div>
-                
-                {/* 添加内容按钮 - 只有管理员才能显示 */}
-                {isAdmin && (
-                  <Button
-                    variant="default"
-                    onClick={handleAddAnalysis}
-                    className="gap-2"
-                  >
-                    <PlusIcon className="h-4 w-4" />
-                    添加内容
-                  </Button>
-                )}
-              </div>
-            </div>
-            
-            {/* 根据视图模式渲染不同的AI读后感UI */}
-            {analysisViewMode === 'card' ? (
-              /* 卡片视图 */
-              <div className="space-y-4">
-                {yearlySummary.aiAnalyses.map((analysis) => (
-                  <div
-                    key={analysis.id}
-                    className="p-4 border rounded-lg"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="text-xl font-bold">{analysis.title}</h3>
-                      {/* AI读后感操作按钮 - 只有管理员才能显示 */}
-                      {isAdmin && (
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEditAnalysis(analysis)}
-                          >
-                            <EditIcon className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDeleteAnalysis(Number(analysis.id))}
-                          >
-                            <Trash2Icon className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="mb-4">
-                      {analysis.content}
-                    </div>
-                    
-                    {analysis.opinions.length > 0 && (
-                      <div className="space-y-3">
-                        {analysis.opinions.map((opinion) => (
-                          <div key={opinion.id} className="p-3 bg-muted rounded-lg">
-                            <div>
-                              {opinion.content ? (
-                                <>
-                                  <strong>{opinion.content}</strong>：{opinion.analysis}
-                                </>
-                              ) : (
-                                opinion.analysis
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              /* 大屏视图 */
-              <div className="relative">
-                {yearlySummary.aiAnalyses.length > 0 ? (
-                  yearlySummary.aiAnalyses.slice(1, -1).map((analysis) => (
-                    <div
-                      key={analysis.id}
-                      className={`transition-all duration-500 ease-in-out ${selectedAnalysisId === analysis.id ? 'block' : 'hidden'}`}
-                    >
-                      {/* 大屏展示容器 - 包含所有内容 */}
-                      <div className="relative rounded-xl overflow-hidden bg-gradient-to-br from-orange-900/40 to-red-900/40 border border-orange-500/40 p-8 min-h-[500px] flex flex-col">
-                        {/* AI Deep Analysis 标签 */}
-                        <div className="flex justify-center mb-6">
-                          <div className="px-4 py-1 bg-orange-600/80 text-white rounded-full text-sm font-medium flex items-center gap-1">
-                            <span className="text-orange-300">✨</span>
-                            AI Deep Analysis
-                          </div>
-                        </div>
-                        
-                        {/* 选择分析内容 - 嵌入到显示框中 */}
-                        <div className="mb-8">
-                          <div className="flex flex-wrap gap-2 justify-center">
-                            {yearlySummary.aiAnalyses.slice(1, -1).map((item) => (
-                              <Button
-                                key={item.id}
-                                variant={selectedAnalysisId === item.id ? 'default' : 'outline'}
-                                onClick={() => {
-                                  setSelectedAnalysisId(item.id)
-                                  // 点击小标题按钮默认显示第一个观点内容
-                                  const firstOpinion = yearlySummary.aiAnalyses.find(anal => anal.id === item.id)?.opinions[0]
-                                  setSelectedOpinionId(firstOpinion?.id || null)
-                                }}
-                                className="px-4 py-2 bg-orange-800/50 hover:bg-orange-700/50 text-white border-orange-600/50"
-                              >
-                                {item.title.length > 2 ? item.title.substring(2) : item.title}
-                              </Button>
-                            ))}
-                          </div>
-                        </div>
-                        
-                        {/* 中央标题 - 截取掉前两个中文 */}
-                        <h3 className="text-4xl font-bold text-center text-orange-200 mb-8">
-                          {analysis.title.length > 2 ? analysis.title.substring(2) : analysis.title}
-                        </h3>
-                        
-                        {/* 分析内容 - 垂直居中 */}
-                        <div className="flex-1 flex items-center justify-center text-center text-orange-100 text-lg leading-relaxed mb-8 px-8">
-                          {selectedOpinionId ? (
-                            analysis.opinions.find(op => op.id === selectedOpinionId)?.analysis || ''
-                          ) : (
-                            analysis.opinions.length > 0 ? analysis.opinions[0].analysis : analysis.content
-                          )}
-                        </div>
-                        
-                        {/* 底部标签按钮组 */}
-                        <div className="flex flex-wrap gap-2 justify-center">
-                          {analysis.opinions.map((opinion) => (
-                            <div 
-                              key={opinion.id} 
-                              className={`px-4 py-2 rounded-full text-sm transition-all cursor-pointer ${selectedOpinionId === opinion.id ? 'bg-orange-600/80 text-white' : 'bg-orange-800/50 hover:bg-orange-700/50 text-white'}`}
-                              onClick={() => setSelectedOpinionId(opinion.id)}
-                            >
-                              {opinion.content || opinion.analysis}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  /* 无数据提示 */
-                  <div className="flex flex-col items-center justify-center py-16 bg-muted rounded-lg">
-                    <p className="text-muted-foreground">暂无AI读后感数据</p>
-                    {isAdmin && (
-                      <Button
-                        variant="default"
-                        onClick={handleAddAnalysis}
-                        className="mt-4"
-                      >
-                        添加内容
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
-
-          {/* 投资栏目 - 2024年度不显示 */}
+          {/* 图片栏目 - 2024年度不显示 */}
           {selectedYear !== '2024' && (
             <Card className="p-6">
-              <h2 className="text-2xl font-bold mb-4">投资</h2>
+              <h2 className="text-2xl font-bold mb-4">图片</h2>
               
               <div className="space-y-4">
                 {/* 显示图片轮播或加载状态 */}
