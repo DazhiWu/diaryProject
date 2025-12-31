@@ -72,7 +72,15 @@ function convertFromSupabaseAIAnalysisSection(section: any, opinions: any[]): AI
     id: section.id,
     title: section.title,
     content: section.content,
-    opinions: opinions.map(convertFromSupabaseAIAnalysisOpinion)
+    opinions: [...opinions]
+      .sort((a: any, b: any) => {
+        // 优先按照created_at排序，如果没有则按照id排序
+        if (a.created_at && b.created_at) {
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        }
+        return Number(a.id) - Number(b.id);
+      })
+      .map(convertFromSupabaseAIAnalysisOpinion)
   }
 }
 
@@ -156,6 +164,7 @@ export async function fetchYearlySummary(year: string): Promise<YearlySummary | 
       .from('ai_analysis_sections')
       .select('* , ai_analysis_opinions(*)')
       .eq('yearly_summary_id', summaryId)
+      .order('id', { ascending: true })
       .then(result => {
         console.log(`AI analysis fetch time: ${performance.now() - parallelStartTime}ms`)
         return result
@@ -174,11 +183,13 @@ export async function fetchYearlySummary(year: string): Promise<YearlySummary | 
       id: section.id,
       title: section.title,
       content: section.content,
-      opinions: section.ai_analysis_opinions.map((opinion: any) => ({
-        id: opinion.id,
-        content: opinion.content,
-        analysis: opinion.analysis
-      }))
+      opinions: section.ai_analysis_opinions
+        .sort((a: any, b: any) => Number(a.id) - Number(b.id))
+        .map((opinion: any) => ({
+          id: opinion.id,
+          content: opinion.content,
+          analysis: opinion.analysis
+        }))
     }))
     console.log(`Data processing time: ${performance.now() - processStartTime}ms`)
 
@@ -441,6 +452,7 @@ export async function updateAIAnalysisSection(sectionId: number, section: Omit<A
       .from('ai_analysis_opinions')
       .select('*')
       .eq('ai_analysis_section_id', sectionId)
+      .order('id', { ascending: true })
 
     if (opinionsError) throw opinionsError
 
