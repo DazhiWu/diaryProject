@@ -76,7 +76,15 @@ function convertFromSupabaseAIAnalysisSection(section: any, opinions: any[]): AI
     id: section.id,
     title: section.title,
     content: section.content,
-    opinions: opinions.map(convertFromSupabaseAIAnalysisOpinion)
+    opinions: [...opinions]
+      .sort((a: any, b: any) => {
+        // 优先按照created_at排序，如果没有则按照id排序
+        if (a.created_at && b.created_at) {
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        }
+        return Number(a.id) - Number(b.id);
+      })
+      .map(convertFromSupabaseAIAnalysisOpinion)
   }
 }
 

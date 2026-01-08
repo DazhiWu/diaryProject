@@ -335,14 +335,16 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         const validOpinions = analysisForm.opinions.filter(opinion => 
           opinion.content.trim() !== '' || opinion.analysis.trim() !== ''
         );
-        const newOpinions = await Promise.all(
-          validOpinions.map(async (opinion) => {
-            return await addAIAnalysisOpinion(Number(updatedAnalysis.id), {
-              content: opinion.content,
-              analysis: opinion.analysis
-            })
-          })
-        )
+        
+        // 顺序添加新观点，确保顺序一致
+        const newOpinions: any[] = [];
+        for (const opinion of validOpinions) {
+          const newOpinion = await addAIAnalysisOpinion(Number(updatedAnalysis.id), {
+            content: opinion.content,
+            analysis: opinion.analysis
+          });
+          newOpinions.push(newOpinion);
+        }
         
         updatedAnalysis.opinions = newOpinions
         
@@ -374,14 +376,16 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         const validOpinions = analysisForm.opinions.filter(opinion => 
           opinion.content.trim() !== '' || opinion.analysis.trim() !== ''
         );
-        const newOpinions = await Promise.all(
-          validOpinions.map(async (opinion) => {
-            return await addAIAnalysisOpinion(Number(updatedAnalysis.id), {
-              content: opinion.content,
-              analysis: opinion.analysis
-            })
-          })
-        )
+        
+        // 顺序添加新观点，确保顺序一致
+        const newOpinions: any[] = [];
+        for (const opinion of validOpinions) {
+          const newOpinion = await addAIAnalysisOpinion(Number(updatedAnalysis.id), {
+            content: opinion.content,
+            analysis: opinion.analysis
+          });
+          newOpinions.push(newOpinion);
+        }
         
         updatedAnalysis.opinions = newOpinions
         
