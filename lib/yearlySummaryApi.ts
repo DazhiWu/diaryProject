@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient'
+import { uploadImage, generateYearlyImagePath, getImageUrl } from './imageHandler'
 
 // 类型定义
 export interface ImportantEvent {
@@ -12,6 +13,7 @@ export interface AIAnalysisOpinion {
   id: string | number
   content: string
   analysis: string
+  created_at?: string
 }
 
 export interface AIAnalysisSection {
@@ -19,12 +21,14 @@ export interface AIAnalysisSection {
   title: string
   content: string
   opinions: AIAnalysisOpinion[]
+  created_at?: string
 }
 
 export interface InvestmentImage {
   id: string | number
   url: string
   alt: string
+  path: string
 }
 
 export interface YearlySummary {
@@ -84,17 +88,12 @@ function convertToSupabaseAIAnalysisSection(section: Omit<AIAnalysisSection, 'id
 }
 
 function convertFromSupabaseInvestmentImage(image: any): InvestmentImage {
+  const url = getImageUrl(image.storage_path, '2025_Summary_Images')
   return {
     id: image.id,
-    url: image.url,
-    alt: image.alt
-  }
-}
-
-function convertToSupabaseInvestmentImage(image: Omit<InvestmentImage, 'id'>): any {
-  return {
-    url: image.url,
-    alt: image.alt
+    url,
+    alt: `Yearly image ${image.id}`,
+    path: image.storage_path
   }
 }
 
@@ -156,6 +155,7 @@ export async function fetchYearlySummary(year: string): Promise<YearlySummary | 
       .from('ai_analysis_sections')
       .select('* , ai_analysis_opinions(*)')
       .eq('yearly_summary_id', summaryId)
+      .order('created_at', { ascending: true })
       .then(result => {
         console.log(`AI analysis fetch time: ${performance.now() - parallelStartTime}ms`)
         return result
@@ -174,11 +174,13 @@ export async function fetchYearlySummary(year: string): Promise<YearlySummary | 
       id: section.id,
       title: section.title,
       content: section.content,
-      opinions: section.ai_analysis_opinions.map((opinion: any) => ({
-        id: opinion.id,
-        content: opinion.content,
-        analysis: opinion.analysis
-      }))
+      opinions: section.ai_analysis_opinions
+        .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        .map((opinion: any) => ({
+          id: opinion.id,
+          content: opinion.content,
+          analysis: opinion.analysis
+        }))
     }))
     console.log(`Data processing time: ${performance.now() - processStartTime}ms`)
 
@@ -225,10 +227,10 @@ export async function fetchInvestmentImages(year: string): Promise<InvestmentIma
 
     const summaryId = summaryData.id
 
-    // 2. 获取投资图片
+    // 2. 获取投资图片（使用新的 yearly_images 表）
     const imagesStartTime = performance.now()
     const { data: imagesData, error: imagesError } = await supabase
-      .from('investment_images')
+      .from('yearly_images')
       .select('*')
       .eq('yearly_summary_id', summaryId)
       .order('created_at', { ascending: true })
@@ -441,6 +443,7 @@ export async function updateAIAnalysisSection(sectionId: number, section: Omit<A
       .from('ai_analysis_opinions')
       .select('*')
       .eq('ai_analysis_section_id', sectionId)
+      .order('created_at', { ascending: true })
 
     if (opinionsError) throw opinionsError
 
@@ -523,7 +526,7 @@ export async function deleteAIAnalysisOpinion(opinionId: number): Promise<void> 
 }
 
 // 添加投资图片
-export async function addInvestmentImage(year: string, image: Omit<InvestmentImage, 'id'>): Promise<InvestmentImage> {
+export async function addInvestmentImage(year: string, file: File): Promise<InvestmentImage> {
   try {
     // 获取年度总结ID，如果不存在则创建
     let summaryId: number
@@ -552,12 +555,28 @@ export async function addInvestmentImage(year: string, image: Omit<InvestmentIma
       summaryId = existingSummary.id
     }
 
-    // 插入新图片
+    // 获取现有图片数量以确定索引
+    const { data: existingImages, error: countError } = await supabase
+      .from('yearly_images')
+      .select('id', { count: 'exact' })
+      .eq('yearly_summary_id', summaryId)
+    
+    if (countError) throw countError
+    
+    const imageIndex = (existingImages?.length || 0) + 1
+
+    // 生成图片路径
+    const imagePath = generateYearlyImagePath(imageIndex)
+
+    // 上传图片到 Storage
+    const uploadResult = await uploadImage(file, imagePath, '2025_Summary_Images')
+
+    // 插入新图片记录到数据库
     const { data: newImage, error: newImageError } = await supabase
-      .from('investment_images')
+      .from('yearly_images')
       .insert([{
-        ...convertToSupabaseInvestmentImage(image),
-        yearly_summary_id: summaryId
+        yearly_summary_id: summaryId,
+        storage_path: uploadResult.path
       }])
       .select('*')
       .single()
@@ -572,11 +591,35 @@ export async function addInvestmentImage(year: string, image: Omit<InvestmentIma
 }
 
 // 更新投资图片
-export async function updateInvestmentImage(imageId: number, image: Omit<InvestmentImage, 'id'>): Promise<InvestmentImage> {
+export async function updateInvestmentImage(imageId: number, file: File): Promise<InvestmentImage> {
   try {
+    // 获取现有图片信息以确定索引
+    const { data: existingImage, error: getError } = await supabase
+      .from('yearly_images')
+      .select('*')
+      .eq('id', imageId)
+      .single()
+    
+    if (getError) throw getError
+
+    // 提取索引从现有路径
+    const pathParts = existingImage.storage_path.split('/')
+    const filename = pathParts[pathParts.length - 1]
+    const indexMatch = filename.match(/(\d+)\.webp/)
+    const imageIndex = indexMatch ? parseInt(indexMatch[1]) : 1
+
+    // 生成新图片路径
+    const imagePath = generateYearlyImagePath(imageIndex)
+
+    // 上传图片到 Storage
+    const uploadResult = await uploadImage(file, imagePath, '2025_Summary_Images')
+
+    // 更新图片记录
     const { data: updatedImage, error: updateError } = await supabase
-      .from('investment_images')
-      .update(convertToSupabaseInvestmentImage(image))
+      .from('yearly_images')
+      .update({
+        storage_path: uploadResult.path
+      })
       .eq('id', imageId)
       .select('*')
       .single()
@@ -594,7 +637,7 @@ export async function updateInvestmentImage(imageId: number, image: Omit<Investm
 export async function deleteInvestmentImage(imageId: number): Promise<void> {
   try {
     const { error: deleteError } = await supabase
-      .from('investment_images')
+      .from('yearly_images')
       .delete()
       .eq('id', imageId)
 

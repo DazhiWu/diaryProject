@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient'
 import { compressToUTF16, decompressFromUTF16 } from 'lz-string'
 import { AIAnalysisResult } from './aiAnalysis'
+import { uploadMultipleImages, generateDiaryImagePath } from './imageHandler'
 
 export type DiaryEntry = {
   id: number
@@ -17,7 +18,7 @@ export type SupabaseDiaryEntry = {
   date: string
   subtitle?: string | null
   content: string
-  images?: string[] | null
+  image_paths?: string[] | null
   modifiedAt?: string | null
   created_at?: string
 }
@@ -29,7 +30,7 @@ function convertFromSupabase(entry: SupabaseDiaryEntry): DiaryEntry {
     date: new Date(entry.date), // 直接使用UTC日期
     subtitle: entry.subtitle,
     content: entry.content,
-    images: entry.images,
+    images: entry.image_paths,
     modifiedAt: entry.modifiedAt ? new Date(entry.modifiedAt) : null,
     created_at: entry.created_at ? new Date(entry.created_at) : undefined,
   }
@@ -47,7 +48,7 @@ function convertToSupabase(entry: Partial<DiaryEntry>): Partial<SupabaseDiaryEnt
   
   result.subtitle = entry.subtitle;
   result.content = entry.content;
-  result.images = entry.images || null;
+  result.image_paths = entry.images || null;
   
   // Only include modifiedAt if it's provided
   if (entry.modifiedAt) {
@@ -299,6 +300,27 @@ export async function deleteDiaryEntry(id: number): Promise<void> {
     }
   } catch (error) {
     console.error('Failed to delete diary entry:', error)
+    throw error
+  }
+}
+
+/**
+ * 上传日记图片
+ * @param files 图片文件数组
+ * @param date 日记日期
+ * @returns 上传后的图片路径数组
+ */
+export async function uploadDiaryImages(files: File[], date: Date): Promise<string[]> {
+  try {
+    const uploadResults = await uploadMultipleImages(
+      files,
+      (index) => generateDiaryImagePath(date, index + 1),
+      '2024To2025_diary_images'
+    )
+    
+    return uploadResults.map(result => result.path)
+  } catch (error) {
+    console.error('上传日记图片失败:', error)
     throw error
   }
 }

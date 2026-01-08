@@ -23,11 +23,13 @@ import {
   insertDiaryEntry,
   updateDiaryEntry,
   deleteDiaryEntry,
+  uploadDiaryImages,
   isOnline,
   getLocalStorageBackup,
   saveLocalStorageBackup,
   type DiaryEntry as DiaryEntryType,
 } from "@/lib/diaryApi"
+import { getMultipleImageUrls } from "@/lib/imageHandler"
 
 // 确保Entry类型与DiaryEntry类型兼容
 export type Entry = {
@@ -41,12 +43,15 @@ export type Entry = {
 
 // 将DiaryEntryType转换为Entry类型
 function convertToEntry(diaryEntry: DiaryEntryType): Entry {
+  // 将图片路径转换为完整的URL
+  const imageUrls = getMultipleImageUrls(diaryEntry.images || [], '2024To2025_diary_images')
+  
   return {
     id: diaryEntry.id,
     date: diaryEntry.date,
     subtitle: diaryEntry.subtitle || `日记 ${diaryEntry.date.toLocaleDateString()}`,
     content: diaryEntry.content,
-    images: diaryEntry.images || [],
+    images: imageUrls,
     modifiedAt: diaryEntry.modifiedAt,
   }
 }
@@ -149,7 +154,16 @@ export default function DiaryApp() {
           debouncedSearchQuery
         )
         
-        setEntries(result.entries.map(convertToEntry))
+        // 将图片路径转换为完整的URL
+        const entriesWithUrls = result.entries.map(entry => {
+          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+          return {
+            ...convertToEntry(entry),
+            images: imageUrls
+          }
+        })
+        
+        setEntries(entriesWithUrls)
         setTotalEntriesCount(currentIsGuest ? 5 : result.totalCount) // 访客显示最多5条
         
         if (result.entries.length > 0 && currentCurrentPage === 1) {
@@ -165,15 +179,24 @@ export default function DiaryApp() {
           (entry.subtitle && entry.subtitle.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
         )
         
+        // 将图片路径转换为完整的URL
+        const entriesWithUrls = filteredOfflineEntries.map(entry => {
+          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+          return {
+            ...convertToEntry(entry),
+            images: imageUrls
+          }
+        })
+        
         const startIndex = currentIsGuest ? 0 : (currentCurrentPage - 1) * currentEntriesPerPage
         const endIndex = currentIsGuest ? 5 : startIndex + currentEntriesPerPage
-        const paginatedOfflineEntries = filteredOfflineEntries.slice(
+        const paginatedOfflineEntries = entriesWithUrls.slice(
           startIndex,
           endIndex
         )
         
-        setEntries(paginatedOfflineEntries.map(convertToEntry))
-        setTotalEntriesCount(currentIsGuest ? Math.min(5, filteredOfflineEntries.length) : filteredOfflineEntries.length)
+        setEntries(paginatedOfflineEntries)
+        setTotalEntriesCount(currentIsGuest ? Math.min(5, entriesWithUrls.length) : entriesWithUrls.length)
         
         if (localEntries.length > 0) {
           toast.warning("网络离线，显示本地缓存")
@@ -191,15 +214,24 @@ export default function DiaryApp() {
           (entry.subtitle && entry.subtitle.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
         )
       
+      // 将图片路径转换为完整的URL
+      const entriesWithUrls = filteredOfflineEntries.map(entry => {
+        const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+        return {
+          ...convertToEntry(entry),
+          images: imageUrls
+        }
+      })
+      
       const startIndex = currentIsGuest ? 0 : (currentCurrentPage - 1) * currentEntriesPerPage
       const endIndex = currentIsGuest ? 5 : startIndex + currentEntriesPerPage
-      const paginatedOfflineEntries = filteredOfflineEntries.slice(
+      const paginatedOfflineEntries = entriesWithUrls.slice(
         startIndex,
         endIndex
       )
       
-      setEntries(paginatedOfflineEntries.map(convertToEntry))
-      setTotalEntriesCount(currentIsGuest ? Math.min(5, filteredOfflineEntries.length) : filteredOfflineEntries.length)
+      setEntries(paginatedOfflineEntries)
+      setTotalEntriesCount(currentIsGuest ? Math.min(5, entriesWithUrls.length) : entriesWithUrls.length)
       
       if (localEntries.length > 0) {
         toast.error("加载失败，显示本地缓存")
@@ -236,7 +268,15 @@ export default function DiaryApp() {
         
         // 对于首页视图，仍然使用分页API获取完整数据
         const firstPageData = await fetchDiaryEntriesWithPagination(1, currentIsGuest ? 5 : currentEntriesPerPage, "")
-        setEntries(firstPageData.entries.map(convertToEntry))
+        // 将图片路径转换为完整的URL
+        const entriesWithUrls = firstPageData.entries.map(entry => {
+          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+          return {
+            ...convertToEntry(entry),
+            images: imageUrls
+          }
+        })
+        setEntries(entriesWithUrls)
         setTotalEntriesCount(currentIsGuest ? 5 : firstPageData.totalCount)
         
         // 可选：定期更新本地缓存，但不立即同步所有数据
@@ -249,25 +289,39 @@ export default function DiaryApp() {
       } else {
         // 离线模式使用本地缓存
         const localEntries = getLocalStorageBackup()
-        const convertedEntries = localEntries.map(convertToEntry)
-        setAllEntries(convertedEntries)
-        setEntries(convertedEntries.slice(0, currentIsGuest ? 5 : currentEntriesPerPage))
-        setTotalEntriesCount(currentIsGuest ? 5 : convertedEntries.length)
+        // 将图片路径转换为完整的URL
+        const entriesWithUrls = localEntries.map(entry => {
+          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+          return {
+            ...convertToEntry(entry),
+            images: imageUrls
+          }
+        })
+        setAllEntries(entriesWithUrls)
+        setEntries(entriesWithUrls.slice(0, currentIsGuest ? 5 : currentEntriesPerPage))
+        setTotalEntriesCount(currentIsGuest ? 5 : entriesWithUrls.length)
       }
     } catch (error) {
       console.error("Failed to load calendar entries:", error)
       // 失败时使用本地缓存
       const localEntries = getLocalStorageBackup()
-      const convertedEntries = localEntries.map(convertToEntry)
+      // 将图片路径转换为完整的URL
+      const entriesWithUrls = localEntries.map(entry => {
+        const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+        return {
+          ...convertToEntry(entry),
+          images: imageUrls
+        }
+      })
       // 确保在错误处理时也使用正确的认证状态
       const currentIsGuest = isGuest;
-      setAllEntries(convertedEntries)
-      setEntries(convertedEntries.slice(0, currentIsGuest ? 5 : entriesPerPage))
-      setTotalEntriesCount(currentIsGuest ? 5 : convertedEntries.length)
+      setAllEntries(entriesWithUrls)
+      setEntries(entriesWithUrls.slice(0, currentIsGuest ? 5 : entriesPerPage))
+      setTotalEntriesCount(currentIsGuest ? 5 : entriesWithUrls.length)
     }
   }
 
-  const addEntry = async (content: string, subtitle: string, date: Date, images: string[]) => {
+  const addEntry = async (content: string, subtitle: string, date: Date, files: File[]) => {
     const entryDate = date || new Date()
     const defaultSubtitle = subtitle ||
       entryDate.toLocaleString("en-US", {
@@ -280,12 +334,19 @@ export default function DiaryApp() {
 
     try {
       if (isOnline()) {
+        let imagePaths: string[] = []
+        
+        // 上传图片到 Supabase Storage
+        if (files.length > 0) {
+          imagePaths = await uploadDiaryImages(files, entryDate)
+        }
+        
         // Save to Supabase
         const result = await insertDiaryEntry({
           date: entryDate,
           subtitle: defaultSubtitle,
           content,
-          images,
+          images: imagePaths,
         })
         
         if (result.success && result.data) {
@@ -305,11 +366,11 @@ export default function DiaryApp() {
           date: entryDate,
           subtitle: defaultSubtitle,
           content,
-          images,
+          images: [], // 离线模式不保存图片
           modifiedAt: new Date()
         }
         setEntries([tempEntry, ...entries])
-        toast.warning("网络离线，日记已保存到本地")
+        toast.warning("网络离线，日记已保存到本地（图片未保存）")
       }
       setView("list")
       setCurrentPage(1) // 添加新日记后回到第一页
@@ -319,15 +380,22 @@ export default function DiaryApp() {
     }
   }
 
-  const updateEntry = async (id: number, content: string, subtitle: string, date: Date, images: string[]) => {
+  const updateEntry = async (id: number, content: string, subtitle: string, date: Date, files: File[]) => {
     try {
       if (isOnline()) {
+        let imagePaths: string[] = []
+        
+        // 上传图片到 Supabase Storage
+        if (files.length > 0) {
+          imagePaths = await uploadDiaryImages(files, date)
+        }
+        
         // Update in Supabase
         const updatedEntry = await updateDiaryEntry(id, {
           content,
           subtitle: subtitle,
           date: date,
-          images,
+          images: imagePaths,
         })
         const convertedUpdatedEntry = convertToEntry(updatedEntry)
         setEntries(entries.map((entry) => (entry.id === id ? convertedUpdatedEntry : entry)))
@@ -342,12 +410,12 @@ export default function DiaryApp() {
             content,
             subtitle: subtitle || existingEntry.subtitle,
             date: date || existingEntry.date,
-            images,
+            images: existingEntry.images, // 离线模式保持原有图片
             modifiedAt: new Date(),
           }
           setEntries(entries.map((entry) => (entry.id === id ? newEntry : entry)))
           setSelectedEntry(newEntry)
-          toast.warning("网络离线，更新已保存到本地")
+          toast.warning("网络离线，更新已保存到本地（图片未更新）")
         }
       }
       setView("detail")
@@ -517,7 +585,7 @@ export default function DiaryApp() {
         ) : view === "edit" && selectedEntry ? (
           <DiaryEntryComponent
             entry={selectedEntry}
-            onSave={(content, subtitle, date, images) => updateEntry(selectedEntry.id, content, subtitle, date, images)}
+            onSave={(content, subtitle, date, files) => updateEntry(selectedEntry.id, content, subtitle, date, files)}
             onCancel={() => setView("detail")}
           />
         ) : view === "detail" && selectedEntry ? (
@@ -572,7 +640,13 @@ export default function DiaryApp() {
       // 使用fetchDiaryEntryByDate函数获取完整的日记内容
       const fullEntry = await fetchDiaryEntryByDate(entry.date);
       if (fullEntry) {
-        setSelectedEntry(convertToEntry(fullEntry));
+        // 将图片路径转换为完整的URL
+        const imageUrls = getMultipleImageUrls(fullEntry.images || [], '2024To2025_diary_images')
+        const convertedEntry = {
+          ...convertToEntry(fullEntry),
+          images: imageUrls
+        }
+        setSelectedEntry(convertedEntry);
       } else {
         // 如果获取失败，使用当前entry（可能缺少content和images）
         setSelectedEntry(entry);

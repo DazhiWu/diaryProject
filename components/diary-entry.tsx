@@ -9,10 +9,11 @@ import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { ImageIcon, XIcon } from "@/components/icons"
 import type { Entry } from "@/app/page"
+import { toast } from "sonner"
 
 type DiaryEntryProps = {
   entry?: Entry
-  onSave: (content: string, subtitle: string, date: Date, images: string[]) => void
+  onSave: (content: string, subtitle: string, date: Date, files: File[]) => void
   onCancel: () => void
 }
 
@@ -22,7 +23,10 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
   const [date, setDate] = useState(
     entry?.date ? entry.date.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
   )
-  const [images, setImages] = useState<string[]>(entry?.images || [])
+  const [images, setImages] = useState<{ file: File | null; url: string }[]>(
+    entry?.images ? entry.images.map(url => ({ file: null, url })) : []
+  )
+  const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const maxDate = new Date().toISOString().split('T')[0]
@@ -36,9 +40,10 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
       const filesToProcess = fileArray.slice(0, remainingSlots)
 
       filesToProcess.forEach((file) => {
+        // 显示预览
         const reader = new FileReader()
         reader.onloadend = () => {
-          setImages((prev) => [...prev, reader.result as string])
+          setImages((prev) => [...prev, { file, url: reader.result as string }])
         }
         reader.readAsDataURL(file)
       })
@@ -57,7 +62,9 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
     if (content.trim()) {
       // 统一使用UTC时区处理日期
       const utcDate = new Date(date);
-      onSave(content, subtitle.trim(), utcDate, images)
+      // 提取文件对象（排除已有的 Storage URL）
+      const files = images.filter(img => img.file).map(img => img.file!).filter(Boolean)
+      onSave(content, subtitle.trim(), utcDate, files)
       setContent("")
       setSubtitle("")
       setDate(new Date().toISOString().split('T')[0])
@@ -114,7 +121,7 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
             {images.map((image, index) => (
               <div key={index} className="relative aspect-square">
                 <img
-                  src={image || "/placeholder.svg"}
+                  src={image.url || "/placeholder.svg"}
                   alt={`Upload ${index + 1}`}
                   className="h-full w-full rounded-lg object-cover"
                 />

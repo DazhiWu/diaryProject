@@ -37,9 +37,10 @@ function Calendar({
     originalChildren.forEach((child) => {
       if (React.isValidElement(child)) {
         // Check if it's a months dropdown or years dropdown
-        if (child.type.name === 'MonthsDropdown') {
+        const elementType = child.type as any;
+        if (elementType && elementType.displayName === 'MonthsDropdown') {
           dropdownMap.set('months', child);
-        } else if (child.type.name === 'YearsDropdown') {
+        } else if (elementType && elementType.displayName === 'YearsDropdown') {
           dropdownMap.set('years', child);
         } else {
           dropdownMap.set('other', (dropdownMap.get('other') || []).concat(child));

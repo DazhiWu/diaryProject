@@ -7,6 +7,7 @@ interface Opinion {
   id: string | number
   content: string
   analysis: string
+  created_at?: string
 }
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -345,12 +346,23 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         
         updatedAnalysis.opinions = newOpinions
         
-        setYearlySummary(prev => ({
-          ...prev,
-          aiAnalyses: prev.aiAnalyses.map(analysis => 
+        setYearlySummary(prev => {
+          const updatedAnalyses = prev.aiAnalyses.map(analysis => 
             analysis.id === editingAnalysis.id ? updatedAnalysis : analysis
           )
-        }))
+          // 按创建时间排序
+          updatedAnalyses.sort((a, b) => {
+            // 假设后端返回的数据包含created_at字段
+            const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
+            const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
+            return dateA - dateB
+          })
+          
+          return {
+            ...prev,
+            aiAnalyses: updatedAnalyses
+          }
+        })
       } else {
         // 添加新分析
         updatedAnalysis = await addAIAnalysisSection(selectedYear, {
@@ -373,10 +385,21 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         
         updatedAnalysis.opinions = newOpinions
         
-        setYearlySummary(prev => ({
-          ...prev,
-          aiAnalyses: [...prev.aiAnalyses, updatedAnalysis]
-        }))
+        setYearlySummary(prev => {
+          const updatedAnalyses = [...prev.aiAnalyses, updatedAnalysis]
+          // 按创建时间排序
+          updatedAnalyses.sort((a, b) => {
+            // 假设后端返回的数据包含created_at字段
+            const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
+            const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
+            return dateA - dateB
+          })
+          
+          return {
+            ...prev,
+            aiAnalyses: updatedAnalyses
+          }
+        })
       }
       setIsAnalysisDialogOpen(false)
       toast.success('保存AI读后感成功')
@@ -408,25 +431,16 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const file = event.target.files?.[0]
     if (file) {
       try {
-        const reader = new FileReader()
-        reader.onload = async (e) => {
-          const newImage = {
-            url: e.target?.result as string,
-            alt: file.name
-          }
-          
-          // 保存到数据库
-          const savedImage = await addInvestmentImage(selectedYear, newImage)
-          
-          // 更新本地状态
-          setYearlySummary(prev => ({
-            ...prev,
-            investmentImages: [...prev.investmentImages, savedImage]
-          }))
-          setCurrentImageIndex(yearlySummary.investmentImages.length)
-          toast.success('图片上传成功')
-        }
-        reader.readAsDataURL(file)
+        // 直接上传文件，不需要转换为base64
+        const savedImage = await addInvestmentImage(selectedYear, file)
+        
+        // 更新本地状态
+        setYearlySummary(prev => ({
+          ...prev,
+          investmentImages: [...prev.investmentImages, savedImage]
+        }))
+        setCurrentImageIndex(yearlySummary.investmentImages.length)
+        toast.success('图片上传成功')
       } catch (error) {
         console.error('Error uploading image:', error)
         toast.error('图片上传失败')
