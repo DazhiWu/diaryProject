@@ -62,7 +62,7 @@ export async function fetchAllDiaryEntries(): Promise<DiaryEntry[]> {
   try {
     const { data, error } = await supabase
       .from('diaryContent')
-      .select('*')
+      .select('id, date, subtitle, content, modifiedAt, image_paths, created_at')
       .order('date', { ascending: false })
 
     if (error) {
@@ -260,7 +260,7 @@ export async function updateDiaryEntry(id: number, entry: Partial<DiaryEntry>): 
       .from('diaryContent')
       .update(supabaseEntry)
       .eq('id', id)
-      .select('*')
+      .select('id, date, subtitle, content, modifiedAt, image_paths, created_at')
       .single()
 
     if (error) {

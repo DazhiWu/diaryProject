@@ -608,8 +608,9 @@ export default function DiaryApp() {
   }}
   // 使用内联表达式计算上一篇和下一篇日记
   previousEntry={(() => {
-    // 获取当前显示的日记列表，对于访客来说，这是最近5篇
-    const allowedEntries = entries;
+    // 对于已认证用户（viewer和admin），使用allEntries数组获取所有日记进行翻页
+    // 对于访客，使用entries数组（最近5篇）
+    const allowedEntries = isGuest ? entries : allEntries;
     
     // 按日期排序（从早到晚）
     const sortedEntries = [...allowedEntries].sort((a, b) => 
@@ -621,9 +622,9 @@ export default function DiaryApp() {
     return currentIndex > 0 ? sortedEntries[currentIndex - 1] : null;
   })()}
   nextEntry={(() => {
-    // 获取当前显示的日记列表，对于访客来说，这是最近5篇
-    const allowedEntries = entries;
-    
+    // 对于已认证用户（viewer和admin），使用allEntries数组获取所有日记进行翻页
+    // 对于访客，使用entries数组（最近5篇）
+    const allowedEntries = isGuest ? entries : allEntries;
     // 按日期排序（从早到晚）
     const sortedEntries = [...allowedEntries].sort((a, b) => 
       new Date(a.date).getTime() - new Date(b.date).getTime()

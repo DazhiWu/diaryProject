@@ -235,20 +235,39 @@ export async function fetchInvestmentImages(year: string): Promise<InvestmentIma
 
     const summaryId = summaryData.id
 
-    // 2. 获取投资图片（使用新的 yearly_images 表）
+    // 2. 获取年度图片（使用分页查询避免超时）
     const imagesStartTime = performance.now()
-    const { data: imagesData, error: imagesError } = await supabase
-      .from('yearly_images')
-      .select('*')
-      .eq('yearly_summary_id', summaryId)
-      .order('created_at', { ascending: true })
+    const pageSize = 10
+    let allImages: any[] = []
+    let page = 0
+    let hasMore = true
+
+    while (hasMore) {
+      const from = page * pageSize
+      const to = from + pageSize - 1
+
+      const { data: imagesData, error: imagesError } = await supabase
+        .from('yearly_images')
+        .select('id, yearly_summary_id, storage_path, created_at')
+        .eq('yearly_summary_id', summaryId)
+        .order('created_at', { ascending: true })
+        .range(from, to)
+
+      if (imagesError) throw imagesError
+
+      if (imagesData && imagesData.length > 0) {
+        allImages = allImages.concat(imagesData)
+        hasMore = imagesData.length === pageSize
+        page++
+      } else {
+        hasMore = false
+      }
+    }
     
-    console.log(`Images fetch time: ${performance.now() - imagesStartTime}ms`)
+    console.log(`Images fetch time: ${performance.now() - imagesStartTime}ms, Total images: ${allImages.length}`)
     console.log(`Total images fetch time for year ${year}: ${performance.now() - startTime}ms`)
 
-    if (imagesError) throw imagesError
-
-    return imagesData.map(convertFromSupabaseInvestmentImage)
+    return allImages.map(convertFromSupabaseInvestmentImage)
   } catch (error) {
     console.error('Error fetching investment images:', error)
     return []
@@ -586,7 +605,7 @@ export async function addInvestmentImage(year: string, file: File): Promise<Inve
         yearly_summary_id: summaryId,
         storage_path: uploadResult.path
       }])
-      .select('*')
+      .select('id, yearly_summary_id, storage_path, created_at')
       .single()
 
     if (newImageError) throw newImageError
@@ -604,7 +623,7 @@ export async function updateInvestmentImage(imageId: number, file: File): Promis
     // 获取现有图片信息以确定索引
     const { data: existingImage, error: getError } = await supabase
       .from('yearly_images')
-      .select('*')
+      .select('id, yearly_summary_id, storage_path, created_at')
       .eq('id', imageId)
       .single()
     

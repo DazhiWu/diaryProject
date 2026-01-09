@@ -13,11 +13,12 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { Card } from './ui/card'
-import { PlusIcon, Trash2Icon, EditIcon, ChevronLeftIcon, ChevronRightIcon } from './icons'
+import { PlusIcon, Trash2Icon, EditIcon, ChevronLeftIcon } from './icons'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog'
 import { Label } from './ui/label'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
+import MasonryPhotoGallery from './masonry-photo-gallery'
 import {
   fetchYearlySummary,
   fetchInvestmentImages,
@@ -58,9 +59,6 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [isLoading, setIsLoading] = useState(false)
   // 图片加载状态
   const [isImagesLoading, setIsImagesLoading] = useState(false)
-  
-  // 当前图片索引
-  const [currentImageIndex, setCurrentImageIndex] = useState(0)
   
   // 事件视图模式：list（列表）或 timeline（时间轴）
   const [eventViewMode, setEventViewMode] = useState<'list' | 'timeline'>('timeline')
@@ -109,7 +107,6 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           setSelectedAnalysisId(null)
           setSelectedOpinionId(null)
         }
-        setCurrentImageIndex(0)
       } catch (error) {
         console.error('Error loading yearly summary:', error)
         toast.error('加载年度总结失败')
@@ -133,7 +130,6 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             ...prev,
             investmentImages: images
           }))
-          setCurrentImageIndex(0)
         } catch (error) {
           console.error('Error loading investment images:', error)
           // 图片加载失败不显示错误提示，因为不影响核心功能
@@ -413,37 +409,17 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
   }
 
-  // 处理图片信息
-  const handlePrevImage = () => {
-    setCurrentImageIndex(prev => 
-      prev === 0 ? 
-        (yearlySummary.investmentImages.length || 0) - 1 : 
-        prev - 1
-    )
-  }
-
-  const handleNextImage = () => {
-    setCurrentImageIndex(prev => 
-      prev === (yearlySummary.investmentImages.length || 0) - 1 ? 
-        0 : 
-        prev + 1
-    )
-  }
-
   // 图片上传处理
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
       try {
-        // 直接上传文件，不需要转换为base64
         const savedImage = await addInvestmentImage(selectedYear, file)
         
-        // 更新本地状态
         setYearlySummary(prev => ({
           ...prev,
           investmentImages: [...prev.investmentImages, savedImage]
         }))
-        setCurrentImageIndex(yearlySummary.investmentImages.length)
         toast.success('图片上传成功')
       } catch (error) {
         console.error('Error uploading image:', error)
@@ -871,80 +847,37 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           {/* 图片栏目 - 2024年度不显示 */}
           {selectedYear !== '2024' && (
             <Card className="p-6">
-              <h2 className="text-2xl font-bold mb-4">图片</h2>
+              <h2 className="text-2xl font-bold mb-4">年度照片</h2>
               
               <div className="space-y-4">
-                {/* 显示图片轮播或加载状态 */}
-                <div className="relative">
-                  <div className="flex justify-center items-center mb-4">
-                    {/* 只有当图片数量大于1时才显示导航按钮 */}
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={handlePrevImage}
-                      className="absolute left-0"
-                      disabled={yearlySummary.investmentImages.length <= 1 || isImagesLoading}
-                    >
-                      <ChevronLeftIcon className="h-6 w-6" />
-                    </Button>
-                    
-                    <div className="w-full max-w-md aspect-video border rounded-lg overflow-hidden bg-muted relative">
-                      {/* 图片加载中状态 */}
-                      {isImagesLoading && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-muted">
-                          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                          <span className="ml-2 text-sm text-muted-foreground">图片加载中...</span>
-                        </div>
-                      )}
-                      
-                      {/* 图片内容 */}
-                      {!isImagesLoading && yearlySummary.investmentImages.length > 0 ? (
-                        <img
-                          src={yearlySummary.investmentImages[currentImageIndex].url}
-                          alt={yearlySummary.investmentImages[currentImageIndex].alt}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : !isImagesLoading && yearlySummary.investmentImages.length === 0 ? (
-                        <div className="h-full flex items-center justify-center">
-                          <span className="text-muted-foreground">暂无图片</span>
-                        </div>
-                      ) : null}
-                    </div>
-                    
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={handleNextImage}
-                      className="absolute right-0"
-                      disabled={yearlySummary.investmentImages.length <= 1 || isImagesLoading}
-                    >
-                      <ChevronRightIcon className="h-6 w-6" />
-                    </Button>
-                  </div>
-                  
-                  {/* 图片计数 - 只有当图片加载完成且有图片时才显示 */}
-                  {!isImagesLoading && yearlySummary.investmentImages.length > 0 && (
-                    <div className="text-center text-sm text-muted-foreground">
-                      {currentImageIndex + 1} / {yearlySummary.investmentImages.length}
-                    </div>
-                  )}
-                </div>
-                
-                {/* 上传图片按钮 - 只有管理员才能显示 */}
-                {isAdmin && (
-                  <div className="flex justify-center">
-                    <div className="relative">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                      />
-                      <Button variant="outline">
-                        上传图片
-                      </Button>
+                {isImagesLoading ? (
+                  <div className="flex justify-center items-center py-16">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                      <p className="text-muted-foreground">加载图片中...</p>
                     </div>
                   </div>
+                ) : (
+                  <>
+                    <MasonryPhotoGallery images={yearlySummary.investmentImages} />
+                    
+                    {/* 上传图片按钮 - 只有管理员才能显示 */}
+                    {isAdmin && (
+                      <div className="flex justify-center mt-6">
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageUpload}
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                          />
+                          <Button variant="outline">
+                            上传图片
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </Card>
