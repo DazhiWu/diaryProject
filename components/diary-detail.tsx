@@ -133,7 +133,10 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
       
       // 将AI生成的标题更新到数据库的diaryContent表
       console.log(`正在更新日记ID ${entry.id} 的标题到数据库...`);
-      await updateDiaryEntry(entry.id, { subtitle: data.summary });
+      await updateDiaryEntry(entry.id, { 
+        subtitle: data.summary, 
+        images: entry.images // 确保保留现有图片
+      });
       console.log(`日记标题更新到数据库成功`);
       
       // 重新从数据库获取最新的分析结果，确保数据一致性

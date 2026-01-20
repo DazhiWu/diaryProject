@@ -383,9 +383,11 @@ export default function DiaryApp() {
   const updateEntry = async (id: number, content: string, subtitle: string, date: Date, files: File[]) => {
     try {
       if (isOnline()) {
-        let imagePaths: string[] = []
+        // 查找现有日记条目以获取原始图片路径
+        const existingEntry = entries.find(e => e.id === id);
+        let imagePaths: string[] = existingEntry?.images || [];
         
-        // 上传图片到 Supabase Storage
+        // 只有当有新文件上传时才更新图片路径
         if (files.length > 0) {
           imagePaths = await uploadDiaryImages(files, date)
         }
