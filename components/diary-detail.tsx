@@ -9,7 +9,7 @@ import { SparklesIcon, SmileIcon, FrownIcon, HeartIcon, AlertCircleIcon, HelpCir
 import { MehIcon } from './icons'
 import type { Entry } from "@/app/page"
 import { useState, useEffect } from "react"
-import { analyzeDiaryWithAI } from "@/lib/aiAnalysis"
+
 import { saveAIAnalysis, getAIAnalysisForDiary, updateDiaryEntry } from "@/lib/diaryApi"
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/useAuth"
@@ -35,6 +35,10 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
   const [aiEmotion, setAiEmotion] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  // 翻译相关状态
+  const [isTranslating, setIsTranslating] = useState(false)
+  const [translatedContent, setTranslatedContent] = useState<string | null>(null)
+  const [showTranslation, setShowTranslation] = useState(false)
   
   // 直接使用useAuth钩子返回的认证状态
   const isAuthenticated = auth.isAuthenticated;
@@ -192,6 +196,42 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
     setDeleteDialogOpen(false);
   };
 
+  // 处理翻译操作
+  const handleTranslate = async () => {
+    setIsTranslating(true);
+    setError(null);
+    
+    try {
+      // 通过API路由调用翻译功能，避免在浏览器中暴露API密钥
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: entry.content }),
+      });
+
+      // 检查响应状态
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `翻译失败，状态码: ${response.status}`);
+      }
+
+      // 获取翻译结果
+      const data = await response.json();
+      setTranslatedContent(data.translation);
+      setShowTranslation(true);
+      toast.success("翻译完成！");
+    } catch (error: any) {
+      console.error("翻译失败:", error);
+      const errorMessage = error.message || "翻译失败，请稍后再试";
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
   // 格式化带有时区偏移的日期时间（保留加16小时的时区调整）
   const formatDateTimeWithOffset = (date: Date): string => {
     // 创建日期副本以避免修改原始日期
@@ -248,6 +288,18 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
               >
                 <SparklesIcon className="h-4 w-4" />
                 {isAnalyzing ? "分析中..." : "AI分析"}
+              </Button>
+              
+              {/* 翻译按钮 */}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleTranslate}
+                className="gap-2 hover:text-primary hover:bg-primary/5"
+                disabled={isTranslating}
+              >
+                <BookOpenIcon className="h-4 w-4" />
+                {isTranslating ? "翻译中..." : "翻译英语"}
               </Button>
               
               {/* 添加测试环境配置的按钮 */}
@@ -332,10 +384,36 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
           </div>
 
           <div className="relative mb-8">
+            {/* 翻译切换按钮 */}
+            {translatedContent && (
+              <div className="flex justify-end mb-4">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setShowTranslation(!showTranslation)}
+                  className="gap-2 hover:text-primary transition-colors"
+                >
+                  {showTranslation ? '查看原文' : '查看翻译'}
+                </Button>
+              </div>
+            )}
+            
+            {/* 日记内容显示 */}
             <div className="whitespace-pre-wrap text-base leading-relaxed text-foreground/90 text-justify">
-              {entry.content.split('\n').map((line, index) => (
-                <p key={index} className="mb-2 last:mb-0">{line}</p>
-              ))}
+              {showTranslation && translatedContent ? (
+                // 显示翻译内容
+                <div className="mb-4">
+                  <p className="text-sm text-muted-foreground mb-2">英文翻译：</p>
+                  {translatedContent.split('\n').map((line, index) => (
+                    <p key={index} className="mb-2 last:mb-0">{line}</p>
+                  ))}
+                </div>
+              ) : (
+                // 显示原文
+                entry.content.split('\n').map((line, index) => (
+                  <p key={index} className="mb-2 last:mb-0">{line}</p>
+                ))
+              )}
             </div>
           </div>
 

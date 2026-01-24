@@ -134,6 +134,95 @@ ${content}
 }
 
 
+/**
+ * 使用ModelScope大语言模型将中文日记内容翻译为英文
+ * @param content 中文日记内容
+ * @returns 英文翻译结果
+ */
+export async function translateDiaryContent(content: string): Promise<string> {
+  try {
+    console.log('开始翻译日记内容，使用API密钥:', MODELSCOPE_API_KEY ? '已设置' : '未设置');
+    
+    // 构造翻译提示词，要求将中文日记内容准确翻译成流畅的英文
+    const prompt = `请将以下中文日记内容准确、流畅地翻译成英文。保持原文的语气和情感，确保翻译质量。
+
+日记内容：
+${content}
+
+请直接返回英文翻译结果，不要添加任何额外的解释或说明。`;
+
+    console.log('发送翻译请求到ModelScope API...');
+    console.log('使用的模型: deepseek-ai/DeepSeek-V3.2');
+    
+    const response = await (client.chat.completions.create as any)({
+      model: 'deepseek-ai/DeepSeek-V3.2',
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      stream: false,
+      extra_body: {
+        enable_thinking: true
+      }
+    });
+
+    console.log('收到翻译API响应:', JSON.stringify(response, null, 2));
+    
+    // 获取AI响应
+    const aiResponse = response.choices[0]?.message?.content;
+    
+    if (!aiResponse) {
+      throw new Error('翻译未返回有效结果');
+    }
+
+    console.log('翻译结果:', aiResponse);
+    
+    // 返回翻译结果，去除可能的首尾空白
+    return aiResponse.trim();
+  } catch (error: any) {
+    console.error('翻译过程中发生错误:', error);
+    
+    // 提供更具体的错误信息
+    if (error.message) {
+      console.error('错误详情:', error.message);
+    }
+    
+    if (error.cause) {
+      console.error('错误原因:', error.cause);
+    }
+    
+    // 检查是否是网络连接问题
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
+      throw new Error('网络连接错误，请检查网络连接或稍后重试');
+    }
+    
+    // 检查是否是认证问题
+    if ((error.response && error.response.status === 401) || error.status === 401) {
+      throw new Error('API认证失败，请检查API密钥是否正确');
+    }
+    
+    // 检查是否是API配额问题
+    if ((error.response && error.response.status === 429) || error.status === 429) {
+      throw new Error('API调用次数超限，请稍后重试');
+    }
+    
+    // 检查是否是其他HTTP错误
+    if (error.response) {
+      console.error('HTTP错误状态:', error.response.status);
+      console.error('HTTP错误数据:', error.response.data);
+      throw new Error(`API调用失败，状态码: ${error.response.status}`);
+    } else if (error.status) {
+      console.error('HTTP错误状态:', error.status);
+      throw new Error(`API调用失败，状态码: ${error.status}`);
+    }
+    
+    throw new Error('翻译失败，请稍后重试');
+  }
+}
+
+
 
 /**
  * 从非结构化文本中提取信息
