@@ -792,7 +792,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                               
                               <div className="flex items-center justify-between text-sm text-primary mb-4">
                                 <span className="font-semibold">{timeRange}</span>
-                                <span className="px-3 py-1 bg-primary/10 text-primary text-xs rounded-full">生活</span>
+                                <span className="px-3 py-1 bg-primary/10 text-primary text-xs rounded-full">生活❤</span>
                               </div>
                               <h3 className="text-xl font-bold mb-4 text-foreground">{title}</h3>
                               {detail && (
@@ -819,7 +819,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                               
                               <div className="flex items-center justify-between text-sm text-primary mb-4">
                                 <span className="font-semibold">{timeRange}</span>
-                                <span className="px-3 py-1 bg-primary/10 text-primary text-xs rounded-full">成就</span>
+                                <span className="px-3 py-1 bg-primary/10 text-primary text-xs rounded-full">成就⭐</span>
                               </div>
                               <h3 className="text-xl font-bold mb-4 text-foreground">{title}</h3>
                               {detail && (
