@@ -30,6 +30,7 @@ import {
   type DiaryEntry as DiaryEntryType,
 } from "@/lib/diaryApi"
 import { getMultipleImageUrls } from "@/lib/imageHandler"
+import { supabase } from "@/lib/supabaseClient"
 
 // 确保Entry类型与DiaryEntry类型兼容
 export type Entry = {
@@ -383,9 +384,14 @@ export default function DiaryApp() {
   const updateEntry = async (id: number, content: string, subtitle: string, date: Date, files: File[]) => {
     try {
       if (isOnline()) {
-        // 查找现有日记条目以获取原始图片路径
-        const existingEntry = entries.find(e => e.id === id);
-        let imagePaths: string[] = existingEntry?.images || [];
+        // 直接从数据库获取最新的条目信息，确保使用原始的相对路径
+        const { data: currentEntry, error } = await supabase
+          .from('diaryContent')
+          .select('image_paths')
+          .eq('id', id)
+          .single();
+          
+        let imagePaths: string[] = currentEntry?.image_paths || [];
         
         // 只有当有新文件上传时才更新图片路径
         if (files.length > 0) {
@@ -407,12 +413,15 @@ export default function DiaryApp() {
         // Offline mode
         const existingEntry = entries.find((entry) => entry.id === id)
         if (existingEntry) {
+          // 离线模式下，我们只能使用本地存储的路径
+          // 为了避免问题，我们需要确保只保存相对路径
+          // 这里我们简单地保持原有图片路径不变
           const newEntry = {
             ...existingEntry,
             content,
             subtitle: subtitle || existingEntry.subtitle,
             date: date || existingEntry.date,
-            images: existingEntry.images, // 离线模式保持原有图片
+            images: existingEntry.images,
             modifiedAt: new Date(),
           }
           setEntries(entries.map((entry) => (entry.id === id ? newEntry : entry)))

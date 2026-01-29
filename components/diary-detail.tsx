@@ -11,6 +11,7 @@ import type { Entry } from "@/app/page"
 import { useState, useEffect } from "react"
 
 import { saveAIAnalysis, getAIAnalysisForDiary, updateDiaryEntry } from "@/lib/diaryApi"
+import { supabase } from "@/lib/supabaseClient"
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/useAuth"
 import { AuthDialog } from "@/components/auth-dialog"
@@ -137,9 +138,16 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
       
       // 将AI生成的标题更新到数据库的diaryContent表
       console.log(`正在更新日记ID ${entry.id} 的标题到数据库...`);
+      // 直接从数据库获取最新的条目信息，确保使用原始的相对路径
+      const { data: currentEntry, error } = await supabase
+        .from('diaryContent')
+        .select('image_paths')
+        .eq('id', entry.id)
+        .single();
+      
       await updateDiaryEntry(entry.id, { 
         subtitle: data.summary, 
-        images: entry.images // 确保保留现有图片
+        images: currentEntry?.image_paths || [] // 确保使用原始的相对路径
       });
       console.log(`日记标题更新到数据库成功`);
       
