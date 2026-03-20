@@ -8,9 +8,10 @@ import { SearchBar } from "@/components/search-bar"
 import { DiaryDetail } from "@/components/diary-detail"
 import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
-import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon, DownloadIcon } from "@/components/icons"
+import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon, DownloadIcon, MessageSquareIcon } from "@/components/icons"
 import DiaryDownloader from "@/components/diary-downloader"
 import YearlySummary from "@/components/yearly-summary"
+import { MessageBoard } from "@/components/message-board"
 import { toast } from "sonner"
 import { Spinner } from "@/components/ui/spinner"
 import { AuthDialog } from "@/components/auth-dialog"
@@ -61,7 +62,7 @@ export default function DiaryApp() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [allEntries, setAllEntries] = useState<Entry[]>([]) // 用于日历视图的所有条目
   const [totalEntriesCount, setTotalEntriesCount] = useState(0)
-  const [view, setView] = useState<"list" | "calendar" | "new" | "detail" | "edit" | "download" | "yearly-summary">("list")
+  const [view, setView] = useState<"list" | "calendar" | "new" | "detail" | "edit" | "download" | "yearly-summary" | "message-board">("list")
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -533,23 +534,24 @@ export default function DiaryApp() {
       <AuthDialog open={isAuthDialogOpen} onOpenChange={setIsAuthDialogOpen} />
 
       <main className="mx-auto max-w-4xl px-4 py-8">
-        {/* 列表和日历视图下的内容 */}
-        {(view === "list" || view === "calendar") && (
-          <div className="mb-6 space-y-4">
-            {/* 搜索栏仅在非访客下可见 */}
-            {!isGuest && (
-              <SearchBar
-                value={searchQuery}
-                onChange={setSearchQuery}
-                onClear={() => {
-                  setSearchQuery("")
-                  setSelectedDate(null)
-                }}
-              />
-            )}
+        {/* 搜索栏 - 仅在列表/日历视图且非访客时显示 */}
+        {(view === "list" || view === "calendar") && !isGuest && (
+          <div className="mb-4">
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onClear={() => {
+                setSearchQuery("")
+                setSelectedDate(null)
+              }}
+            />
+          </div>
+        )}
 
-            {/* 视图切换按钮对所有用户可见 */}
-            <div className="flex gap-2">
+        {/* 视图切换按钮 - 在列表、日历和留言板视图下显示 */}
+        {(view === "list" || view === "calendar" || view === "message-board") && (
+          <div className="mb-6">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant={view === "list" ? "default" : "outline"}
                 size="sm"
@@ -570,6 +572,17 @@ export default function DiaryApp() {
               >
                 <CalendarIcon className="h-4 w-4" />
                 日历视图
+              </Button>
+              <Button
+                variant={view === "message-board" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("message-board")}
+                disabled={!isAdmin}
+                className="gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={isAdmin ? "留言板" : "需要管理员权限"}
+              >
+                <MessageSquareIcon className="h-4 w-4" />
+                留言板
               </Button>
             </div>
           </div>
@@ -787,6 +800,8 @@ export default function DiaryApp() {
               <DiaryDownloader />
             ) : view === "yearly-summary" ? (
               <YearlySummary onBack={() => setView("list")} />
+            ) : view === "message-board" ? (
+              <MessageBoard />
             ) : (
               <div className="text-center py-12 text-muted-foreground">
                 未知视图
