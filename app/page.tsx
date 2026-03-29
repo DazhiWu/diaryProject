@@ -8,10 +8,11 @@ import { SearchBar } from "@/components/search-bar"
 import { DiaryDetail } from "@/components/diary-detail"
 import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
-import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon, DownloadIcon, MessageSquareIcon } from "@/components/icons"
+import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon, DownloadIcon, MessageSquareIcon, SettingsIcon } from "@/components/icons"
 import DiaryDownloader from "@/components/diary-downloader"
 import YearlySummary from "@/components/yearly-summary"
 import { MessageBoard } from "@/components/message-board"
+import { HealthConditionDialog } from "@/components/health-condition-dialog"
 import { toast } from "sonner"
 import { Spinner } from "@/components/ui/spinner"
 import { AuthDialog } from "@/components/auth-dialog"
@@ -70,6 +71,7 @@ export default function DiaryApp() {
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false)
+  const [isHealthConditionDialogOpen, setIsHealthConditionDialogOpen] = useState(false)
   // 定义最小日期为2024年11月1日
   const minDate = new Date(2024, 10, 1)
   // 确保初始日历日期不早于最小日期
@@ -532,6 +534,9 @@ export default function DiaryApp() {
       
       {/* 认证对话框移到header附近，确保在任何视图下都能显示 */}
       <AuthDialog open={isAuthDialogOpen} onOpenChange={setIsAuthDialogOpen} />
+      
+      {/* 生病异常设置对话框 */}
+      <HealthConditionDialog open={isHealthConditionDialogOpen} onOpenChange={setIsHealthConditionDialogOpen} />
 
       <main className="mx-auto max-w-4xl px-4 py-8">
         {/* 搜索栏 - 仅在列表/日历视图且非访客时显示 */}
@@ -584,6 +589,17 @@ export default function DiaryApp() {
                 <MessageSquareIcon className="h-4 w-4" />
                 留言板
               </Button>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleProtectedAction(() => setIsHealthConditionDialogOpen(true), "设置生病异常")}
+                  className="gap-2"
+                >
+                  <SettingsIcon className="h-4 w-4" />
+                  生病异常设置
+                </Button>
+              )}
             </div>
           </div>
         )}

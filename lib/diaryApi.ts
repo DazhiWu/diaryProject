@@ -3,6 +3,121 @@ import { compressToUTF16, decompressFromUTF16 } from 'lz-string'
 import { AIAnalysisResult } from './aiAnalysis'
 import { uploadMultipleImages, generateDiaryImagePath } from './imageHandler'
 
+// 健康状况类型定义
+export type HealthCondition = {
+  id: string
+  condition: string
+  startDate: Date
+  endDate: Date
+  color: string
+  created_at?: Date
+}
+
+export type SupabaseHealthCondition = {
+  id: string
+  condition: string
+  start_date: string
+  end_date: string
+  color: string
+  created_at: string
+}
+
+// 健康状况数据转换函数
+function convertHealthConditionFromSupabase(item: SupabaseHealthCondition): HealthCondition {
+  return {
+    id: item.id,
+    condition: item.condition,
+    startDate: new Date(item.start_date),
+    endDate: new Date(item.end_date),
+    color: item.color,
+    created_at: new Date(item.created_at)
+  }
+}
+
+function convertHealthConditionToSupabase(condition: Partial<HealthCondition>): Partial<SupabaseHealthCondition> {
+  const result: Partial<SupabaseHealthCondition> = {}
+  
+  if (condition.condition) {
+    result.condition = condition.condition
+  }
+  
+  if (condition.startDate) {
+    result.start_date = condition.startDate.toISOString().split('T')[0]
+  }
+  
+  if (condition.endDate) {
+    result.end_date = condition.endDate.toISOString().split('T')[0]
+  }
+  
+  if (condition.color) {
+    result.color = condition.color
+  }
+  
+  return result
+}
+
+// 获取所有健康状况
+export async function fetchHealthConditions(): Promise<HealthCondition[]> {
+  try {
+    const { data, error } = await supabase
+      .from('health_conditions')
+      .select('*')
+      .order('created_at', { ascending: false })
+    
+    if (error) {
+      console.error('Error fetching health conditions:', error)
+      throw error
+    }
+    
+    return data ? data.map(convertHealthConditionFromSupabase) : []
+  } catch (error) {
+    console.error('Failed to fetch health conditions:', error)
+    return []
+  }
+}
+
+// 添加健康状况
+export async function insertHealthCondition(condition: Omit<HealthCondition, 'id' | 'created_at'>): Promise<HealthCondition> {
+  try {
+    const supabaseCondition = convertHealthConditionToSupabase(condition)
+    const newId = Date.now().toString()
+    
+    const { data, error } = await supabase
+      .from('health_conditions')
+      .insert([{ ...supabaseCondition, id: newId }])
+      .select('*')
+      .single()
+    
+    if (error) {
+      console.error('Error inserting health condition:', error)
+      throw error
+    }
+    
+    return convertHealthConditionFromSupabase(data)
+  } catch (error) {
+    console.error('Failed to insert health condition:', error)
+    throw error
+  }
+}
+
+// 删除健康状况
+export async function deleteHealthCondition(id: string): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('health_conditions')
+      .delete()
+      .eq('id', id)
+    
+    if (error) {
+      console.error('Error deleting health condition:', error)
+      throw error
+    }
+  } catch (error) {
+    console.error('Failed to delete health condition:', error)
+    throw error
+  }
+}
+
 export type DiaryEntry = {
   id: number
   date: Date

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ChevronLeftIcon, ChevronRightIcon, SprayIcon } from "@/components/icons"
 import type { Entry } from "@/app/page"
 import { cn } from "@/lib/utils"
+import { useHealthConditions, type HealthCondition } from "@/hooks/useHealthConditions"
 
 type CalendarViewProps = {
   entries: Entry[]
@@ -15,8 +16,28 @@ type CalendarViewProps = {
   onDateSelect: (date: Date) => void
 }
 
+// 渲染颜色原点组件 - 统一显示在左上角
+function ConditionIndicators({ conditions }: { conditions: HealthCondition[] }) {
+  if (conditions.length === 0) return null
+
+  // 所有颜色原点都显示在左上角，并列显示
+  return (
+    <div className="absolute top-1 left-1 flex gap-0.5 z-10">
+      {conditions.map((cond) => (
+        <div
+          key={cond.id}
+          className="w-2.5 h-2.5 rounded-full border"
+          style={{ backgroundColor: cond.color, borderColor: cond.color }}
+        />
+      ))}
+    </div>
+  )
+}
+
 export function CalendarView({ entries, currentDate, onDateChange, onDateSelect }: CalendarViewProps) {
 
+  const { conditions, getAllConditionsForDate } = useHealthConditions()
+  
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
   
@@ -54,6 +75,12 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
     )
   }
 
+  // 检查某天是否有健康异常
+  const getHealthConditionsForDate = (day: number) => {
+    const date = new Date(year, month, day)
+    return getAllConditionsForDate(date)
+  }
+
   const days = []
   for (let i = 0; i < startingDayOfWeek; i++) {
     days.push(<div key={`empty-${i}`} className="aspect-square" />)
@@ -64,6 +91,8 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
     const date = new Date(year, month, day)
     const isToday = date.toDateString() === new Date().toDateString()
     const isBeforeMinDate = date < minDate
+    const healthConditions = getHealthConditionsForDate(day)
+    const hasConditions = healthConditions.length > 0
 
     days.push(
       <button
@@ -73,16 +102,30 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
           "relative aspect-square rounded-lg border border-border p-2 text-sm transition-colors",
           isToday && "border-primary bg-primary/5",
           hasEntry && "font-semibold",
-          isBeforeMinDate ? "cursor-not-allowed opacity-50 text-muted-foreground" : "hover:bg-accent",
+          isBeforeMinDate 
+            ? "cursor-not-allowed opacity-50 text-muted-foreground" 
+            : "hover:bg-accent hover:text-accent-foreground cursor-pointer"
         )}
         disabled={isBeforeMinDate}
       >
-        <span className={cn("text-foreground", isBeforeMinDate && "text-muted-foreground")}>{day}</span>
-        {hasEntry && !isBeforeMinDate && (
-          <div className="absolute bottom-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-primary" />
+        {/* 日期数字 */}
+        <span className={cn("text-foreground relative z-10", isBeforeMinDate && "text-muted-foreground")}>
+          {day}
+        </span>
+
+        {/* 多病症颜色标识 */}
+        {hasConditions && !isBeforeMinDate && (
+          <ConditionIndicators conditions={healthConditions} />
         )}
+
+        {/* 日记条目指示器 */}
+        {hasEntry && !isBeforeMinDate && (
+          <div className="absolute bottom-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-primary z-10" />
+        )}
+
+        {/* ASMR 标记 */}
         {hasAsmrEntryOnDate(day) && !isBeforeMinDate && (
-          <div className="absolute top-1 right-1 text-primary">
+          <div className="absolute top-1 right-1 text-primary z-10">
             <SprayIcon className="h-3 w-3" />
           </div>
         )}
@@ -186,6 +229,23 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
           </Button>
         </div>
       </div>
+
+      {/* 图例区域 */}
+      {conditions.length > 0 && (
+        <div className="mb-4 p-3 bg-muted/20 rounded-lg">
+          <div className="flex flex-wrap gap-3">
+            {conditions.map((condition) => (
+              <div key={condition.id} className="flex items-center gap-2">
+                <div
+                  className="w-4 h-4 rounded-full border"
+                  style={{ backgroundColor: condition.color }}
+                />
+                <span className="text-sm text-muted-foreground">{condition.condition}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-2 grid grid-cols-7 gap-2">
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
