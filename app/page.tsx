@@ -12,6 +12,7 @@ import { BookOpenIcon, CalendarIcon, ListIcon, PlusIcon, DownloadIcon, MessageSq
 import DiaryDownloader from "@/components/diary-downloader"
 import YearlySummary from "@/components/yearly-summary"
 import { MessageBoard } from "@/components/message-board"
+import { AnonymousMessageBoard } from "@/components/anonymous-message-board"
 import { HealthConditionDialog } from "@/components/health-condition-dialog"
 import { toast } from "sonner"
 import { Spinner } from "@/components/ui/spinner"
@@ -63,7 +64,7 @@ export default function DiaryApp() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [allEntries, setAllEntries] = useState<Entry[]>([]) // 用于日历视图的所有条目
   const [totalEntriesCount, setTotalEntriesCount] = useState(0)
-  const [view, setView] = useState<"list" | "calendar" | "new" | "detail" | "edit" | "download" | "yearly-summary" | "message-board">("list")
+  const [view, setView] = useState<"list" | "calendar" | "new" | "detail" | "edit" | "download" | "yearly-summary" | "message-board" | "anonymous-message-board">("list")
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -553,8 +554,8 @@ export default function DiaryApp() {
           </div>
         )}
 
-        {/* 视图切换按钮 - 在列表、日历和留言板视图下显示 */}
-        {(view === "list" || view === "calendar" || view === "message-board") && (
+        {/* 视图切换按钮 - 在列表、日历、待开发音频记录和匿名留言板视图下显示 */}
+        {(view === "list" || view === "calendar" || view === "message-board" || view === "anonymous-message-board") && (
           <div className="mb-6">
             <div className="flex flex-wrap gap-2">
               <Button
@@ -579,15 +580,24 @@ export default function DiaryApp() {
                 日历视图
               </Button>
               <Button
+                variant={view === "anonymous-message-board" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("anonymous-message-board")}
+                className="gap-2"
+              >
+                <MessageSquareIcon className="h-4 w-4" />
+                匿名留言板
+              </Button>
+              <Button
                 variant={view === "message-board" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setView("message-board")}
                 disabled={!isAdmin}
                 className="gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={isAdmin ? "留言板" : "需要管理员权限"}
+                title={isAdmin ? "待开发音频记录" : "需要管理员权限"}
               >
                 <MessageSquareIcon className="h-4 w-4" />
-                留言板
+                待开发音频记录
               </Button>
               {isAdmin && (
                 <Button
@@ -818,6 +828,8 @@ export default function DiaryApp() {
               <YearlySummary onBack={() => setView("list")} />
             ) : view === "message-board" ? (
               <MessageBoard />
+            ) : view === "anonymous-message-board" ? (
+              <AnonymousMessageBoard />
             ) : (
               <div className="text-center py-12 text-muted-foreground">
                 未知视图
