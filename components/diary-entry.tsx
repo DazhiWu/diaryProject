@@ -13,7 +13,7 @@ import { toast } from "sonner"
 
 type DiaryEntryProps = {
   entry?: Entry
-  onSave: (content: string, subtitle: string, date: Date, files: File[]) => void
+  onSave: (content: string, subtitle: string, date: Date, files: File[]) => Promise<boolean>
   onCancel: () => void
 }
 
@@ -58,17 +58,19 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
     setImages((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (content.trim()) {
       // 统一使用UTC时区处理日期
       const utcDate = new Date(date);
       // 提取文件对象（排除已有的 Storage URL）
       const files = images.filter(img => img.file).map(img => img.file!).filter(Boolean)
-      onSave(content, subtitle.trim(), utcDate, files)
-      setContent("")
-      setSubtitle("")
-      setDate(new Date().toISOString().split('T')[0])
-      setImages([])
+      const success = await onSave(content, subtitle.trim(), utcDate, files)
+      if (success) {
+        setContent("")
+        setSubtitle("")
+        setDate(new Date().toISOString().split('T')[0])
+        setImages([])
+      }
     }
   }
 

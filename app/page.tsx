@@ -326,7 +326,7 @@ export default function DiaryApp() {
     }
   }
 
-  const addEntry = async (content: string, subtitle: string, date: Date, files: File[]) => {
+  const addEntry = async (content: string, subtitle: string, date: Date, files: File[]): Promise<boolean> => {
     const entryDate = date || new Date()
     const defaultSubtitle = subtitle ||
       entryDate.toLocaleString("en-US", {
@@ -356,13 +356,16 @@ export default function DiaryApp() {
         
         if (result.success && result.data) {
           if (result.data) {
-        setEntries([convertToEntry(result.data), ...entries])
-      }
+            setEntries([convertToEntry(result.data), ...entries])
+          }
           toast.success("日记添加成功")
+          setView("list")
+          setCurrentPage(1) // 添加新日记后回到第一页
+          return true
         } else {
           // 显示友好的提醒信息而不是错误
-          toast.info(result.message || "添加日记失败")
-          return // 不切换视图，让用户有机会修改日期
+          toast.error(result.message || "添加日记失败，请重试")
+          return false
         }
       } else {
         // Offline mode - temporary entry
@@ -376,16 +379,22 @@ export default function DiaryApp() {
         }
         setEntries([tempEntry, ...entries])
         toast.warning("网络离线，日记已保存到本地（图片未保存）")
+        setView("list")
+        setCurrentPage(1)
+        return true
       }
-      setView("list")
-      setCurrentPage(1) // 添加新日记后回到第一页
     } catch (error) {
       console.error("Failed to add entry:", error)
-      toast.error("添加日记失败")
+      let errorMessage = "添加日记失败，请重试"
+      if (error instanceof Error) {
+        errorMessage = `添加日记失败: ${error.message}`
+      }
+      toast.error(errorMessage)
+      return false
     }
   }
 
-  const updateEntry = async (id: number, content: string, subtitle: string, date: Date, files: File[]) => {
+  const updateEntry = async (id: number, content: string, subtitle: string, date: Date, files: File[]): Promise<boolean> => {
     try {
       if (isOnline()) {
         // 直接从数据库获取最新的条目信息，确保使用原始的相对路径
@@ -394,6 +403,11 @@ export default function DiaryApp() {
           .select('image_paths')
           .eq('id', id)
           .single();
+          
+        if (error) {
+          toast.error("获取日记信息失败，请重试")
+          return false
+        }
           
         let imagePaths: string[] = currentEntry?.image_paths || [];
         
@@ -413,6 +427,8 @@ export default function DiaryApp() {
         setEntries(entries.map((entry) => (entry.id === id ? convertedUpdatedEntry : entry)))
         setSelectedEntry(convertedUpdatedEntry)
         toast.success("日记更新成功")
+        setView("detail")
+        return true
       } else {
         // Offline mode
         const existingEntry = entries.find((entry) => entry.id === id)
@@ -431,12 +447,20 @@ export default function DiaryApp() {
           setEntries(entries.map((entry) => (entry.id === id ? newEntry : entry)))
           setSelectedEntry(newEntry)
           toast.warning("网络离线，更新已保存到本地（图片未更新）")
+          setView("detail")
+          return true
         }
+        toast.error("未找到要更新的日记")
+        return false
       }
-      setView("detail")
     } catch (error) {
       console.error("Failed to update entry:", error)
-      toast.error("更新日记失败")
+      let errorMessage = "更新日记失败，请重试"
+      if (error instanceof Error) {
+        errorMessage = `更新日记失败: ${error.message}`
+      }
+      toast.error(errorMessage)
+      return false
     }
   }
 
