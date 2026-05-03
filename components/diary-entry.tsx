@@ -35,8 +35,8 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
     const files = e.target.files
     if (files) {
       const fileArray = Array.from(files)
-      // Limit to 9 images total
-      const remainingSlots = 9 - images.length
+      // Limit to 18 images total
+      const remainingSlots = 18 - images.length
       const filesToProcess = fileArray.slice(0, remainingSlots)
 
       filesToProcess.forEach((file) => {
@@ -78,7 +78,8 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
     if (count === 1) return "grid-cols-1"
     if (count === 2) return "grid-cols-2"
     if (count <= 4) return "grid-cols-2"
-    return "grid-cols-3"
+    if (count <= 9) return "grid-cols-3"
+    return "grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
   }
 
   return (
@@ -151,15 +152,15 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
               className="hidden"
             />
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              className="gap-2"
-              disabled={images.length >= 9}
-            >
-              <ImageIcon className="h-4 w-4" />
-              Add Image{images.length > 0 && ` (${images.length}/9)`}
-            </Button>
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                className="gap-2"
+                disabled={images.length >= 18}
+              >
+                <ImageIcon className="h-4 w-4" />
+                Add Image{images.length > 0 && ` (${images.length}/18)`}
+              </Button>
           </div>
 
           <div className="flex gap-2">

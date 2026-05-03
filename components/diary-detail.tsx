@@ -263,8 +263,9 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
   const getGridClass = (count: number) => {
     if (count === 1) return "grid-cols-1"
     if (count === 2) return "grid-cols-2"
-    // 对于3-9张图片，统一使用3列布局
-    return "grid-cols-3";
+    if (count <= 4) return "grid-cols-2"
+    if (count <= 9) return "grid-cols-3"
+    return "grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
   }
 
   const handleProtectedAction = (action: () => void, actionName: string, requiredLevel: 'viewer' | 'admin' = 'admin') => {

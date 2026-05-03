@@ -73,7 +73,8 @@ export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNew
     if (count === 1) return "grid-cols-1"
     if (count === 2) return "grid-cols-2"
     if (count <= 4) return "grid-cols-2"
-    return "grid-cols-3"
+    if (count <= 9) return "grid-cols-3"
+    return "grid-cols-4"
   }
 
   return (
@@ -120,9 +121,9 @@ export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNew
                 <div className="flex flex-col sm:flex-row gap-4 mt-3">
                   <div
                     className={`grid flex-shrink-0 gap-1.5 ${getGridClass(entry.images.length)}`}
-                    style={{ width: "100%", maxWidth: "140px" }}
+                    style={{ width: "100%", maxWidth: "180px" }}
                   >
-                    {entry.images.slice(0, 9).map((image, index) => (
+                    {entry.images.slice(0, 12).map((image, index) => (
                       <div key={index} className="aspect-square rounded-md overflow-hidden shadow-sm transition-transform hover:scale-105">
                         <img
                           src={image || "/placeholder.svg"}
