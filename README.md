@@ -1,24 +1,36 @@
 # AI 日记分析应用
 
-这是一个基于 Next.js 和 Supabase 构建的日记应用，具有 AI 分析功能。该应用可以分析日记内容并自动生成摘要和情绪分析。
+这是一个基于 Next.js 和 Supabase 构建的日记应用，具有 AI 分析、情绪识别、翻译等功能。
 
 ## 功能特性
 
-- 创建、编辑、删除日记条目
-- 上传图片到日记条目
-- AI 分析日记内容，生成摘要和情绪标签
-- 响应式设计，支持移动端和桌面端
-- 搜索和过滤功能
-- 日历视图浏览日记
+### 核心功能
+- ✅ 创建、编辑、删除日记条目
+- ✅ 上传图片和音频到日记条目
+- ✅ AI 分析日记内容，生成摘要和情绪标签
+- ✅ 日记内容翻译功能
+- ✅ 日历视图浏览日记
+- ✅ 搜索和过滤功能
+
+### 扩展功能
+- ✅ 匿名留言板
+- ✅ 健康状况追踪
+- ✅ 年度总结报告
+- ✅ 日记数据导出下载
+- ✅ 响应式设计，支持移动端和桌面端
 
 ## 技术栈
 
-- Next.js 16
-- TypeScript
-- Tailwind CSS
-- Supabase (数据库和认证)
-- ModelScope AI API (AI 分析)
-- shadcn/ui 组件库
+| 分类 | 技术 | 版本 |
+|------|------|------|
+| 框架 | Next.js | 16.x |
+| 语言 | TypeScript | 5.x |
+| 样式 | Tailwind CSS | 4.x |
+| 组件库 | shadcn/ui | latest |
+| 数据库 | Supabase | latest |
+| AI 服务 | ModelScope API | latest |
+| 图标 | Lucide React | latest |
+| 表单 | React Hook Form | latest |
 
 ## 本地开发
 
@@ -53,6 +65,18 @@ pnpm dev
 ```
 
 访问 http://localhost:3000 查看应用。
+
+### 构建项目
+
+```bash
+pnpm build
+```
+
+### 代码检查
+
+```bash
+pnpm lint
+```
 
 ## 部署到 Cloudflare Pages
 
@@ -150,14 +174,130 @@ CREATE TABLE diary_AI_analysis (
 );
 ```
 
+### anonymous_messages 表
+
+```sql
+CREATE TABLE anonymous_messages (
+  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+### health_conditions 表
+
+```sql
+CREATE TABLE health_conditions (
+  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  date DATE NOT NULL,
+  sleep_hours DECIMAL,
+  exercise_minutes INT,
+  water_intake DECIMAL,
+  mood TEXT,
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
 ## 项目结构
 
 ```
-app/              # Next.js 应用路由
-components/       # React 组件
-lib/              # 工具函数和业务逻辑
-public/           # 静态资源
-styles/           # 全局样式
+app/                      # Next.js 应用路由
+  api/                    # API 端点
+    ai-analysis/          # AI 分析接口
+    diary-download/       # 日记下载接口
+    test-env/             # 环境测试接口
+    translate/            # 翻译接口
+  globals.css             # 全局样式
+  layout.tsx              # 根布局
+  loading.tsx             # 加载状态
+  page.tsx                # 首页
+
+components/               # React 组件
+  ui/                     # shadcn/ui 组件
+  anonymous-message-board.tsx   # 匿名留言板组件
+  audio-uploader.tsx      # 音频上传组件
+  auth-dialog.tsx         # 认证弹窗组件
+  calendar-view.tsx       # 日历视图组件
+  delete-confirm-dialog.tsx     # 删除确认弹窗
+  diary-detail.tsx        # 日记详情组件
+  diary-downloader.tsx    # 日记下载组件
+  diary-entry.tsx         # 日记条目组件
+  diary-list.tsx          # 日记列表组件
+  health-condition-dialog.tsx   # 健康状况弹窗
+  icons.tsx               # 自定义图标
+  masonry-photo-gallery.tsx     # 图片画廊组件
+  message-board.tsx       # 留言板组件
+  pagination.tsx          # 分页组件
+  search-bar.tsx          # 搜索栏组件
+  theme-provider.tsx      # 主题提供者
+  yearly-summary.tsx      # 年度总结组件
+
+hooks/                    # 自定义 Hooks
+  use-mobile.ts           # 移动端检测 Hook
+  use-toast.ts            # Toast 通知 Hook
+  useAuth.ts              # 认证 Hook
+  useHealthConditions.ts  # 健康状况 Hook
+
+lib/                      # 工具函数和业务逻辑
+  aiAnalysis.ts           # AI 分析逻辑
+  audioApi.ts             # 音频 API 封装
+  audioHandler.ts         # 音频处理工具
+  diaryApi.ts             # 日记 API 封装
+  imageHandler.ts         # 图片处理工具
+  messageBoardApi.ts      # 留言板 API 封装
+  supabaseClient.ts       # Supabase 客户端配置
+  utils.ts                # 通用工具函数
+  yearlySummaryApi.ts     # 年度总结 API 封装
+
+public/                   # 静态资源
+  placeholder-logo.png
+  placeholder-logo.svg
+  placeholder-user.jpg
+  placeholder.jpg
+  placeholder.svg
+
+styles/                   # 样式文件
+  globals.css             # 全局样式
+
+根目录配置文件：
+  .gitignore             # Git 忽略配置
+  components.json        # shadcn/ui 配置
+  next.config.mjs        # Next.js 配置
+  package.json           # 项目依赖配置
+  pnpm-lock.yaml         # pnpm 锁文件
+  postcss.config.mjs     # PostCSS 配置
+  tsconfig.json          # TypeScript 配置
+```
+
+## API 端点
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/ai-analysis` | POST | 分析日记内容，生成摘要和情绪 |
+| `/api/diary-download` | GET | 导出日记数据为 JSON |
+| `/api/test-env` | GET | 测试环境变量配置 |
+| `/api/translate` | POST | 翻译日记内容 |
+
+## 开发规范
+
+### 代码风格
+
+- 使用 TypeScript 进行类型检查
+- 使用 ESLint 进行代码检查
+- 遵循 shadcn/ui 组件库的使用规范
+- 使用 clsx + tailwind-merge 进行样式合并
+
+### 提交规范
+
+```
+feat: 添加新功能
+fix: 修复 bug
+docs: 更新文档
+style: 代码格式调整（不影响逻辑）
+refactor: 代码重构
+test: 添加/更新测试
+chore: 构建/工具相关
 ```
 
 ## 许可证

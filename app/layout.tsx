@@ -4,7 +4,7 @@ import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
+  title: 'welcome to zhizhi\'s diary',
   description: 'Created with v0',
   generator: 'v0.app',
 }

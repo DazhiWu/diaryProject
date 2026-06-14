@@ -42,14 +42,14 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="password" className="text-sm font-medium">
-              请输入认证密码
+              认证成功后可以看之前的所有日记，真感兴趣可以去个人主页的联系方式里找我
             </label>
             <Input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="请输入密码"
+              placeholder="请输入认证信息"
               className="w-full"
             />
           </div>
