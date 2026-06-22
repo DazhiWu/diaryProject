@@ -38,8 +38,10 @@ pnpm install
 创建 `.env.local` 文件并添加以下环境变量：
 
 ```env
-# Supabase 配置
+# Supabase 配置(ProjectSettings-Data API) 填写到co为止，不需要后面的rest/v1
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+
+# Supabase 配置(ProjectSettings-API KEY-Legacy anon,service_role API keys)
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 # ModelScope API 密钥
