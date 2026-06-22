@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar } from './ui/calendar';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -15,17 +15,60 @@ interface DiaryDownloaderProps {
   className?: string;
 }
 
+const DatePicker = ({ value, onChange, label, minDate, maxDate }: { 
+  value?: Date; 
+  onChange: (date?: Date) => void; 
+  label: string;
+  minDate?: Date;
+  maxDate?: Date;
+}) => (
+  <div className="space-y-2">
+    <Label htmlFor={label}>{label}</Label>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          id={label}
+          variant="outline"
+          className="w-full justify-start text-left font-normal transition-all hover:bg-accent hover:text-accent-foreground"
+        >
+          {value ? format(value, 'yyyy年MM月dd日', { locale: zhCN }) : <span className="text-muted-foreground">选择日期</span>}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={value}
+          onSelect={onChange}
+          className="rounded-md border"
+          initialFocus
+          captionLayout="dropdown"
+          fromDate={minDate}
+          toDate={maxDate}
+          startMonth={minDate}
+          endMonth={maxDate}
+        />
+      </PopoverContent>
+    </Popover>
+  </div>
+);
+
 const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
-  // 定义最小日期为2024年11月1日
-  const minDate = new Date('2024-11-01');
+  const minDate = React.useMemo(() => new Date('2024-11-01'), []);
+  const maxDate = new Date();
 
   // 日期状态管理
-  // 默认开始日期为30天前，但不早于最小日期
-  const defaultStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const [startDate, setStartDate] = useState<Date | undefined>(defaultStartDate < minDate ? minDate : defaultStartDate);
-  const [endDate, setEndDate] = useState<Date | undefined>(new Date()); // 默认今天
+  const [startDate, setStartDate] = useState<Date | undefined>();
+  const [endDate, setEndDate] = useState<Date | undefined>(maxDate);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const defaultStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      setStartDate(defaultStartDate < minDate ? minDate : defaultStartDate)
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [minDate])
 
   // 处理下载按钮点击
   const handleDownload = async () => {
@@ -93,38 +136,6 @@ const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
     return format(date, 'yyyy年MM月dd日', { locale: zhCN });
   };
 
-  // 简单的日期选择器组件
-  const DatePicker = ({ value, onChange, label }: { value?: Date; onChange: (date?: Date) => void; label: string }) => (
-    <div className="space-y-2">
-      <Label htmlFor={label}>{label}</Label>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            id={label}
-            variant="outline"
-            className="w-full justify-start text-left font-normal transition-all hover:bg-accent hover:text-accent-foreground"
-          >
-            {value ? formatDate(value) : <span className="text-muted-foreground">选择日期</span>}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar
-            mode="single"
-            selected={value}
-            onSelect={onChange}
-            className="rounded-md border"
-            initialFocus
-            captionLayout="dropdown"
-            fromDate={minDate}
-            toDate={new Date()}
-            startMonth={minDate}
-            endMonth={new Date()}
-          />
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
-
   return (
     <Card className={className}>
       <CardHeader className="space-y-1">
@@ -147,11 +158,15 @@ const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
             label="开始日期"
             value={startDate}
             onChange={setStartDate}
+            minDate={minDate}
+            maxDate={maxDate}
           />
           <DatePicker
             label="结束日期"
             value={endDate}
             onChange={setEndDate}
+            minDate={minDate}
+            maxDate={maxDate}
           />
         </div>
         {error && (

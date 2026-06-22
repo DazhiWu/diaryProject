@@ -7,6 +7,7 @@ import type { Entry } from "@/app/page"
 import { useAuth } from "@/hooks/useAuth"
 import { toast } from "sonner"
 import { useState } from "react"
+import Image from "next/image"
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog"
 
 type DiaryListProps = {
@@ -124,11 +125,12 @@ export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNew
                     style={{ width: "100%", maxWidth: "180px" }}
                   >
                     {entry.images.slice(0, 12).map((image, index) => (
-                      <div key={index} className="aspect-square rounded-md overflow-hidden shadow-sm transition-transform hover:scale-105">
-                        <img
+                      <div key={index} className="relative aspect-square rounded-md overflow-hidden shadow-sm transition-transform hover:scale-105">
+                        <Image
                           src={image || "/placeholder.svg"}
                           alt={`预览 ${index + 1}`}
-                          className="h-full w-full object-cover"
+                          fill
+                          className="object-cover"
                         />
                       </div>
                     ))}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { DiaryEntry as DiaryEntryComponent } from "@/components/diary-entry"
 import { DiaryList } from "@/components/diary-list"
 import { CalendarView } from "@/components/calendar-view"
@@ -90,60 +90,7 @@ export default function DiaryApp() {
   // 确保认证状态已经从localStorage加载完成
   const [authReady, setAuthReady] = useState(false);
 
-  // 当认证状态就绪后，初始化数据加载
-  useEffect(() => {
-    // 只有当authLevel不是初始值'guest'，或者我们确定localStorage中确实没有认证信息时，才标记为就绪
-    const checkAuthReady = () => {
-      if (typeof window !== 'undefined') {
-        const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel');
-        // 如果有存储的认证信息，或者组件已经渲染了一段时间，就认为认证状态就绪
-        setAuthReady(true);
-      }
-    };
-
-    // 立即检查一次
-    checkAuthReady();
-    
-    // 给一个小延迟，确保所有初始化操作都完成
-    const timer = setTimeout(() => {
-      setAuthReady(true);
-    }, 100);
-
-    return () => clearTimeout(timer);
-  }, [auth.authLevel]);
-
-  // 当认证状态就绪或变化时重新加载日记列表，确保分页显示正确
-  useEffect(() => {
-    if (authReady) {
-      loadEntries();
-    }
-  }, [auth.authLevel, authReady]);
-
-  // 实现搜索防抖功能
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery)
-    }, 1000) // 2秒防抖延迟
-
-    return () => clearTimeout(timer)
-  }, [searchQuery])
-
-  // 当页面、防抖搜索条件改变时重新加载分页数据
-  useEffect(() => {
-    if (view !== "calendar" && authReady) {
-      loadEntries()
-    }
-  }, [currentPage, debouncedSearchQuery, view, authReady])
-  
-  // 在应用启动时加载所有日记条目，用于上下篇导航
-  useEffect(() => {
-    if (authReady) {
-      // 无论当前视图是什么，都加载所有日记条目用于导航
-      loadAllEntriesForCalendar()
-    }
-  }, [authReady])
-
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     setLoading(true)
     // 在函数开始时捕获当前的认证状态，避免异步过程中状态变化导致的问题
     const currentIsGuest = isGuest;
@@ -246,10 +193,9 @@ export default function DiaryApp() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [debouncedSearchQuery, isGuest, currentPage, entriesPerPage])
   
-  // 专门为日历视图加载数据（包含subtitle以支持标题检测）
-  const loadAllEntriesForCalendar = async () => {
+  const loadAllEntriesForCalendar = useCallback(async () => {
     try {
       // 在函数开始时捕获当前的认证状态，避免异步过程中状态变化导致的问题
       const currentIsGuest = isGuest;
@@ -283,14 +229,6 @@ export default function DiaryApp() {
         })
         setEntries(entriesWithUrls)
         setTotalEntriesCount(currentIsGuest ? 5 : firstPageData.totalCount)
-        
-        // 可选：定期更新本地缓存，但不立即同步所有数据
-        // 只在有网络连接时的空闲时间更新缓存
-        // setTimeout(() => {
-        //   fetchAllDiaryEntries().then(allEntriesData => {
-        //     saveLocalStorageBackup(allEntriesData)
-        //   }).catch(err => console.error("Failed to update backup:", err))
-        // }, 5000)
       } else {
         // 离线模式使用本地缓存
         const localEntries = getLocalStorageBackup()
@@ -324,7 +262,68 @@ export default function DiaryApp() {
       setEntries(entriesWithUrls.slice(0, currentIsGuest ? 5 : entriesPerPage))
       setTotalEntriesCount(currentIsGuest ? 5 : entriesWithUrls.length)
     }
-  }
+  }, [isGuest, entriesPerPage])
+
+  // 当认证状态就绪后，初始化数据加载
+  useEffect(() => {
+    // 只有当authLevel不是初始值'guest'，或者我们确定localStorage中确实没有认证信息时，才标记为就绪
+    const checkAuthReady = () => {
+      if (typeof window !== 'undefined') {
+        const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel');
+        // 如果有存储的认证信息，或者组件已经渲染了一段时间，就认为认证状态就绪
+        setAuthReady(true);
+      }
+    };
+
+    // 立即检查一次
+    checkAuthReady();
+    
+    // 给一个小延迟，确保所有初始化操作都完成
+    const timer = setTimeout(() => {
+      setAuthReady(true);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [auth.authLevel]);
+
+  // 当认证状态就绪或变化时重新加载日记列表，确保分页显示正确
+  useEffect(() => {
+    if (authReady) {
+      const timer = setTimeout(() => {
+        loadEntries()
+      }, 0)
+      return () => clearTimeout(timer)
+    }
+  }, [auth.authLevel, authReady, loadEntries])
+
+  // 实现搜索防抖功能
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, 1000)
+
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  // 当页面、防抖搜索条件改变时重新加载分页数据
+  useEffect(() => {
+    if (view !== "calendar" && authReady) {
+      const timer = setTimeout(() => {
+        loadEntries()
+      }, 0)
+      return () => clearTimeout(timer)
+    }
+  }, [currentPage, debouncedSearchQuery, view, authReady, loadEntries])
+  
+  // 在应用启动时加载所有日记条目，用于上下篇导航
+  useEffect(() => {
+    if (authReady) {
+      const timer = setTimeout(() => {
+        loadAllEntriesForCalendar()
+      }, 0)
+      return () => clearTimeout(timer)
+    }
+  }, [authReady, loadAllEntriesForCalendar])
 
   const addEntry = async (content: string, subtitle: string, date: Date, files: File[]): Promise<boolean> => {
     const entryDate = date || new Date()
@@ -503,7 +502,10 @@ export default function DiaryApp() {
 
   // 当防抖搜索或过滤条件改变时，重置到第一页
   useEffect(() => {
-    setCurrentPage(1)
+    const timer = setTimeout(() => {
+      setCurrentPage(1)
+    }, 0)
+    return () => clearTimeout(timer)
   }, [debouncedSearchQuery, selectedDate])
 
   const handleProtectedAction = (action: () => void, actionName: string, requiredLevel: 'viewer' | 'admin' = 'admin') => {

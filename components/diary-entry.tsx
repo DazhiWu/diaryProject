@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useRef } from "react"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
@@ -123,10 +124,11 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
           <div className={`grid gap-2 ${getGridClass(images.length)}`}>
             {images.map((image, index) => (
               <div key={index} className="relative aspect-square">
-                <img
+                <Image
                   src={image.url || "/placeholder.svg"}
                   alt={`Upload ${index + 1}`}
-                  className="h-full w-full rounded-lg object-cover"
+                  fill
+                  className="rounded-lg object-cover"
                 />
                 <Button
                   size="icon"

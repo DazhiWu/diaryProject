@@ -22,7 +22,10 @@ export const useHealthConditions = () => {
 
   // 组件挂载时加载数据
   useEffect(() => {
-    loadConditions()
+    const timer = setTimeout(() => {
+      loadConditions()
+    }, 0)
+    return () => clearTimeout(timer)
   }, [loadConditions])
 
   const addCondition = useCallback(async (condition: Omit<HealthCondition, 'id' | 'created_at'>) => {
