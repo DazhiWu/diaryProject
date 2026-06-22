@@ -1,10 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Calendar } from './ui/calendar';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 import { format } from 'date-fns';
@@ -16,18 +14,19 @@ interface DiaryDownloaderProps {
 }
 
 const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
-  // 定义最小日期为2024年11月1日
   const minDate = new Date('2024-11-01');
+  const today = new Date();
 
-  // 日期状态管理
-  // 默认开始日期为30天前，但不早于最小日期
+  const formatDateString = (date: Date) => {
+    return format(date, 'yyyy-MM-dd');
+  };
+
   const defaultStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const [startDate, setStartDate] = useState<Date | undefined>(defaultStartDate < minDate ? minDate : defaultStartDate);
-  const [endDate, setEndDate] = useState<Date | undefined>(new Date()); // 默认今天
+  const [startDate, setStartDate] = useState<string>(formatDateString(defaultStartDate < minDate ? minDate : defaultStartDate));
+  const [endDate, setEndDate] = useState<string>(formatDateString(today));
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 处理下载按钮点击
   const handleDownload = async () => {
     if (!startDate || !endDate) {
       setError('请选择开始日期和结束日期');
@@ -43,15 +42,14 @@ const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
     setError(null);
 
     try {
-      // 调用API获取CSV数据
       const response = await fetch('/api/diary-download', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          startDate: format(startDate, 'yyyy-MM-dd'),
-          endDate: format(endDate, 'yyyy-MM-dd'),
+          startDate,
+          endDate,
         }),
       });
 
@@ -60,23 +58,19 @@ const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
         throw new Error(errorData.error || '下载失败');
       }
 
-      // 获取CSV数据
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       
-      // 创建下载链接并触发下载
       const link = document.createElement('a');
       link.href = url;
-      link.download = `diary_export_${format(startDate, 'yyyy-MM-dd')}_to_${format(endDate, 'yyyy-MM-dd')}.csv`;
+      link.download = `diary_export_${startDate}_to_${endDate}.csv`;
       document.body.appendChild(link);
       link.click();
       
-      // 清理
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '下载日记时发生错误';
-      // 检查是否为数据库超时错误
       if (errorMessage.includes('canceling statement due to statement timeout')) {
         setError('数据库无法一次性传输文本，建议选择更短时间范围内的日记下载');
       } else {
@@ -86,44 +80,6 @@ const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
       setIsLoading(false);
     }
   };
-
-  // 格式化日期显示
-  const formatDate = (date?: Date) => {
-    if (!date) return '';
-    return format(date, 'yyyy年MM月dd日', { locale: zhCN });
-  };
-
-  // 简单的日期选择器组件
-  const DatePicker = ({ value, onChange, label }: { value?: Date; onChange: (date?: Date) => void; label: string }) => (
-    <div className="space-y-2">
-      <Label htmlFor={label}>{label}</Label>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            id={label}
-            variant="outline"
-            className="w-full justify-start text-left font-normal transition-all hover:bg-accent hover:text-accent-foreground"
-          >
-            {value ? formatDate(value) : <span className="text-muted-foreground">选择日期</span>}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar
-            mode="single"
-            selected={value}
-            onSelect={onChange}
-            className="rounded-md border"
-            initialFocus
-            captionLayout="dropdown"
-            fromDate={minDate}
-            toDate={new Date()}
-            startMonth={minDate}
-            endMonth={new Date()}
-          />
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
 
   return (
     <Card className={className}>
@@ -142,17 +98,29 @@ const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
         <CardDescription>选择日期范围，将日记导出为CSV文件</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <DatePicker
-            label="开始日期"
-            value={startDate}
-            onChange={setStartDate}
-          />
-          <DatePicker
-            label="结束日期"
-            value={endDate}
-            onChange={setEndDate}
-          />
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="start-date">开始日期</Label>
+            <Input
+              id="start-date"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              min={formatDateString(minDate)}
+              max={formatDateString(today)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="end-date">结束日期</Label>
+            <Input
+              id="end-date"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              min={formatDateString(minDate)}
+              max={formatDateString(today)}
+            />
+          </div>
         </div>
         {error && (
           <div className="rounded-md bg-destructive/10 p-3 text-destructive">

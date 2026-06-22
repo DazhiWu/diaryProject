@@ -108,6 +108,7 @@ export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDia
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                   disabled={isAdding}
+                  min="2024-11-01"
                 />
               </div>
               <div className="space-y-2">
@@ -118,6 +119,7 @@ export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDia
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
                   disabled={isAdding}
+                  min="2024-11-01"
                 />
               </div>
             </div>

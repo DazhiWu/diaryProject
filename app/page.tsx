@@ -578,7 +578,7 @@ export default function DiaryApp() {
           </div>
         )}
 
-        {/* 视图切换按钮 - 在列表、日历、待开发音频记录和匿名留言板视图下显示 */}
+        {/* 视图切换按钮 - 在列表、日历、音频记录和匿名留言板视图下显示 */}
         {(view === "list" || view === "calendar" || view === "message-board" || view === "anonymous-message-board") && (
           <div className="mb-6">
             <div className="flex flex-wrap gap-2">
@@ -618,10 +618,10 @@ export default function DiaryApp() {
                 onClick={() => setView("message-board")}
                 disabled={!isAdmin}
                 className="gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={isAdmin ? "待开发音频记录" : "需要管理员权限"}
+                title={isAdmin ? "音频记录" : "需要管理员权限"}
               >
                 <MessageSquareIcon className="h-4 w-4" />
-                待开发音频记录
+                音频记录
               </Button>
               {isAdmin && (
                 <Button

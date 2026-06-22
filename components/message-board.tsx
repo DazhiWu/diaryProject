@@ -147,7 +147,7 @@ function AudioPlayer({
   )
 }
 
-// 待开发主组件 
+// 音频主组件 
 export function MessageBoard() {
   const [isVisible, setIsVisible] = useState(false)
   const [messages, setMessages] = useState<AudioMessage[]>([])
@@ -159,6 +159,7 @@ export function MessageBoard() {
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null)
   
   // 认证状态
   const { isAdmin } = useAuth()
@@ -197,36 +198,43 @@ export function MessageBoard() {
   // 处理播放/暂停
   const handleTogglePlay = (message: AudioMessage) => {
     if (playingId === message.id) {
-      // 暂停当前播放
       audioRef.current?.pause()
       setPlayingId(null)
     } else {
-      // 播放新的音频
       if (audioRef.current) {
         audioRef.current.pause()
-        audioRef.current.src = ""
       }
       
-      const audio = new Audio(message.audioUrl)
-      audioRef.current = audio
+      currentAudioRef.current = new Audio(message.audioUrl)
+      audioRef.current = currentAudioRef.current
       
-      audio.addEventListener("timeupdate", () => {
-        setCurrentTime(audio.currentTime)
+      const currentAudio = currentAudioRef.current
+      
+      currentAudio.addEventListener("timeupdate", () => {
+        if (currentAudioRef.current === currentAudio) {
+          setCurrentTime(currentAudio.currentTime)
+        }
       })
       
-      audio.addEventListener("ended", () => {
-        setPlayingId(null)
-        setCurrentTime(0)
+      currentAudio.addEventListener("ended", () => {
+        if (currentAudioRef.current === currentAudio) {
+          setPlayingId(null)
+          setCurrentTime(0)
+        }
       })
       
-      audio.addEventListener("error", () => {
-        toast.error('音频加载失败')
-        setPlayingId(null)
+      currentAudio.addEventListener("error", () => {
+        if (currentAudioRef.current === currentAudio) {
+          toast.error('音频加载失败')
+          setPlayingId(null)
+        }
       })
       
-      audio.play().catch(() => {
-        toast.error('播放失败')
-        setPlayingId(null)
+      currentAudio.play().catch(() => {
+        if (currentAudioRef.current === currentAudio) {
+          toast.error('播放失败')
+          setPlayingId(null)
+        }
       })
       
       setPlayingId(message.id)
@@ -283,7 +291,7 @@ export function MessageBoard() {
       <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-2">
           <MusicIcon className="h-5 w-5 text-primary" />
-          <h2 className="text-xl font-semibold text-foreground">待开发</h2>
+          <h2 className="text-xl font-semibold text-foreground">音频记录</h2>
         </div>
         
         {/* 上传按钮 - 仅管理员可见 */}
