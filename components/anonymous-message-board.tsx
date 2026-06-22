@@ -281,10 +281,8 @@ export function AnonymousMessageBoard() {
 
   // 初始化加载
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsVisible(true)
-      loadMessages()
-    }, 50)
+    const timer = setTimeout(() => setIsVisible(true), 50)
+    loadMessages()
     return () => clearTimeout(timer)
   }, [])
 

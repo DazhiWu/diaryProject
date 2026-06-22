@@ -1,17 +1,6 @@
 "use client"
 
-import { useState } from 'react'
-
 export default function Loading() {
-  const [particles] = useState(() =>
-    Array.from({ length: 10 }, () => ({
-      left: `${Math.random() * 100}%`,
-      top: `${Math.random() * 100}%`,
-      animationDuration: `${3 + Math.random() * 2}s`,
-      animationDelay: `${Math.random() * 2}s`,
-    }))
-  )
-
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background">
       <div className="relative">
@@ -25,14 +14,14 @@ export default function Loading() {
         </div>
         {/* 装饰性粒子效果 */}
         <div className="absolute inset-0 overflow-hidden rounded-full -z-10">
-          {particles.map((particle, i) => (
+          {[...Array(10)].map((_, i) => (
             <div
               key={i}
               className="absolute h-2 w-2 rounded-full bg-primary/30"
               style={{
-                left: particle.left,
-                top: particle.top,
-                animation: `float ${particle.animationDuration} ease-in-out infinite ${particle.animationDelay}`,
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+                animation: `float ${3 + Math.random() * 2}s ease-in-out infinite ${Math.random() * 2}s`,
               }}
             />
           ))}

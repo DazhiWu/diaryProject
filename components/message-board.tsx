@@ -180,12 +180,13 @@ export function MessageBoard() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsVisible(true)
-      loadMessages()
-    }, 50)
+    // 触发进入动画
+    const timer = setTimeout(() => setIsVisible(true), 50)
+    // 加载数据
+    loadMessages()
     return () => {
       clearTimeout(timer)
+      // 清理音频资源
       if (audioRef.current) {
         audioRef.current.pause()
         audioRef.current.src = ""

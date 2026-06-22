@@ -1,4 +1,4 @@
-# 致致日记 - AI 日记分析应用
+# AI 日记分析应用
 
 这是一个基于 Next.js 和 Supabase 构建的日记应用，具有 AI 分析、情绪识别、翻译等功能。
 
@@ -6,20 +6,17 @@
 
 ### 核心功能
 - ✅ 创建、编辑、删除日记条目
-- ✅ 上传图片到日记条目
-- ✅ AI 分析日记内容，生成标题和情绪标签
+- ✅ 上传图片和音频到日记条目
+- ✅ AI 分析日记内容，生成摘要和情绪标签
 - ✅ 日记内容翻译功能
 - ✅ 日历视图浏览日记
 - ✅ 搜索和过滤功能
 
 ### 扩展功能
-- ✅ 用户认证系统（访客/查看者/管理员三级权限）
 - ✅ 匿名留言板
-- ✅ 音频留言板
-- ✅ 健康状况追踪（日历标记）
+- ✅ 健康状况追踪
 - ✅ 年度总结报告
 - ✅ 日记数据导出下载
-- ✅ 离线模式（localStorage备份）
 - ✅ 响应式设计，支持移动端和桌面端
 
 ## 技术栈
@@ -31,7 +28,7 @@
 | 样式 | Tailwind CSS | 4.x |
 | 组件库 | shadcn/ui | latest |
 | 数据库 | Supabase | latest |
-| AI 服务 | ModelScope API（OpenAI兼容层） | latest |
+| AI 服务 | ModelScope API | latest |
 | 图标 | Lucide React | latest |
 | 表单 | React Hook Form | latest |
 
@@ -89,7 +86,7 @@ pnpm lint
 2. 在 Cloudflare Dashboard 中创建新的 Pages 项目
 3. 连接 GitHub 账户并选择相应的仓库
 4. 配置构建设置：
-   - 构建命令: `pnpm build`
+   - 构建命令: `npm run build`
    - 构建输出目录: `.next`
 5. 点击"部署站点"
 
@@ -159,7 +156,7 @@ CREATE TABLE diaryContent (
   date DATE NOT NULL,
   subtitle TEXT,
   content TEXT NOT NULL,
-  image_paths TEXT[],
+  images TEXT[],
   modifiedAt TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -237,6 +234,8 @@ components/               # React 组件
   yearly-summary.tsx      # 年度总结组件
 
 hooks/                    # 自定义 Hooks
+  use-mobile.ts           # 移动端检测 Hook
+  use-toast.ts            # Toast 通知 Hook
   useAuth.ts              # 认证 Hook
   useHealthConditions.ts  # 健康状况 Hook
 
@@ -271,107 +270,6 @@ styles/                   # 样式文件
   tsconfig.json          # TypeScript 配置
 ```
 
-## 图片性能优化
-
-围绕「缓解网页初次加载图片慢」的目标，从 **上传压缩** 和 **加载渲染** 两端做了优化。
-
-### 1. 上传端：WebP 压缩（lib/imageHandler.ts）
-
-**核心函数**：`compressImage(file, options)`
-
-将上传图片统一转为 WebP，通过多轮降级策略在画质与体积间寻找最佳平衡。
-
-**配置参数**
-
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `maxWidth` | 1920 | 最大宽度，超出等比缩放 |
-| `maxHeight` | 1920 | 最大高度，超出等比缩放 |
-| `quality` | 0.85 | 起始质量（高画质优先） |
-| `minQuality` | 0.6 | 质量下限（画质底线） |
-| `targetSizeKB` | — | 目标体积，达到即停止降级 |
-
-**关键策略**
-
-- **所有图片统一转 webp**（无大小阈值），保证路径后缀 `.webp` 与内容格式严格一致，避免「假 webp」
-- **`imageSmoothingQuality = 'high'`**：canvas 缩放启用高质量模式
-- **多轮降级**：从 `quality` 起步，每轮降 `0.05`（不低于 `minQuality`），找到体积/画质最佳点
-- **真实尺寸**：使用 `naturalWidth/Height` 拿到解码后尺寸，不被 CSS 拉伸误导
-- **内存回收**：`URL.createObjectURL` 用完立即 `revokeObjectURL`
-- **EXIF 兼容**：`applyExifOrientation` 兜底处理手机拍照的旋转
-
-**调用方配置**（`uploadImage`）
-
-```ts
-compressImage(file, {
-  maxWidth: 1920,
-  maxHeight: 1920,
-  quality: 0.85,
-  minQuality: 0.65,
-  targetSizeKB: 300   // 单图目标 ≤ 300KB
-})
-```
-
-### 2. 加载端：响应式图片组件（components/masonry-photo-gallery.tsx）
-
-**核心组件**：`ResponsiveImage`
-
-封装在 `<picture>` 中统一处理加载优化。
-
-**优化项**
-
-- **`<picture>` 包裹**：原图非 webp 时自动尝试同名 `.webp` 作为 source，浏览器自动回退
-- **`loading="lazy"`**：非首屏图懒加载
-- **`decoding="async"`**：异步解码，避免阻塞主线程
-- **`fetchPriority="high"`**：首屏前 2 张图标记高优先级，提升 LCP
-- **`width`/`height` 占位**：固定占位尺寸，避免 CLS
-- **`sizes` 响应式**：配合 `columns-1/2/3/4` 告诉浏览器各断点下的渲染宽度
-
-```ts
-// PhotoCard 中的调用
-<ResponsiveImage
-  src={image.url}
-  alt={image.alt}
-  eager={index < 2}     // 前 2 张 eager + high 优先级
-  width={800}
-  height={600}
-  sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw,
-         (min-width: 640px) 50vw, 100vw"
-/>
-```
-
-**Lightbox 大图**
-
-用户点开的大图走 `eager` + `fetchPriority="high"`，配合 `width=1600 height=1200` 占位。
-
-### 3. 上传行为
-
-每次上传在 Supabase Storage 中写入 **1 张**图片，内容统一为 webp：
-
-| 场景 | 写入数量 | 实际内容 |
-|---|---|---|
-| 任意大小 | 1 | webp（路径 `.webp` + 内容 webp） |
-
-路径生成器 `generateDiaryImagePath` / `generateYearlyImagePath` 始终返回 `.webp` 后缀，与内容完全对齐。
-
-### 4. 性能收益
-
-| 指标 | 优化前 | 优化后 |
-|---|---|---|
-| 首屏图片请求 | 全部一起抢带宽 | 仅前 2 张立即下载 |
-| LCP 时间 | 受限于图请求排队 | high 优先级，浏览器优先调度 |
-| 主线程占用 | 解码阻塞渲染 | 异步解码 |
-| CLS 布局抖动 | 加载时元素高度变化 | width/height 占位固定 |
-| 旧 JPG/PNG 兼容 | 一直传大体积 | `<picture>` 优先尝试 webp |
-| 单图体积 | 原图直传 | webp + targetSize 300KB |
-
-### 5. 后续可做（未实现）
-
-- **预加载首图**：在 `app/page.tsx` 注入 `<link rel="preload" as="image" href={...}>`，让浏览器在 HTML 解析完就启动下载
-- **缩略图**：上传时除原图外再生成一张 480px 的 WebP，列表用缩略图、点开换大图
-- **缓存头升级**：`cacheControl` 改为 `31536000, immutable`（路径带日期/哈希版本时）
-
-
 ## API 端点
 
 | 端点 | 方法 | 描述 |
@@ -405,67 +303,3 @@ chore: 构建/工具相关
 ## 许可证
 
 MIT
-
-## 维护日志
-
-### 2026-06-22 - 全面审计与优化
-
-#### 1. 冗余文件清理
-
-**删除的未使用UI组件（23个）**：
-- accordion.tsx, alert.tsx, aspect-ratio.tsx, avatar.tsx, badge.tsx
-- breadcrumb.tsx, checkbox.tsx, collapsible.tsx, context-menu.tsx
-- drawer.tsx, empty.tsx, hover-card.tsx, kbd.tsx, menubar.tsx
-- navigation-menu.tsx, radio-group.tsx, scroll-area.tsx, switch.tsx
-- command.tsx, button-group.tsx, field.tsx, input-group.tsx, item.tsx
-
-**删除的未使用依赖**：
-- recharts (图表库，项目中未使用)
-- @hookform/resolvers, cmdk, dotenv, embla-carousel-react, input-otp
-- next-intl, react-resizable-panels, vaul, baseline-browser-mapping, tw-animate-css
-
-**删除的临时文件**：
-- test-api.js, test-api.ts, all-emotion-icons.html
-- CREATE_ANONYMOUS_MESSAGE_TABLE.sql, CREATE_HEALTH_CONDITIONS_TABLE.sql
-- package-lock.json (统一使用 pnpm-lock.yaml)
-
-#### 2. 代码质量修复
-
-**React Hooks 优化**：
-- 为 `loadEntries` 和 `loadAllEntriesForCalendar` 添加 `useCallback` 稳定函数引用
-- 修复多个 useEffect 依赖数组不完整问题
-- 使用 `useMemo` 包装 `minDate` 避免每次渲染创建新对象
-
-**性能优化**：
-- 将所有原生 `<img>` 标签替换为 Next.js `<Image>` 组件
-- 使用 `fill` 模式适配容器布局，`width/height` 属性用于固定尺寸场景
-- 配置 `images: { unoptimized: true }` 避免构建时图片优化错误
-
-**代码清理**：
-- 删除 `app/page.tsx` 中注释掉的废弃代码
-- 删除重复的 hook 文件（hooks/use-mobile.ts, hooks/use-toast.ts）
-- 更新引用路径，统一使用 components/ui 下的 hook
-
-#### 3. README 文档更新
-
-**功能描述修正**：
-- 新增：用户认证系统（访客/查看者/管理员三级权限）
-- 新增：音频留言板（独立于日记条目）
-- 新增：健康状况追踪（日历标记）
-- 新增：离线模式（localStorage备份）
-- 修正：日记条目不支持音频上传，音频功能在独立留言板模块
-
-**技术栈描述修正**：
-- AI 服务：ModelScope API（通过 OpenAI 兼容层调用）
-
-**数据库字段修正**：
-- `diaryContent` 表：`images` 字段名更正为 `image_paths`
-
-**包管理器统一**：
-- 文档中所有 `npm run` 命令统一为 `pnpm` 命令
-
-#### 4. 代码检查
-
-- 添加 ESLint 9.x 配置文件 (`eslint.config.js`)
-- 添加 `eslint` 和 `eslint-config-next` 开发依赖
-- 所有代码通过 `pnpm lint` 检查（0 errors, 0 warnings）

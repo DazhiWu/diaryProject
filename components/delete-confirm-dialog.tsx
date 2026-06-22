@@ -27,7 +27,7 @@ export function DeleteConfirmDialog({ open, onOpenChange, onConfirm, entryTitle 
         <AlertDialogHeader>
           <AlertDialogTitle>确认删除</AlertDialogTitle>
           <AlertDialogDescription>
-            您确定要删除日记 &quot;{entryTitle}&quot; 吗？此操作无法撤销。
+            您确定要删除日记 "{entryTitle}" 吗？此操作无法撤销。
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

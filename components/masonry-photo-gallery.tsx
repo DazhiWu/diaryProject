@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useCallback } from 'react'
-import Image from "next/image"
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -32,64 +31,9 @@ interface LightboxProps {
   onNext: () => void
 }
 
-/**
- * 轻量级响应式图片组件
- * - <picture> 优先尝试 webp 源（兼容旧图，并保留未来扩展能力）
- * - decoding="async" 避免阻塞主线程
- * - 首屏图片使用 eager + fetchPriority="high" 提升 LCP
- * - width/height 占位避免 CLS
- */
-const ResponsiveImage = ({
-  src,
-  alt,
-  className,
-  eager = false,
-  width,
-  height,
-  onLoad,
-  sizes
-}: {
-  src: string
-  alt: string
-  className?: string
-  eager?: boolean
-  width?: number
-  height?: number
-  onLoad?: () => void
-  sizes?: string
-}) => {
-  const isWebp = /\.webp(\?|$)/i.test(src)
-
-  // 如果原图不是 webp，尝试用同名 .webp 作为 picture 源（依赖对象存储的同目录存放策略）
-  // 命中不到时浏览器会自动回退到 <img> 源
-  const tryWebp = !isWebp
-    ? src.replace(/\.(jpe?g|png)(\?.*)?$/i, '.$1.webp$2')
-    : null
-
-  return (
-    <picture>
-      {tryWebp && <source srcSet={tryWebp} type="image/webp" sizes={sizes} />}
-      <Image
-        src={src}
-        alt={alt}
-        className={className}
-        loading={eager ? 'eager' : 'lazy'}
-        decoding="async"
-        fetchPriority={eager ? 'high' : 'auto'}
-        width={width}
-        height={height}
-        sizes={sizes}
-        onLoad={onLoad}
-      />
-    </picture>
-  )
-}
-
 const PhotoCard = ({ image, index, onClick }: PhotoCardProps) => {
   const [isLoaded, setIsLoaded] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
-  // 首屏前 2 张图设为 eager，加速 LCP；其余懒加载
-  const isEager = index < 2
 
   return (
     <div
@@ -98,19 +42,16 @@ const PhotoCard = ({ image, index, onClick }: PhotoCardProps) => {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <ResponsiveImage
+      <img
         src={image.url}
         alt={image.alt}
-        eager={isEager}
-        width={800}
-        height={600}
-        sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
         className={cn(
-          "w-full h-auto transition-transform duration-500 ease-out",
+          "w-full transition-transform duration-500 ease-out",
           isLoaded ? "opacity-100" : "opacity-0",
           isHovered ? "scale-105" : "scale-100"
         )}
         onLoad={() => setIsLoaded(true)}
+        loading="lazy"
       />
 
       {!isLoaded && (
@@ -169,14 +110,9 @@ const Lightbox = ({
         className="relative max-w-[90vw] max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <Image
+        <img
           src={currentImage.url}
           alt={currentImage.alt}
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-          width={1600}
-          height={1200}
           className="max-w-full max-h-[85vh] object-contain rounded-lg"
         />
 

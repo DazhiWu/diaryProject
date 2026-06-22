@@ -9,7 +9,6 @@ import { SparklesIcon, SmileIcon, FrownIcon, HeartIcon, AlertCircleIcon, HelpCir
 import { MehIcon } from './icons'
 import type { Entry } from "@/app/page"
 import { useState, useEffect } from "react"
-import Image from "next/image"
 
 import { saveAIAnalysis, getAIAnalysisForDiary, updateDiaryEntry } from "@/lib/diaryApi"
 import { supabase } from "@/lib/supabaseClient"
@@ -435,11 +434,10 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
                   className="relative aspect-square cursor-pointer overflow-hidden rounded-lg shadow-sm transition-all duration-300 hover:shadow-md hover:scale-105"
                   onClick={() => setSelectedImageIndex(index)}
                 >
-                  <Image
+                  <img
                     src={image}
                     alt={`日记图片 ${index + 1}`}
-                    fill
-                    className="object-cover transition-transform duration-700 hover:scale-110"
+                    className="h-full w-full object-cover transition-transform duration-700 hover:scale-110"
                   />
                 </div>
               ))}
@@ -461,11 +459,9 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
                 >
                   <ChevronLeftIcon className="h-8 w-8" />
                 </Button>
-                <Image
+                <img
                   src={entry.images[selectedImageIndex]}
                   alt="放大查看"
-                  width={1920}
-                  height={1080}
                   className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
                 />
                 <Button
