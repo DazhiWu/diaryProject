@@ -14,7 +14,7 @@ import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { Card } from './ui/card'
 import { PlusIcon, Trash2Icon, EditIcon, ChevronLeftIcon } from './icons'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from './ui/dialog'
 import { Label } from './ui/label'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
@@ -890,6 +890,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingEvent ? '编辑重要事件' : '添加重要事件'}</DialogTitle>
+            <DialogDescription>{editingEvent ? '修改重要事件信息' : '记录本年度的重要事件'}</DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
@@ -944,6 +945,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingAnalysis ? '编辑AI读后感' : '添加AI读后感内容'}</DialogTitle>
+            <DialogDescription>{editingAnalysis ? '修改AI读后感内容' : '添加本年度的AI读后感分析'}</DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">

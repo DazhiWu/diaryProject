@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
@@ -71,6 +71,7 @@ export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDia
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>生病异常设置</DialogTitle>
+          <DialogDescription>设置生病期间的异常记录，便于统计健康数据。</DialogDescription>
         </DialogHeader>
         
         <div className="space-y-6">

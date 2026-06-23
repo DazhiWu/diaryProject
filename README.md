@@ -444,6 +444,23 @@ npm run build
 
 ## 版本变更记录
 
+### 2026-06-23
+**代码审计与清理**
+- 对项目代码进行全面审计，识别未使用的依赖包和组件
+- 将7个未使用的UI组件移至 `components/ui/backup/` 目录：`checkbox.tsx`, `collapsible.tsx`, `dropdown-menu.tsx`, `separator.tsx`, `sheet.tsx`, `skeleton.tsx`, `switch.tsx`
+- 将5个未使用的依赖包移至 `package.json` 的 `unusedDependencies` 字段：`@radix-ui/react-checkbox`, `@radix-ui/react-collapsible`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-separator`, `@radix-ui/react-switch`
+- 删除重复的 `package-lock.json` 文件（外层目录和内层项目各一个），保留 `pnpm-lock.yaml`
+
+**警告修复**
+- 修复 DialogContent 无障碍警告：为所有使用 DialogContent 的组件添加 `DialogDescription` 属性
+  - `health-condition-dialog.tsx`: "设置生病期间的异常记录，便于统计健康数据。"
+  - `auth-dialog.tsx`: "请输入认证密码以获取管理员权限。"
+  - `yearly-summary.tsx`: 为重要事件对话框和AI读后感对话框添加描述
+
+**构建验证**
+- 验证项目构建成功，所有页面和组件均能正常构建
+- 修复开发服务器启动问题：通过显式 `cd` 到正确目录确保 Turbopack 正确识别项目根目录
+
 ### 2026-06-22
 **代码清理**
 - 移除未使用的依赖包：`@hookform/resolvers`, `next-intl`, `zod`, `autoprefixer`, `tw-animate-css`, `baseline-browser-mapping`, `@vercel/analytics`, `react-day-picker`, `@radix-ui/react-popover`, `@radix-ui/react-accordion`, `@radix-ui/react-aspect-ratio`, `@radix-ui/react-avatar`, `@radix-ui/react-context-menu`, `@radix-ui/react-menubar`, `@radix-ui/react-navigation-menu`, `@radix-ui/react-radio-group`, `@radix-ui/react-scroll-area`, `@radix-ui/react-tabs`, `@radix-ui/react-toggle`, `@radix-ui/react-toggle-group`, `@radix-ui/react-tooltip`, `@radix-ui/react-hover-card`, `cmdk`, `embla-carousel-react`, `input-otp`, `react-hook-form`, `react-resizable-panels`, `recharts`, `vaul`, `tailwindcss-animate`
