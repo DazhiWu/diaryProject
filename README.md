@@ -330,6 +330,65 @@ npm run dev
 npm run build
 ```
 
+### 自动化脚本使用
+
+项目包含一个自动化测试脚本 `test_extra/add_diary.py`，用于自动添加日记并触发 AI 分析。
+
+#### 使用步骤
+
+1. **安装依赖**
+   ```bash
+   # 安装 playwright 库
+   pip install playwright
+   
+   # 安装浏览器（首次运行需要）
+   python -m playwright install chromium
+   ```
+
+2. **准备日记内容**
+   在 `test_extra/diary.txt` 文件中编写日记内容：
+   - 前三行会被跳过（用于标题等元数据）
+   - 从第四行开始的内容会被处理并添加到日记中
+
+3. **运行脚本**
+
+   ```bash
+   cd test_extra
+   python add_diary.py
+   ```
+
+   脚本支持接收参数，以扩展功能：
+
+   ```bash
+   # 默认模式 - 正常执行原脚本内容
+   python add_diary.py
+   
+   # asmr 模式 - 在 AI 分析完成后编辑 subtitle 添加 "-asmr"
+   python add_diary.py asmr
+   ```
+
+#### 脚本功能
+
+- **默认模式**：
+  - 自动获取前一天的日期作为日记日期
+  - 读取 `diary.txt` 文件内容并格式化
+  - 自动完成用户认证
+  - 创建新日记条目并保存
+  - 自动点击最新日记卡片并触发 AI 分析
+
+- **asmr 模式**（额外执行）：
+  - 等待 AI 分析完成
+  - 点击"编辑"按钮
+  - 在 subtitle 输入框内容后添加 "-asmr" 文本
+  - 点击"Update Entry"按钮保存更新
+
+#### 注意事项
+
+- 脚本使用 Playwright 控制 Chromium 浏览器，需要保持网络连接
+- 认证密码已硬编码在脚本中，确保使用正确的密码
+- 脚本运行时会打开浏览器窗口，完成后自动关闭
+- asmr 模式需要等待 AI 分析完成，可能需要较长时间（最多等待 60 秒）
+
 ## 部署到 Cloudflare Pages
 
 ### 部署步骤
