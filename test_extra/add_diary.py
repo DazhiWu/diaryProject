@@ -1,8 +1,9 @@
 import re
+import sys
 from datetime import datetime, timedelta
 from playwright.sync_api import Playwright, sync_playwright, expect
 
-def run(playwright: Playwright) -> None:
+def run(playwright: Playwright, mode: str = "") -> None:
     # 1. 动态获取今天的日期（格式为 2026-07-05）
     yesterday_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     
@@ -50,7 +51,6 @@ def run(playwright: Playwright) -> None:
     
     # 4. 自动填写今天的日期（不再写死）
     page.locator("input[type=\"date\"]").fill(yesterday_date)
-    
     page.get_by_role("button", name="Save Entry").click()
     
     # === 针对问题 2 的动态优化 ===
@@ -68,11 +68,33 @@ def run(playwright: Playwright) -> None:
     page.get_by_role("button", name="AI分析").click()
     print("🎉 成功点击AI分析！")
 
-    # 留出 5 秒看一眼 AI 分析的结果
-    page.wait_for_timeout(5000)
+    if mode == "asmr":
+        print("正在等待AI分析完成...")
+        page.get_by_text("AI分析完成！").wait_for(state="visible", timeout=60000)
+        print("✅ AI分析完成！")
+        
+        print("正在点击编辑按钮...")
+        page.get_by_role("button", name="编辑").click()
+        
+        print("正在定位subtitle输入框...")
+        subtitle_input = page.get_by_placeholder("Enter a subtitle or leave blank to use date/time")
+        subtitle_input.wait_for(state="visible", timeout=10000)
+        
+        current_subtitle = subtitle_input.input_value()
+        new_subtitle = current_subtitle + "-asmr"
+        print(f"正在将subtitle从 '{current_subtitle}' 更新为 '{new_subtitle}'...")
+        subtitle_input.fill(new_subtitle)
+        
+        print("正在点击Update Entry按钮...")
+        page.get_by_role("button", name="Update Entry").click()
+        print("✅ 成功更新日记！")
+    else:
+        page.wait_for_timeout(5000)
     
     context.close()
     browser.close()
 
-with sync_playwright() as playwright:
-    run(playwright)
+if __name__ == "__main__":
+    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    with sync_playwright() as playwright:
+        run(playwright, mode)
