@@ -389,19 +389,25 @@ npm run build
 - 脚本运行时会打开浏览器窗口，完成后自动关闭
 - asmr 模式需要等待 AI 分析完成，可能需要较长时间（最多等待 60 秒）
 
-## 部署到 Cloudflare Pages
+## 部署到 Cloudflare Workers（OpenNext）
 
 ### 部署步骤
 1. 将代码推送到 GitHub 仓库
-2. 在 Cloudflare Dashboard 中创建新的 Pages 项目
-3. 连接 GitHub 账户并选择相应的仓库
-4. 配置构建设置：
-   - 构建命令: `npm run build`
-   - 构建输出目录: `.next`
-5. 点击"部署站点"
+2. 在 Cloudflare Workers 中创建应用，并连接 GitHub 仓库
+3. 配置部署命令：
+   - 部署命令: `pnpm run deploy`
+   - Node.js 版本: `22` 或更高版本
+4. 首次本地验证可运行：
+   ```bash
+   pnpm run cf:build
+   ```
+5. 如需从本地直接部署，可运行：
+   ```bash
+   pnpm run deploy
+   ```
 
 ### 环境变量配置
-在 Cloudflare Pages 设置中添加以下环境变量：
+在 Cloudflare Workers 的 Variables and Secrets 中添加以下环境变量；同时确保构建阶段也能读取 `NEXT_PUBLIC_*` 变量：
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `MODELSCOPE_TOKEN_API_KEY`

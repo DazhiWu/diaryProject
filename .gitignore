@@ -15,12 +15,18 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
 
 # env files
 .env*
 
 # vercel
 .vercel
+
+# cloudflare
+.open-next/
+.wrangler/
+cloudflare-env.d.ts
 
 # typescript
 *.tsbuildinfo
