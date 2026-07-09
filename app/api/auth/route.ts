@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRuntimeEnvValue } from '@/lib/runtimeEnv';
 
-export const runtime = 'edge';
-
 export async function POST(request: Request) {
   try {
     const { password } = await request.json();

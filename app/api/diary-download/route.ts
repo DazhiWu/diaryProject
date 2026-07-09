@@ -1,9 +1,6 @@
 import { fetchDiaryEntriesByRange } from '@/lib/diaryApi';
 import { NextResponse } from 'next/server';
 
-// 配置运行时为Edge Runtime，以支持Cloudflare Pages部署
-export const runtime = 'edge';
-
 // 生成CSV格式的日记数据
 function generateCSV(diaryEntries: Array<{date: Date; content: string}>): string {
   // UTF-8 BOM，确保Excel等软件正确识别中文字符

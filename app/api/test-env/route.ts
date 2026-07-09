@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRuntimeEnvValue } from '@/lib/runtimeEnv';
 
-export const runtime = 'edge';
-
 const ENV_KEYS = [
   'MODELSCOPE_TOKEN_API_KEY',
   'AUTH_PASSWORD_ADMIN',

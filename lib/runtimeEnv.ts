@@ -12,5 +12,9 @@ export async function getRuntimeEnvValue(name: string): Promise<string | undefin
     // Local Next.js dev/build does not always have a Cloudflare context.
   }
 
-  return process.env[name];
+  if (typeof process !== 'undefined') {
+    return process.env[name];
+  }
+
+  return undefined;
 }
