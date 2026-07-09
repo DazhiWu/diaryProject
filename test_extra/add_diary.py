@@ -26,7 +26,7 @@ def run(playwright: Playwright, mode: str = "") -> None:
                 processed_lines.append("\n")
         
         # 将处理后的行列表重新拼接成一个完整的字符串
-        user_thought = "".join(processed_lines)
+        user_thought = "".join(processed_lines).rstrip()
     except FileNotFoundError:
         print("❌ 错误：找不到 diary.txt 文件，请先创建它！")
         return
