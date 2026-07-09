@@ -7,14 +7,11 @@ interface AuthHook {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isViewer: boolean;
-  authenticateUser: (password: string) => boolean;
+  authenticateUser: (password: string) => Promise<boolean>;
   logout: () => void;
 }
 
 // 简单的密码验证（实际应用中应该使用更安全的方式）
-const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_AUTH_PASSWORD_ADMIN;
-const VIEWER_PASSWORD = process.env.NEXT_PUBLIC_AUTH_PASSWORD_VIEWER;
-
 export const useAuth = (): AuthHook => {
   // 在初始化时使用默认值'guest'，然后在useEffect中从localStorage获取实际状态
   // 这样可以避免SSR环境中localStorage不存在的问题
@@ -50,15 +47,29 @@ export const useAuth = (): AuthHook => {
   }, []);
 
   // 验证用户密码
-  const authenticateUser = useCallback((password: string): boolean => {
-    if (password === ADMIN_PASSWORD) {
+  const authenticateUser = useCallback(async (password: string): Promise<boolean> => {
+    const response = await fetch('/api/auth', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password }),
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const data = await response.json();
+
+    if (data.authLevel === 'admin') {
       // 直接更新状态，确保当前组件能立即响应
       setAuthLevel('admin');
       // 更新localStorage，触发其他组件的状态更新
       localStorage.setItem('diaryAppAuthLevel', 'admin');
       localStorage.setItem('diaryAppAuthStatus', 'authenticated');
       return true;
-    } else if (password === VIEWER_PASSWORD) {
+    } else if (data.authLevel === 'viewer') {
       // 直接更新状态，确保当前组件能立即响应
       setAuthLevel('viewer');
       // 更新localStorage，触发其他组件的状态更新

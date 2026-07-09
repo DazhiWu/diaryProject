@@ -91,18 +91,20 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
         body: JSON.stringify({ content: entry.content }),
       });
 
+      const responseText = await response.text();
+
       // 先检查响应状态
       if (!response.ok) {
         // 尝试解析错误响应中的JSON消息
         let errorMessage = `API错误: ${response.status} ${response.statusText}`;
         try {
-          const errorData = await response.json();
+          const errorData = JSON.parse(responseText);
           if (errorData.error) {
             errorMessage = `API错误: ${response.status} - ${errorData.error}`;
           }
         } catch (parseError) {
           // 如果无法解析JSON，则使用文本响应
-          const errorText = await response.text();
+          const errorText = responseText;
           if (errorText) {
             errorMessage = `API错误: ${response.status} - ${errorText.substring(0, 100)}...`;
           }
@@ -114,12 +116,12 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
       // 检查内容类型
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        const errorText = await response.text();
+        const errorText = responseText;
         console.error("非JSON响应:", errorText);
         throw new Error(`服务器返回非JSON响应: ${errorText.substring(0, 100)}...`);
       }
 
-      const data = await response.json();
+      const data = JSON.parse(responseText);
       console.log(`API返回的AI分析结果:`, data);
       
       // 先保存到数据库

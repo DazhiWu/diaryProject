@@ -14,22 +14,29 @@ interface AuthDialogProps {
 
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const [password, setPassword] = useState('');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const auth = useAuth();
-  const { authenticateUser, isAdmin } = auth;
+  const { authenticateUser } = auth;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (authenticateUser(password)) {
-      toast.success('认证成功！页面将自动刷新以应用权限设置。');
-      onOpenChange(false);
-      setPassword('');
-      // 认证成功后主动刷新页面，确保所有组件都能获取到最新的认证状态
-      setTimeout(() => {
-        window.location.reload();
-      }, 500); // 给toast显示留一点时间
-    } else {
+    setIsAuthenticating(true);
+
+    try {
+      if (await authenticateUser(password)) {
+        toast.success('认证成功！页面将自动刷新以应用权限设置。');
+        onOpenChange(false);
+        setPassword('');
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      } else {
+        toast.error('密码错误，请重试。');
+      }
+    } catch (error) {
       toast.error('密码错误，请重试。');
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
@@ -37,9 +44,9 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-        <DialogTitle>用户认证</DialogTitle>
-        <DialogDescription>请输入认证密码以获取管理员权限。</DialogDescription>
-      </DialogHeader>
+          <DialogTitle>用户认证</DialogTitle>
+          <DialogDescription>请输入认证密码以获取管理员权限。</DialogDescription>
+        </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="password" className="text-sm font-medium">
@@ -62,7 +69,9 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
             >
               取消
             </Button>
-            <Button type="submit">认证</Button>
+            <Button type="submit" disabled={isAuthenticating}>
+              {isAuthenticating ? '认证中...' : '认证'}
+            </Button>
           </div>
         </form>
       </DialogContent>

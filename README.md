@@ -307,15 +307,15 @@ npm install
 
 ```env
 # Supabase 配置
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
 
 # ModelScope API 密钥
 MODELSCOPE_TOKEN_API_KEY=your_modelscope_api_key
 
 # 认证密码（可选，用于权限系统）
-NEXT_PUBLIC_AUTH_PASSWORD_ADMIN=your_admin_password
-NEXT_PUBLIC_AUTH_PASSWORD_VIEWER=your_viewer_password
+AUTH_PASSWORD_ADMIN=your_admin_password
+AUTH_PASSWORD_VIEWER=your_viewer_password
 ```
 
 ### 启动开发服务器
@@ -394,25 +394,50 @@ npm run build
 ### 部署步骤
 1. 将代码推送到 GitHub 仓库
 2. 在 Cloudflare Workers 中创建应用，并连接 GitHub 仓库
-3. 配置部署命令：
-   - 部署命令: `pnpm run deploy`
+3. 使用 Workers Builds 配置自动部署：
+   - Git repository: `DazhiWu/diaryProject`
+   - Production branch: `main`
+   - Root directory: `/`
+   - Build command: `pnpm run cf:build`
+   - Deploy command: `pnpm exec opennextjs-cloudflare deploy`
    - Node.js 版本: `22` 或更高版本
 4. 首次本地验证可运行：
    ```bash
    pnpm run cf:build
    ```
-5. 如需从本地直接部署，可运行：
+5. 如需验证 Worker 上传配置，可运行：
+   ```bash
+   pnpm exec wrangler deploy --dry-run
+   ```
+6. 如需从本地直接部署，可运行：
    ```bash
    pnpm run deploy
    ```
 
 ### 环境变量配置
-在 Cloudflare Workers 的 Variables and Secrets 中添加以下环境变量；同时确保构建阶段也能读取 `NEXT_PUBLIC_*` 变量：
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+在 Cloudflare Workers 的 **Variables and Secrets** 中添加以下运行期环境变量：
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
 - `MODELSCOPE_TOKEN_API_KEY`
-- `NEXT_PUBLIC_AUTH_PASSWORD_ADMIN`（可选）
-- `NEXT_PUBLIC_AUTH_PASSWORD_VIEWER`（可选）
+- `AUTH_PASSWORD_ADMIN`（可选）
+- `AUTH_PASSWORD_VIEWER`（可选）
+
+Workers Builds 的 **Variables and secrets** 用于构建阶段。当前项目认证已改为 `/api/auth` 服务端校验，`AUTH_PASSWORD_ADMIN` 和 `AUTH_PASSWORD_VIEWER` 主要依赖运行期变量；如果将来又新增需要注入前端包的环境变量，必须在构建前添加到 Workers Builds 变量中，并重新触发构建。
+
+### Pages 迁移到 Workers 的维护记录
+本项目曾使用 Cloudflare Pages + `@cloudflare/next-on-pages` 部署。2026-07-06 02:35:20 UTC 左右的 Pages 部署是旧链路中确认可用的版本；之后即使代码未变化，仅修改 Pages 的 Variables and secrets 并 retry deployment，也可能因为 `next-on-pages` / `wrangler` / `@cloudflare/workers-types` 等临时依赖版本漂移导致构建失败。
+
+当前项目已迁移为 Cloudflare Workers + OpenNext：
+- `open-next.config.ts` 使用 `defineCloudflareConfig()`
+- `wrangler.jsonc` 指向 `.open-next/worker.js` 和 `.open-next/assets`
+- `package.json` 中 `cf:build` 使用 `opennextjs-cloudflare build`
+- Workers Builds 接管 GitHub 自动构建，后续仍然保持“推送到 GitHub main 分支后自动部署”的流程
+
+注意事项：
+- 不要再用 Cloudflare Pages 的旧项目作为生产部署入口。
+- `pnpm build` 只能证明 Next.js 构建成功，不能产出 Cloudflare Pages/Workers 所需的 OpenNext Worker bundle。
+- Windows 本地生成的 OpenNext bundle 可能出现预览或运行期异常；生产部署优先使用 Cloudflare Workers Builds 的 Linux 构建环境。
+- Cloudflare API 或 Wrangler OAuth 即使可以读 Workers/Pages 信息，也可能没有 Workers Builds 写权限；遇到 `Authentication error` 时，直接在 Cloudflare Dashboard 配置 Workers Builds 和 API token 更稳。
 
 ## 常见问题解决方案
 
@@ -442,7 +467,8 @@ npm run build
 ### 4. 本地运行正常但部署后出错
 **原因**：环境变量未正确设置或构建配置问题
 **解决方案**：
-- 在 Cloudflare Pages 中正确配置所有必需的环境变量
+- 在 Cloudflare Workers 的运行期 Variables and Secrets 中正确配置所有必需的环境变量
+- 如果变量参与构建，确认 Workers Builds 的 Variables and secrets 中也已配置
 - 确保环境变量名称拼写正确
 - API 密钥值正确无误
 - 检查构建日志中的错误信息
@@ -452,6 +478,13 @@ npm run build
 **解决方案**：
 - 项目使用 UTC 时区处理日期
 - 修改时间会显示带+16小时偏移的时间（适应特定时区需求）
+
+### 6. 认证密码配置后仍然失败
+**原因**：认证变量所在阶段不对，或部署版本早于变量更新时间。
+**解决方案**：
+- 当前项目通过 `/api/auth` 在服务端校验密码，确认 Worker 运行期 Variables and Secrets 中存在 `AUTH_PASSWORD_ADMIN` 和 `AUTH_PASSWORD_VIEWER`
+- 修改运行期变量后通常无需重新构建，但建议重新打开页面并清理浏览器缓存后再测
+- 如果未来改回前端认证变量，必须在 Workers Builds 变量中配置，并重新触发一次 build/deploy
 
 ### 7. 音频播放"加载失败"提示但能正常播放
 **原因**：音频对象事件监听器竞态问题
@@ -508,6 +541,24 @@ npm run build
 - 实现数据备份和恢复功能
 
 ## 版本变更记录
+
+### 2026-07-09
+**Cloudflare Workers / OpenNext 部署迁移**
+- 将部署链路从 Cloudflare Pages + `@cloudflare/next-on-pages` 迁移到 Cloudflare Workers + OpenNext
+- 新增 `open-next.config.ts` 和 `wrangler.jsonc`，使用 `.open-next/worker.js` 与 `.open-next/assets` 作为 Worker 输出
+- 使用 Workers Builds 连接 GitHub 仓库，实现推送 `main` 分支后自动构建部署
+- Workers Builds 生产配置：
+  - Build command: `pnpm run cf:build`
+  - Deploy command: `pnpm exec opennextjs-cloudflare deploy`
+  - Root directory: `/`
+  - Node.js: `22` 或更高版本
+- 记录 Pages 旧部署失败原因：代码未变化时，Pages retry 仍可能因 `next-on-pages` 及其临时依赖版本漂移导致构建失败
+- 记录变量维护规则：运行期 Variables and Secrets 与 Workers Builds 变量是两套作用域；需要注入前端包的变量必须在构建前存在并重新 build
+
+**认证变量安全调整**
+- 认证逻辑改为通过 `/api/auth` 服务端接口校验
+- 认证密码使用运行期变量 `AUTH_PASSWORD_ADMIN` 和 `AUTH_PASSWORD_VIEWER`
+- 避免继续将认证密码编译进浏览器端代码
 
 ### 2026-06-23
 **代码审计与清理**
