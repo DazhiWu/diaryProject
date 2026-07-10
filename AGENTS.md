@@ -1,0 +1,145 @@
+# AGENTS.md
+
+## Project overview
+
+This is a personal diary application built with Next.js and Supabase. It supports diary CRUD, image/audio uploads, search/calendar views, health tracking, anonymous messages, CSV export, and yearly summaries. Server API routes call a ModelScope-hosted DeepSeek model for title/emotion analysis and translation. Guest, viewer, and admin UI modes use simple password checks.
+
+## Tech stack
+
+- Next.js 16 App Router, React 18, strict TypeScript, Tailwind CSS 4
+- pnpm 10.20.0 and Node.js 22+
+- Supabase PostgreSQL and Storage
+- ModelScope OpenAI-compatible API with `deepseek-ai/DeepSeek-V3.2`
+- Cloudflare Workers through OpenNext and Wrangler
+
+## Development environment
+
+- Prefer WSL Ubuntu for development and OpenNext checks.
+- Install with `pnpm install`; preserve `pnpm-lock.yaml` and do not add npm/Yarn lockfiles.
+- Run with `pnpm dev`.
+- Use `pnpm build` for Next.js validation and `pnpm cf:build` for the Cloudflare artifact.
+- Keep local values in ignored `.env.local` files and never commit credentials.
+
+## Project structure
+
+- `app/`: App Router application, styles, and API routes.
+- `components/`: business and UI components.
+- `hooks/`: authentication state and health-condition hooks.
+- `lib/`: Supabase access, business APIs, media, environment lookup, AI, and utilities.
+- `public/`: static placeholder assets.
+- `test_extra/`: partial SQL helpers, experiments, and UI automation; not a complete migration/test suite.
+- `docs/`: detailed database/storage and deployment documentation.
+- `next.config.mjs`, `open-next.config.ts`, `wrangler.jsonc`: deployment configuration.
+
+## Architecture summary
+
+- `app/page.tsx` switches among diary list/calendar/create/edit/detail, export, yearly-summary, message, and audio views.
+- Client-reachable modules use a shared Supabase anon client for most database/Storage operations; diary data has a compressed `localStorage` fallback.
+- AI/translation API routes keep the ModelScope token server-side; the download route returns CSV.
+- `/api/auth` compares runtime passwords and stores a UI level in browser `localStorage`; this is not Supabase Auth or a durable server session.
+- Images are compressed to WebP in the browser, uploaded to Storage, and referenced by relative paths.
+
+## Database and storage
+
+Supabase stores diary, AI, health, message, audio, and yearly-summary records. Media uses `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages`. Only health/message SQL is checked in; full production schemas, RLS, relationships, and Storage policies need Supabase confirmation.
+
+Read [`docs/DATABASE.md`](docs/DATABASE.md) before changing queries, tables, RLS, buckets, paths, or access boundaries.
+
+## Deployment
+
+Production targets Cloudflare Workers through OpenNext. The entry is `.open-next/worker.js`, assets are `.open-next/assets`, and Wrangler enables `nodejs_compat`. The former Pages path is obsolete. Build/runtime variables and dashboard-managed domains/routes require explicit handling.
+
+Read [`docs/DEPLOY.md`](docs/DEPLOY.md) before changing builds, variables, API runtime behavior, OpenNext, Wrangler, Workers Builds, or domains.
+
+## Environment variables
+
+| Variable | Purpose | Required |
+|---|---|---|
+| `SUPABASE_URL` | Shared Supabase client URL | Yes |
+| `SUPABASE_ANON_KEY` | Browser-visible Supabase anon credential | Yes |
+| `MODELSCOPE_TOKEN_API_KEY` | Server-side AI/translation credential | For AI features |
+| `AUTH_PASSWORD_ADMIN` | Admin password | For admin mode |
+| `AUTH_PASSWORD_VIEWER` | Viewer password | For viewer mode |
+
+Never record values or substitute a service-role key for the anon key. See `docs/DEPLOY.md` for stage/secrecy details.
+
+## Common commands
+
+```bash
+pnpm install
+pnpm dev
+pnpm build
+pnpm lint
+pnpm start
+pnpm cf:build
+pnpm cf-typegen
+pnpm preview
+pnpm deploy
+```
+
+## Important conventions
+
+- Use pnpm, Node.js 22+, strict TypeScript, `@/*`, and the App Router structure.
+- Preserve component, hook, and `lib/` boundaries unless the user explicitly requests an architectural change.
+- Preserve table/bucket names unless a coordinated migration is requested.
+- Treat `components/ui/backup/` as intentionally inactive.
+- Do not commit `.env*`, credentials, `.open-next/`, or Wrangler state.
+- Verify `pnpm build` and `pnpm cf:build` for server-route, environment, or deployment changes.
+
+## Known issues and risks
+
+- TypeScript build errors are ignored by `next.config.mjs`.
+- Browser anon writes rely on RLS/Storage policies; UI roles are not authorization.
+- Authentication lacks Supabase Auth, signed sessions, and expiry.
+- `/api/test-env` reports variable presence/length and must never return values.
+- Public unoptimized images can affect bandwidth/performance.
+- Production schemas/policies are only partially represented.
+- `pnpm lint` lacks a direct `eslint` dependency and needs clean-install confirmation.
+- README has old Node.js 18/npm wording; `package.json` requires Node.js 22+ and pnpm 10.20.0.
+
+## Documentation map
+
+- [`README.md`](README.md): project introduction, startup instructions, and basic usage.
+- [`docs/DATABASE.md`](docs/DATABASE.md): database, RLS, Supabase Storage, and data-access rules.
+- [`docs/DEPLOY.md`](docs/DEPLOY.md): Cloudflare, OpenNext, environment variables, and deployment procedures.
+
+`docs/ARCHITECTURE.md` does not currently exist. Create it only when architecture detail becomes substantial enough to require a dedicated document.
+
+## AI agent instructions
+
+- Before any development task, read `README.md`, `AGENTS.md`, and the `docs/` files relevant to the task.
+- Before editing, inspect the actual code, configuration, and Git status; do not rely only on historical chat or older documentation.
+- Prefer the smallest necessary change.
+- Do not modify files unrelated to the current task.
+- Preserve the current architecture, directory structure, naming, and code style unless the user explicitly requests changes.
+- Use the package manager and runtime versions currently specified by the project.
+- Never write, print, or commit real keys, tokens, passwords, or environment-variable values.
+- If code and documentation disagree, treat actual code and configuration as authoritative, then correct the affected documentation in the same task.
+- Preserve existing user changes in a dirty worktree and inspect diffs before editing overlapping files.
+- After implementation, check whether `README.md`, `AGENTS.md`, or a focused document under `docs/` must be updated.
+- Run verification proportional to the change; for deployment-sensitive changes, distinguish `pnpm build` from `pnpm cf:build`.
+- At completion, report changed files, reasons, verification performed, and facts still requiring confirmation.
+
+## Documentation update rules
+
+| Change type | Required documentation update |
+|---|---|
+| Database tables, fields, indexes, RLS, Storage, or media-path changes | Update `docs/DATABASE.md` |
+| Cloudflare, OpenNext, Wrangler, build commands, environment variables, or deployment-flow changes | Update `docs/DEPLOY.md` |
+| Project goals, startup instructions, or external usage changes | Update `README.md` |
+| Directory structure, major modules, development conventions, or AI constraints change | Update `AGENTS.md` |
+| Significant architecture change | First update the summary in `AGENTS.md`, then consider creating or updating `docs/ARCHITECTURE.md` |
+
+When one change affects several categories, update every applicable document. Do not copy the same detailed explanation into each file; keep summaries and links in `AGENTS.md` and details in the focused document.
+
+## Documentation maintenance
+
+- `README.md` is for human developers and users.
+- `AGENTS.md` is for AI coding assistants and contains the project summary, development constraints, high-value conventions, and documentation navigation.
+- `docs/` contains detailed topics such as database, deployment, and architecture.
+- Do not repeat long sections of the same content across documents.
+- Keep only high-value summaries and entry points in `AGENTS.md`.
+- When one topic grows noticeably, move its detail to the corresponding file under `docs/` and link it here.
+- Do not record chat history, temporary debugging output, abandoned approaches, or one-time operations.
+- Do not mechanically append notes after every conversation; edit, merge, replace, or remove obsolete content first.
+- Keep headings and formatting consistent with the existing English section structure.
