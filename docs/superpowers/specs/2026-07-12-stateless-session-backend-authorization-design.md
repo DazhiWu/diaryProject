@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved design for a future implementation session. This document is a specification, not an implementation plan. The next conversation should read this file, inspect the current repository and production configuration, then use `superpowers:writing-plans` before changing code.
+Approved design for a future implementation session. This document is a specification, not an implementation plan. The 2026-07-12 confirmation decisions below are authoritative where they refine an earlier statement. The next conversation must read this file, inspect the current repository and production configuration read-only, then use `superpowers:writing-plans` before changing code.
 
 ## Goal
 
@@ -36,7 +36,7 @@ The latest five diaries by `date DESC` remain public. The server, never the clie
 | Translation | Denied | Allowed | Allowed |
 | AI analysis | Denied | Denied; button hidden | Allowed |
 | CSV export | Denied | Denied; control hidden | Allowed |
-| Health read | Preserve current product behavior | Read | Read |
+| Health read | Read | Read | Read |
 | Health write | Denied | Denied | Allowed |
 | Yearly summary read/images | Read | Read | Read |
 | Yearly summary write | Denied | Denied | Allowed |
@@ -75,6 +75,7 @@ Required environment variables:
 SESSION_SECRET=
 SESSION_VERSION=1
 SUPABASE_SERVICE_ROLE_KEY=
+APP_ORIGIN=https://diary.wuzhizhii.com
 ```
 
 Existing password and ModelScope variables remain server-only secrets. `SESSION_SECRET` must be a high-entropy secret of at least 32 random bytes. `SUPABASE_SERVICE_ROLE_KEY` must never enter `next.config.mjs`, browser modules, logs, responses, or committed files.
@@ -101,6 +102,8 @@ Cookie attributes:
 - role-specific `Max-Age`/expiry.
 
 Sessions expire naturally or when `SESSION_VERSION` changes. After changing either password, also increment `SESSION_VERSION`. Do not add logout UI in this phase.
+
+The server must fail safely as a configuration error when either password is empty or the viewer and admin passwords are equal. Both passwords, `SESSION_SECRET`, `SESSION_VERSION`, and `SUPABASE_SERVICE_ROLE_KEY` are server-only runtime secrets; none may use a `NEXT_PUBLIC_` name. Sessions are fixed-duration and must not be refreshed or extended by activity.
 
 ## Authentication APIs and frontend state
 
@@ -135,7 +138,6 @@ Move sensitive database access behind server APIs grouped by domain, for example
 /api/yearly-summaries
 /api/yearly-summaries/[year]
 /api/audio
-/api/messages
 ```
 
 Authorization helpers should expose small interfaces such as `requireSession()`, `requireViewer()`, and `requireAdmin()`. Route handlers must not accept a client-provided role or `authenticated=true` flag.
@@ -143,6 +145,16 @@ Authorization helpers should expose small interfaces such as `requireSession()`,
 Guest access to a single diary must query whether its ID belongs to the current `ORDER BY date DESC LIMIT 5` set. A client-supplied date, list position, or public flag is not authorization evidence.
 
 Translation accepts viewer/admin. AI analysis and any related database write accept admin only. CSV export accepts admin only.
+
+`anonymous_messages` is the one retained browser-anon path: its board continues to issue direct Supabase `SELECT` and `INSERT`. Do not create a permanent `/api/messages` route. After the migration, no client-reachable anon client may access a sensitive domain, including Storage.
+
+## Diary access and data invariants
+
+`diaryContent.date` is globally unique. For a guest, the only readable diary set is the result of `ORDER BY date DESC LIMIT 5` at request time; future-dated rows participate normally in that query. The server must apply this rule to list pagination, search, calendar/date jump, a single diary request, previous/next navigation, direct URLs, and diary-image authorization. A real diary (or referenced diary image) outside that set returns `403`; an absent diary or object reference returns `404`. Do not silently turn a forbidden diary into an empty list or a not-found response.
+
+`image_paths` is a non-null JSONB array and an empty diary stores `[]`, never `NULL`. Every present value must be globally unique across current diary rows, match `^\d{4}/\d{8}_\d+\.webp$`, and embed the owning diary's `date` as `YYYYMMDD`. Date uniqueness plus date/path matching makes cross-row duplication impossible; a database constraint trigger must still reject duplicate elements inside one JSONB array. A diary with nonempty `image_paths` cannot change date. A diary with `[]` may change to an unused date.
+
+The no-reuse requirement cannot be met from the current array alone when the greatest-numbered object is deleted. Therefore the migration adds a durable, internal `diary_image_sequences` ledger keyed by diary date with a nondecreasing `last_sequence`; it is a sequence-allocation record, not a cleanup/retry task table. Adding an image atomically locks/upserts that date, sets its number to `GREATEST(last_sequence, current-array maximum) + 1`, and advances `last_sequence`. Removing an image never renumbers or reduces the ledger. Replacing an image overwrites its same path and updates `diaryContent.modifiedAt`. Client image URLs use the proxy plus `v=<modifiedAt>`.
 
 ## Private Storage and on-demand media proxy
 
@@ -165,17 +177,33 @@ Authorization:
 
 Never accept a bucket name from the client. Normalize and validate paths; reject empty paths, backslashes, `..`, encoded traversal, unexpected prefixes, and paths not referenced by an authorized database row.
 
-The proxy downloads from private Storage and streams the body with the correct content type. Image responses may use short private/browser caching. Audio must support HTTP Range requests so seeking continues to work. Do not buffer large audio files unnecessarily.
+The proxy downloads from private Storage and streams the body with the correct content type. Image responses may use short private/browser caching. Audio must parse and honor a single valid HTTP `Range` request, return `206` with `Content-Range`, `Accept-Ranges`, and exact `Content-Length`, return `416` for an unsatisfiable range, and forward a stream rather than fully buffering a large object. Client requests never submit a bucket name. Every server path validator rejects empty strings, backslashes, `..`, percent-encoded traversal, repeated slashes, a wrong prefix, query/fragment characters, and a wrong extension before Storage access.
 
-Migration order for media:
+### Media invariants
 
-1. implement and test proxy APIs while buckets are still public;
-2. switch all frontend media URLs to proxy URLs;
-3. verify lazy/on-demand loading and audio Range behavior;
-4. make all three buckets private;
-5. remove broad public Storage SELECT/INSERT policies;
-6. move uploads/deletes to admin server APIs;
-7. verify direct public object URLs and direct anon mutations fail.
+| Domain | Fixed bucket | Stored path and database rule | Read | Mutation |
+|---|---|---|---|---|
+| Diary image | `2024To2025_diary_images` | `diaryContent.image_paths` JSONB array; diary rules above | guest latest five only; viewer/admin all | admin API only |
+| Yearly image | `2025_Summary_Images` | one non-null `yearly_images.storage_path` per image row; `^yearly/[1-9]\d*\.webp$`; unique among current rows | all roles | admin API only |
+| Audio | `audio_messages` | `public.audio_messages.audio_path`; unique bare `*.mp3` filename, no directory | admin only | admin API only |
+
+`yearly_images.yearly_summary_id` keeps its foreign key to `yearly_summaries.id ON DELETE CASCADE`. A yearly image replacement overwrites the same object path and updates `yearly_images.updated_at`; proxy URLs use `v=<updated_at>`. A deleted image record releases its path for later reuse. Before deleting a yearly summary, read every associated `storage_path`, delete the summary row (cascading image rows), then delete those objects; report any residual path if Storage cleanup fails.
+
+Audio does not support in-place replacement: delete its database row first, delete the old file second, then create a new record/file. Before adding the audio-path unique constraint, a read-only duplicate audit must pass. Accept MP3 only and keep it at the bucket root.
+
+For every media/database operation, delete database metadata before Storage. If the subsequent object deletion fails, return a structured partial-success result stating `databaseDeleted: true`, `storageDeleted: false`, and the residual path(s). If upload succeeds but its database mutation fails, immediately attempt compensating Storage deletion; return residual path(s) if that attempt also fails. No queue, Cron, automatic retry, or cleanup-task table is added in this phase, and the UI must present partial success rather than success.
+
+Required media migration order:
+
+1. implement and test media read proxies while buckets are still public;
+2. switch all frontend media reads to proxies;
+3. implement admin upload, replacement, and deletion APIs;
+4. switch every frontend Storage write to those server APIs;
+5. prove that no client code retains sensitive direct Storage writes;
+6. verify proxies, image version parameters, and audio Range behavior;
+7. make all three buckets private;
+8. remove public Storage policies;
+9. verify public URLs, anon listing, upload, replacement, and deletion all fail.
 
 ## Database, RLS, grants, and Advisor remediation
 
@@ -196,7 +224,7 @@ Supabase Advisor findings to resolve:
    - delete it if unused;
    - otherwise move it to an unexposed schema when feasible, constrain `search_path`, and revoke EXECUTE from PUBLIC/anon/authenticated;
    - rerun security advisors after the change.
-4. `diaryInfo` RLS enabled without policies: confirm whether it is obsolete, then archive/drop through a separate approved migration or document intentional inaccessibility.
+4. `diaryInfo` RLS enabled without policies: remove every project-code reference but retain the production table. Do not drop it without a separate explicit approval. `rss_articles` belongs to another project and is entirely out of scope: do not read or alter its data, RLS, grants, indexes, or functions.
 
 Never tighten all policies before new APIs are live. Migrate one domain at a time to avoid production downtime.
 
@@ -205,16 +233,17 @@ Never tighten all policies before new APIs are live. Migrate one domain at a tim
 Cookie authentication requires explicit write-request protection:
 
 - `SameSite=Lax` cookie;
-- validate `Origin` against the configured production origin for state-changing requests;
+- validate every state-changing request's `Origin` against server-only `APP_ORIGIN` in production, with the required value `https://diary.wuzhizhii.com`;
+- allow an explicitly enumerated localhost origin only in local development;
+- reject Cloudflare temporary and `workers.dev` origins for production mutations;
 - reject missing/foreign origins where appropriate;
 - require JSON or explicit multipart content types;
-- optionally require a custom CSRF header for browser mutations;
 - rate-limit login attempts and add a uniform failure delay;
 - use generic authentication errors;
 - return 401 for missing/invalid sessions and 403 for insufficient roles;
 - do not expose Supabase errors, binding presence, internal paths, password distinctions, or secret metadata.
 
-Rate limiting must be compatible with Cloudflare Workers. Select the concrete mechanism during implementation planning after checking current Cloudflare capabilities and account bindings.
+Rate limiting must be compatible with Cloudflare Workers. Select the concrete mechanism during implementation planning after checking current Cloudflare capabilities and account bindings. Origin validation does not replace session/role authorization.
 
 ## Migration phases
 
@@ -225,13 +254,12 @@ Each phase must be independently deployable and verified before removing the old
 3. Server-only Supabase client and authorization helpers.
 4. Diary reads with latest-five guest enforcement.
 5. Diary admin writes, admin-only AI analysis, viewer/admin translation, admin-only CSV export.
-6. Health, yearly-summary, audio, and message APIs.
-7. Media proxies, lazy requests, and audio Range support.
-8. Frontend removal of sensitive direct Supabase calls.
-9. Private bucket conversion and Storage policy tightening.
-10. Table RLS/Data API grant tightening by domain.
-11. Advisor function and unused-table remediation.
-12. Remove obsolete client APIs and complete documentation/deployment updates.
+6. Health and yearly-summary APIs, then audio APIs; preserve direct anon messages only.
+7. Execute the required media migration order above.
+8. Frontend removal of all remaining sensitive direct Supabase calls and `diaryInfo` references.
+9. Table RLS/Data API grant tightening by domain after its replacement API is live.
+10. Advisor function remediation; do not touch `rss_articles` and do not drop `diaryInfo`.
+11. Complete documentation/deployment updates.
 
 Rollback points and old/new path compatibility must be defined in the implementation plan for every phase that changes production RLS or bucket visibility.
 
@@ -243,12 +271,14 @@ Automated tests must cover:
 - altered signatures, malformed payloads, expiry, unknown roles, and `SESSION_VERSION` mismatch;
 - production Cookie attributes and absence of JavaScript-readable auth state;
 - guest latest-five enforcement for list and direct-ID access;
+- guest latest-five enforcement for search, calendar/date jump, previous/next, direct URLs, and owned diary images, including 403 versus 404;
 - viewer read access to history and translation;
 - viewer AI analysis and CSV export denied server-side and hidden in UI;
 - admin CRUD, AI analysis, CSV export, health, yearly-summary, and audio operations;
 - 401 versus 403 behavior;
 - anonymous-message SELECT/INSERT success and UPDATE/DELETE denial;
 - diary-image ownership authorization for all roles;
+- diary/annual/audio path validation, date/path matching, non-null `[]`, uniqueness, no-renumber sequence allocation, overwrite version parameters, and partial-success compensation results;
 - guest yearly-image access;
 - admin-only audio including Range requests;
 - traversal/encoding/path-injection rejection;
@@ -256,6 +286,8 @@ Automated tests must cover:
 - no service-role or session secret in browser bundles;
 - direct anon sensitive-table access denied after migration;
 - direct public Storage URLs/list/upload/update/delete behavior matches the final private policy.
+
+Before each schema or policy batch, execute read-only production audits for the invariants that batch will enforce. Any existing NULL, malformed, duplicate, wrong-date, or incompatible path blocks the migration until an explicitly approved data-repair plan exists; implementation must not silently coerce existing production records.
 
 Verification gates:
 
