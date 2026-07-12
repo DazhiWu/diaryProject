@@ -13,13 +13,13 @@
 - 支持按日期范围导出 CSV，以及上传、播放、编辑元数据和删除音频。
 - Supabase 读取失败时可回退到浏览器中已有的压缩日记备份；这不是完整的离线 CRUD 或 PWA 支持。
 
-## 权限模型
+## 当前权限模型与下一阶段目标
 
-- `guest`：最多查看 5 篇日记，并可访问公开显示的视图。
-- `viewer`：查看全部日记和搜索功能。
-- `admin`：创建、编辑、删除、AI 分析、健康管理和音频管理等操作。
+- `guest`：按日期排序查看最新 5 篇日记，并可访问公开显示的年度总结和匿名留言。
+- `viewer`：当前主要用于查看全部历史日记；下一阶段目标是允许翻译，但禁止 AI 分析和 CSV 导出，相关按钮不显示。
+- `admin`：当前承担创建、编辑、删除、AI 分析、翻译、CSV 导出、健康管理、年度总结和音频管理等操作；下一阶段将由服务端 Session 强制执行。
 
-`/api/auth` 使用运行时密码比较后返回等级，浏览器把等级保存在 `localStorage`。这不是 Supabase Auth、服务端会话或可信授权；真正的数据安全必须由 Supabase RLS、Data API grants 和 Storage policies 保证。
+当前 `/api/auth` 使用运行时密码比较后返回等级，浏览器把等级保存在 `localStorage`；这仍不是可信授权。下一阶段已批准改为无状态服务端签名 HttpOnly Cookie Session，并将敏感数据库访问迁移到服务端 API。设计见 [`docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md)。
 
 ## 架构
 
@@ -29,6 +29,8 @@
 - `hooks/`：认证等级和健康状况 hooks。项目未使用 React Context 作为全局状态容器。
 - `lib/`：Supabase 访问、AI、媒体、运行时环境变量和业务 API。
 - `test_extra/`：部分 SQL 示例、实验和 UI 自动化辅助文件，不是完整迁移或测试套件。
+
+当前浏览器仍直接使用 Supabase anon client；完整后端授权、私有 Storage 和按需媒体代理属于下一阶段，尚未实现。
 
 生产部署通过 OpenNext 适配到 Cloudflare Workers。详细结构与长期约束见 [`AGENTS.md`](AGENTS.md)。
 

@@ -4,7 +4,7 @@
 
 The application uses Supabase PostgreSQL and Storage through a shared browser-visible anon client. Production metadata, policies, grants, constraints, indexes, and buckets were inspected read-only on 2026-07-12. The repository still lacks a complete migration history, so future schema changes must be exported as authoritative migrations rather than inferred from this document.
 
-The app does not create a Supabase Auth session. `/api/auth` only returns a UI level stored in browser `localStorage`; it does not change the Supabase role. Browser and shared-server-client requests therefore use the anon role.
+The current app does not create a Supabase Auth session. `/api/auth` only returns a UI level stored in browser `localStorage`; it does not change the Supabase role. Browser and shared-server-client requests therefore use the anon role. A future approved redesign will add a server-signed Cookie Session and a server-only privileged client; that redesign is not implemented yet.
 
 ## Production tables
 
@@ -62,7 +62,7 @@ Production Data API grants give anon/authenticated broad table privileges. RLS i
 - `INSERT` for `anon` and `authenticated`, subject to the 2–1000 character check.
 - No UPDATE or DELETE policy, so client updates/deletes are blocked.
 
-Most other application tables currently have a `PUBLIC FOR ALL USING (true)` policy. This permits anon reads and writes despite guest/viewer/admin UI restrictions. Tightening these policies without breaking current admin features requires a trusted server session, Supabase Auth, or server-only privileged API design.
+Most other application tables currently have a `PUBLIC FOR ALL USING (true)` policy. This permits anon reads and writes despite guest/viewer/admin UI restrictions. The approved future design will move these operations behind server APIs before tightening policies; until then, the current UI roles are not authorization.
 
 Supabase security advisors additionally report:
 
@@ -70,7 +70,7 @@ Supabase security advisors additionally report:
 - a `public.rls_auto_enable()` SECURITY DEFINER function executable by anon/authenticated;
 - broad Storage SELECT policy that allows listing all three public buckets.
 
-These findings need a separate security design before production changes. Advisor remediation: [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter).
+These findings are tracked by the approved future design in [`superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md). Do not apply the final tightening piecemeal before the replacement APIs are live. Advisor remediation: [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter).
 
 ## Storage
 

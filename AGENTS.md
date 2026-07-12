@@ -34,11 +34,13 @@ This is a personal diary application built with Next.js and Supabase. It support
 ## Architecture summary
 
 - `app/page.tsx` switches among diary list/calendar/create/edit/detail, export, yearly-summary, message, and audio views.
-- Client-reachable modules use a shared Supabase anon client for most database/Storage operations; diary data has a compressed `localStorage` fallback.
+- Client-reachable modules currently use a shared Supabase anon client for most database/Storage operations; diary data has a compressed `localStorage` fallback. A future approved redesign will move sensitive operations behind server APIs.
 - AI/translation API routes keep the ModelScope token server-side; the download route returns CSV.
-- `/api/auth` compares runtime passwords and stores a UI level in browser `localStorage`; this is not Supabase Auth or a durable server session.
+- `/api/auth` currently compares runtime passwords and stores a UI level in browser `localStorage`; this is not trusted authorization. The approved next phase is a stateless signed HttpOnly Cookie Session with `SESSION_VERSION`, not a database session table.
 - Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
+- Next-phase target: viewer may translate but must not use or see AI analysis/CSV export controls; admin retains those capabilities. Do not claim this is enforced until the signed-session/API migration is complete.
+- The approved backend-authorization design is documented in [`docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md); do not treat it as implemented until code, migrations, and deployment verification are complete.
 
 ## Database and storage
 
@@ -91,9 +93,9 @@ pnpm deploy
 
 - TypeScript build errors are ignored by `next.config.mjs`.
 - Browser anon writes rely on RLS/Storage policies; UI roles are not authorization.
-- Authentication lacks Supabase Auth, signed sessions, and expiry.
+- Authentication currently lacks server-signed sessions and expiry; localStorage role state is not authorization.
 - Public unoptimized images can affect bandwidth/performance.
-- Most browser-direct business tables still have permissive public ALL policies; a trusted-session redesign is required before tightening them without breaking admin features.
+- Most browser-direct business tables still have permissive public ALL policies; the approved trusted-session redesign must be implemented before tightening them without breaking admin features.
 - Supabase security advisors flag broad Storage listing and a public SECURITY DEFINER function; review them separately before changing production behavior.
 - `pnpm lint` lacks a direct `eslint` dependency and needs clean-install confirmation.
 - Cloudflare Workers Builds Git repository/branch/commands still require Dashboard confirmation because the current OAuth token cannot read the Builds API.

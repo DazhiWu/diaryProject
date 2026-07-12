@@ -47,11 +47,13 @@ Cloudflare was inspected read-only on 2026-07-12. Worker identity, runtime bindi
 | `wrangler.jsonc` | Worker name/entry, compatibility, assets, variable preservation, observability |
 | `lib/runtimeEnv.ts` | Cloudflare runtime binding lookup with `process.env` fallback |
 | `lib/supabaseClient.ts` | Shared Supabase client initialization |
-| `app/api/auth/route.ts` | Runtime auth password lookup |
+| `app/api/auth/route.ts` | Current runtime password lookup; future Cookie Session entry point |
 | `lib/aiAnalysis.ts` | Runtime ModelScope token lookup |
 | `.gitignore` | Excludes `.env*`, `.open-next/`, `.wrangler/`, generated types, logs, build output |
 
 There is no `.env.example` in the repository.
+
+The current deployment does not yet use `SESSION_SECRET`, `SESSION_VERSION`, or `SUPABASE_SERVICE_ROLE_KEY`. These are reserved for the approved backend-authorization redesign and must not be added to `next.config.mjs` or browser code.
 
 ## Build commands
 
@@ -159,8 +161,8 @@ Account identity, token scopes, and production approvals need confirmation outsi
 
 - Homepage, styles, and static assets.
 - Diary pagination/search/calendar/detail.
-- `/api/auth`: valid viewer/admin and invalid-password behavior.
-- Guest/viewer/admin UI, remembering it does not replace RLS.
+- `/api/auth`: current valid viewer/admin and invalid-password behavior; future Cookie Session behavior must be tested separately.
+- Guest/viewer/admin UI; the next-phase target is viewer translation-only access with hidden AI/CSV controls. Current UI does not replace RLS.
 - Authorized Supabase read/create/update/delete under production policies.
 - Diary image upload/display and stored relative path.
 - Audio/yearly image behavior when in scope.
@@ -191,6 +193,7 @@ Version history and rollback capability were verified on 2026-07-12. After expli
 - Wrangler/API credentials may read project state but lack Workers Builds write permission.
 - Custom-domain state is not versioned with the repository even though its current target was verified.
 - Workers Builds values and Worker runtime secrets are separate; changing one scope does not update the other.
+- The approved signed-session/private-media redesign is documented in [`superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md) and requires phased deployment with rollback checkpoints.
 
 ## Deployment change checklist
 
