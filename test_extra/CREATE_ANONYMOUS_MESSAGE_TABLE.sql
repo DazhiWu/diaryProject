@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS anonymous_messages (
   id BIGSERIAL PRIMARY KEY,
-  content TEXT NOT NULL,
+  content TEXT NOT NULL CHECK (char_length(btrim(content)) BETWEEN 2 AND 1000),
   created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
   user_agent TEXT,
   ip_address TEXT
@@ -18,13 +18,15 @@ ALTER TABLE anonymous_messages ENABLE ROW LEVEL SECURITY;
 -- 创建策略：允许所有人读取留言
 CREATE POLICY "Allow public read access" 
   ON anonymous_messages 
-  FOR SELECT 
+  FOR SELECT
+  TO anon, authenticated
   USING (true);
 
 -- 创建策略：允许所有人插入留言
 CREATE POLICY "Allow public insert access" 
   ON anonymous_messages 
-  FOR INSERT 
+  FOR INSERT
+  TO anon, authenticated
   WITH CHECK (true);
 
 -- 注意：出于隐私和安全考虑，不允许删除或更新留言

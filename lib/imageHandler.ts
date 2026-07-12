@@ -70,7 +70,7 @@ export async function compressImage(
  * @returns 图片路径
  */
 export function generateYearlyImagePath(index: number): string {
-  return `yearly/${index}.webp`
+  return `yearly/${crypto.randomUUID()}_${index}.webp`
 }
 
 /**
@@ -109,7 +109,7 @@ export async function uploadImage(
       .from(bucket)
       .upload(path, compressedFile, {
         cacheControl: '3600',
-        upsert: true
+        upsert: false
       })
 
     if (error) {

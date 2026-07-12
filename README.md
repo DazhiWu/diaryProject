@@ -1,716 +1,132 @@
 # AI 日记分析应用
 
-这是一个基于 Next.js 和 Supabase 构建的日记应用，具有 AI 分析功能。该应用可以分析日记内容并自动生成摘要和情绪分析，支持年度总结、匿名留言板等扩展功能。
+这是一个基于 Next.js、React 和 Supabase 的个人日记应用。它支持日记 CRUD、搜索与日历浏览、图片和音频、健康记录、匿名留言、CSV 导出与年度总结，并通过服务端 API 调用 ModelScope 上的 `deepseek-ai/DeepSeek-V3.2` 生成日记标题、情绪标签和翻译。
 
-## 功能特性
+## 功能
 
-### 核心功能
-- 创建、编辑、删除日记条目
-- 上传图片到日记条目（支持最多18张图片，自动压缩）
-- AI 分析日记内容，生成摘要和情绪标签
-- 日记内容中英文翻译
-- 响应式设计，支持移动端和桌面端
-- 搜索和过滤功能
-- 日历视图浏览日记
+- 创建、编辑、删除和分页浏览日记，支持内容/副标题搜索与日历视图。
+- 每篇日记最多选择 18 张图片；浏览器会把图片压缩为 WebP 后上传到 Supabase Storage。
+- AI 分析生成短标题和情绪标签；翻译同样通过服务端接口完成，ModelScope 密钥不进入浏览器代码。
+- 年度总结包含重要事件、AI 读后感、意见和年度照片。
+- 匿名留言支持 2–1000 字内容、HTML 转义和每页 10 条分页。
+- 健康状况可按日期范围记录并显示在日历中。
+- 支持按日期范围导出 CSV，以及上传、播放、编辑元数据和删除音频。
+- Supabase 读取失败时可回退到浏览器中已有的压缩日记备份；这不是完整的离线 CRUD 或 PWA 支持。
 
-### 扩展功能
-- **年度总结**：展示年度重要事件时间轴、AI读后感、年度照片
-- **匿名留言板**：支持用户匿名留言和分页浏览
-- **健康状况追踪**：记录生病异常状态，在日历中可视化显示
-- **日记导出**：支持将日记导出为CSV格式
-- **离线支持**：网络离线时使用localStorage缓存数据
-- **音频记录**：支持上传和播放音频文件
+## 权限模型
 
-### 权限系统
-- **访客模式**：查看有限的日记内容（5条）
-- **浏览者模式**：查看所有日记内容
-- **管理员模式**：完整的读写权限，包括编辑、删除、AI分析等
+- `guest`：最多查看 5 篇日记，并可访问公开显示的视图。
+- `viewer`：查看全部日记和搜索功能。
+- `admin`：创建、编辑、删除、AI 分析、健康管理和音频管理等操作。
 
-## 项目架构
+`/api/auth` 使用运行时密码比较后返回等级，浏览器把等级保存在 `localStorage`。这不是 Supabase Auth、服务端会话或可信授权；真正的数据安全必须由 Supabase RLS、Data API grants 和 Storage policies 保证。
 
-### 系统模块图
+## 架构
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              应用层 (app/)                                  │
-│  ┌─────────────┐  ┌─────────────────────────────────────────────────────┐  │
-│  │ layout.tsx  │  │              page.tsx (主应用)                        │  │
-│  │ 全局布局    │  │  - 状态管理 (entries, view, auth)                     │  │
-│  └─────────────┘  │  - 路由控制 (list/calendar/new/detail/edit等)         │  │
-│                   │  - 权限检查 (guest/viewer/admin)                       │  │
-│                   └─────────────────────────────────────────────────────┘  │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                              API 路由层                              │    │
-│  │  /api/ai-analysis   - AI分析接口        /api/translate    - 翻译接口 │    │
-│  │  /api/diary-download - 日记导出接口      /api/test-env     - 环境测试 │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              组件层 (components/)                           │
-│  ┌───────────────────────────┐  ┌───────────────────────────────────────┐   │
-│  │         ui/               │  │           业务组件                     │   │
-│  │  - shadcn/ui 基础组件     │  │  - diary-entry        (日记编辑/创建) │   │
-│  │  - button, card, dialog   │  │  - diary-detail       (日记详情)      │   │
-│  │  - progress, slider       │  │  - diary-list         (日记列表)      │   │
-│  │  - use-toast              │  │  - calendar-view      (日历视图)      │   │
-│  └───────────────────────────┘  │  - yearly-summary     (年度总结)      │   │
-│                                 │  - message-board      (留言板)        │   │
-│                                 │  - auth-dialog        (认证对话框)    │   │
-│                                 │  - health-condition-dialog (健康设置) │   │
-│                                 │  - masonry-photo-gallery (图片画廊)   │   │
-│                                 │  - diary-downloader   (日记导出)      │   │
-│                                 │  - audio-uploader     (音频上传)      │   │
-│                                 └───────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              业务逻辑层 (lib/)                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │ supabaseClient│  │   diaryApi   │  │  aiAnalysis  │  │ imageHandler │    │
-│  │ 数据库连接    │  │ 日记CRUD     │  │ AI分析/翻译  │  │ 图片上传/压缩│    │
-│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │messageBoardApi│  │yearlySummaryApi│ │ audioHandler │  │    utils     │    │
-│  │ 留言板API    │  │ 年度总结API  │  │ 音频处理     │  │ 工具函数     │    │
-│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Hooks 层 (hooks/)                             │
-│  ┌──────────────┐  ┌──────────────────┐  ┌──────────────┐                  │
-│  │   useAuth    │  │useHealthConditions│ │   use-toast  │                  │
-│  │ 认证状态管理  │  │ 健康状况数据管理  │  │ Toast通知    │                  │
-│  └──────────────┘  └──────────────────┘  └──────────────┘                  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              数据层 (Supabase)                              │
-│  ┌──────────────────────┐  ┌──────────────────────┐                        │
-│  │   diaryContent       │  │   diary_AI_analysis  │                        │
-│  │ 日记内容表           │  │ AI分析结果表         │                        │
-│  └──────────────────────┘  └──────────────────────┘                        │
-│  ┌──────────────────────┐  ┌──────────────────────┐                        │
-│  │ health_conditions    │  │ anonymous_messages   │                        │
-│  │ 健康状况表           │  │ 匿名留言表           │                        │
-│  └──────────────────────┘  └──────────────────────┘                        │
-│  ┌──────────────────────┐  ┌──────────────────────┐                        │
-│  │ yearly_summary_events│  │ yearly_summary_analysis│                       │
-│  │ 年度事件表           │  │ 年度分析表           │                        │
-│  └──────────────────────┘  └──────────────────────┘                        │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+- `app/page.tsx`：以客户端状态在列表、日历、新建、详情、编辑、导出、年度总结、留言和音频视图间切换。
+- `app/api/`：认证、AI 分析、翻译和 CSV 下载路由。
+- `components/`：业务组件与 `components/ui/` 基础组件；文件通常使用 kebab-case，导出的 React 组件使用 PascalCase。
+- `hooks/`：认证等级和健康状况 hooks。项目未使用 React Context 作为全局状态容器。
+- `lib/`：Supabase 访问、AI、媒体、运行时环境变量和业务 API。
+- `test_extra/`：部分 SQL 示例、实验和 UI 自动化辅助文件，不是完整迁移或测试套件。
 
-### 核心流程说明
+生产部署通过 OpenNext 适配到 Cloudflare Workers。详细结构与长期约束见 [`AGENTS.md`](AGENTS.md)。
 
-#### 日记创建流程
-```
-用户填写内容 → 上传图片（可选）→ 图片压缩 → 上传Supabase Storage → 
-获取图片URL → 保存日记到数据库 → 更新本地状态 → 显示成功提示
-```
+## 技术栈
 
-#### AI分析流程
-```
-用户点击AI分析 → 调用/api/ai-analysis → ModelScope API → 
-返回分析结果 → 保存到数据库 → 更新日记标题 → 显示分析结果
-```
-
-#### 认证流程
-```
-用户输入密码 → 验证密码（admin/viewer）→ 更新localStorage → 
-更新全局状态 → 重新加载数据 → 更新UI权限
-```
-
-## 技术选型说明
-
-### 前端框架
-- **Next.js 16**：React全栈框架，支持App Router和Edge Runtime
-- **React 18**：用户界面库，使用React Hooks管理状态
-- **TypeScript**：类型安全的JavaScript超集
-
-### UI组件库
-- **shadcn/ui**：基于Radix UI的高质量组件库
-- **Radix UI**：无样式的可访问性组件原语
-- **Lucide React**：精美的图标库
-
-### 样式方案
-- **Tailwind CSS 4**：原子化CSS框架
-- **clsx + tailwind-merge**：条件类名处理
-
-### 数据库和存储
-- **Supabase**：PostgreSQL数据库和对象存储
-- **Supabase Auth**：认证服务（当前项目使用简化的密码认证）
-
-### AI服务
-- **ModelScope API**：通过OpenAI兼容接口访问AI模型
-- **DeepSeek-V3.2**：用于日记分析和翻译
-
-### 状态管理
-- **React Hooks**：useState, useEffect, useCallback
-- **Context**：隐式传递状态（通过自定义hooks）
-- **localStorage**：持久化认证状态和离线数据缓存
-
-### 其他依赖
-- **date-fns**：日期处理库
-- **lz-string**：数据压缩（localStorage缓存）
-- **sonner**：Toast通知组件
-- **@radix-ui/react-progress**：进度条组件
-- **@radix-ui/react-slider**：滑块组件
-
-## 代码规范
-
-### 文件命名
-- **组件文件**：使用 PascalCase，如 `diary-entry.tsx`
-- **工具函数**：使用 camelCase，如 `imageHandler.ts`
-- **API路由**：统一使用 `route.ts`
-
-### 目录结构
-- `app/`：Next.js应用路由和页面
-- `components/`：React组件（`ui/`子目录存放shadcn/ui组件）
-- `lib/`：业务逻辑和工具函数
-- `hooks/`：自定义React Hooks
-- `public/`：静态资源
-
-### 编码约定
-- 使用 TypeScript 严格模式（`strict: true`）
-- 组件使用函数式组件和 Hooks
-- 避免在组件外部定义状态
-- 使用 `useCallback` 优化回调函数
-- 错误处理使用 try-catch 并提供用户友好的提示
-- 使用 `toast` 组件显示操作反馈
-
-### 状态管理规范
-- 全局状态（如认证状态）使用自定义hooks + localStorage
-- 组件内部状态使用 useState
-- 异步数据加载使用 useEffect
-- 避免不必要的状态更新和重复渲染
-
-## 关键功能实现说明
-
-### 1. 日记管理
-- **分页查询**：使用 Supabase Range 查询实现服务器端分页
-- **离线支持**：网络断开时自动切换到 localStorage 缓存
-- **图片处理**：上传前自动压缩为 WebP 格式，限制最大宽度1920px
-
-### 2. AI分析
-- **双模式支持**：通过API路由调用，避免在浏览器中暴露API密钥
-- **响应解析**：支持JSON和文本两种响应格式的解析
-- **错误处理**：针对网络错误、认证错误、配额超限等情况提供详细提示
-
-### 3. 权限系统
-- **三级权限**：guest（访客）、viewer（浏览者）、admin（管理员）
-- **本地认证**：使用localStorage存储认证状态，支持跨标签页同步
-- **视图限制**：不同权限用户看到不同的功能按钮和数据范围
-
-### 4. 年度总结
-- **多视图模式**：事件支持列表/时间轴视图，分析支持卡片/大屏视图
-- **图片瀑布流**：使用 masonry 布局展示年度照片
-- **延迟加载**：核心数据和图片分开加载，优化性能
-
-### 5. 匿名留言板
-- **内容验证**：限制内容长度（2-1000字符），防止恶意内容
-- **HTML转义**：使用 escapeHtml 防止XSS攻击
-- **分页浏览**：支持分页导航，每页10条留言
-
-### 6. 音频记录
-- **音频上传**：支持上传音频文件到Supabase Storage
-- **音频播放**：支持在线播放音频，使用 currentAudioRef 避免播放状态竞态
-- **进度控制**：支持播放进度条拖动和时间显示
-- **管理员权限**：管理员可删除音频记录
-
-### 7. 日期选择器
-- **原生日期输入**：使用 HTML5 `input type="date"` 实现日期选择
-- **日期限制**：最早可选日期为2024年11月1日
-- **跨页面统一**：健康状况设置和日记导出使用相同的日期选择UI
-
-## 数据库设置
-
-### 核心数据表
-
-#### diaryContent 表（日记内容）
-```sql
-CREATE TABLE diaryContent (
-  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-  date DATE NOT NULL,
-  subtitle TEXT,
-  content TEXT NOT NULL,
-  image_paths TEXT[],
-  modifiedAt TIMESTAMP WITH TIME ZONE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-```
-
-#### diary_AI_analysis 表（AI分析结果）
-```sql
-CREATE TABLE diary_AI_analysis (
-  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-  diary_id BIGINT REFERENCES diaryContent(id),
-  summary TEXT NOT NULL,
-  emotion TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-```
-
-#### health_conditions 表（健康状况）
-```sql
-CREATE TABLE health_conditions (
-  id TEXT PRIMARY KEY,
-  condition TEXT NOT NULL,
-  start_date DATE NOT NULL,
-  end_date DATE NOT NULL,
-  color TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-#### anonymous_messages 表（匿名留言）
-```sql
-CREATE TABLE anonymous_messages (
-  id BIGSERIAL PRIMARY KEY,
-  content TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  user_agent TEXT,
-  ip_address TEXT
-);
-```
-
-### 索引建议
-```sql
--- 日记内容索引
-CREATE INDEX idx_diary_content_date ON diaryContent(date DESC);
-CREATE INDEX idx_diary_content_subtitle ON diaryContent(subtitle);
-
--- AI分析索引
-CREATE INDEX idx_ai_analysis_diary_id ON diary_AI_analysis(diary_id);
-
--- 匿名留言索引
-CREATE INDEX idx_anonymous_messages_created_at ON anonymous_messages(created_at DESC);
-```
+- Next.js 16 App Router、React 18、严格 TypeScript
+- Tailwind CSS 4、Radix UI、Lucide React
+- Supabase PostgreSQL 和 Storage
+- ModelScope OpenAI-compatible API、`deepseek-ai/DeepSeek-V3.2`
+- OpenNext、Cloudflare Workers、Wrangler
+- Node.js 22+、pnpm 10.20.0
 
 ## 本地开发
 
-### 环境要求
-- Node.js 18 或更高版本
-- npm 包管理器
+在未提交的 `.env.local` 中配置变量；仓库目前没有 `.env.example`。不要提交真实 URL、密钥、令牌或密码。
 
-### 安装依赖
+```dotenv
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+MODELSCOPE_TOKEN_API_KEY=
+AUTH_PASSWORD_ADMIN=
+AUTH_PASSWORD_VIEWER=
+```
+
+| 变量 | 用途 | 要求 |
+|---|---|---|
+| `SUPABASE_URL` | Supabase 客户端 URL | 必需；会进入浏览器构建，仍不要硬编码 |
+| `SUPABASE_ANON_KEY` | Supabase anon 凭据 | 必需；不是服务端秘密，权限依赖 RLS/Storage policies |
+| `MODELSCOPE_TOKEN_API_KEY` | AI 分析和翻译 | 启用 AI 功能时必需；仅服务端运行时 |
+| `AUTH_PASSWORD_ADMIN` | 管理员密码 | 启用管理员模式时必需；仅服务端运行时 |
+| `AUTH_PASSWORD_VIEWER` | 浏览者密码 | 启用浏览者模式时必需；仅服务端运行时 |
+
+安装并启动：
+
 ```bash
-npm install
+pnpm install
+pnpm dev
 ```
 
-### 环境变量配置
-创建 `.env.local` 文件并添加以下环境变量：
+保留 `pnpm-lock.yaml`，不要添加 npm 或 Yarn lockfile。
 
-```env
-# Supabase 配置
-SUPABASE_URL=your_supabase_project_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
+验证命令：
 
-# ModelScope API 密钥
-MODELSCOPE_TOKEN_API_KEY=your_modelscope_api_key
-
-# 认证密码（可选，用于权限系统）
-AUTH_PASSWORD_ADMIN=your_admin_password
-AUTH_PASSWORD_VIEWER=your_viewer_password
-```
-
-### 启动开发服务器
 ```bash
-npm run dev
+pnpm build
+pnpm lint
+pnpm cf:build
 ```
 
-访问 http://localhost:3000 查看应用。
+- `pnpm build` 只生成并验证 Next.js 构建，不生成 Worker 部署产物。
+- `pnpm cf:build` 生成 `.open-next/worker.js` 和 `.open-next/assets`。
+- `pnpm lint` 已声明，但 `eslint` 不是直接依赖；全新安装下的行为仍需确认。
+- `next.config.mjs` 当前忽略 TypeScript build errors，因此构建成功不等于类型检查完全通过。
 
-### 构建项目
+## 数据库和存储
+
+代码访问以下表：
+
+- 日记与 AI：`diaryContent`、`diary_AI_analysis`
+- 健康与留言：`health_conditions`、`anonymous_messages`
+- 音频：`audio_messages`
+- 年度总结：`yearly_summaries`、`important_events`、`ai_analysis_sections`、`ai_analysis_opinions`、`yearly_images`
+
+Storage bucket 为 `2024To2025_diary_images`、`2025_Summary_Images` 和 `audio_messages`。
+
+生产 Supabase 状态已于 2026-07-12 只读核查：业务表均启用 RLS；匿名留言只允许 anon/authenticated 读取和新增；其余浏览器直连业务表仍有宽松的公开写策略。三个 Storage bucket 均公开，只允许公开读取和插入对象，不允许覆盖或删除。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
+
+## Cloudflare Workers 部署
+
+```text
+Next.js source
+→ pnpm cf:build
+→ .open-next/worker.js + .open-next/assets
+→ Cloudflare Workers
+```
+
 ```bash
-npm run build
+pnpm cf:build
+pnpm exec wrangler deploy --dry-run
+pnpm deploy
 ```
 
-### 自动化脚本使用
+`SUPABASE_URL` 和 `SUPABASE_ANON_KEY` 由 `next.config.mjs` 注入浏览器构建，因此 Cloudflare 构建阶段必须可用；共享 Supabase client 被服务端路径导入时，运行时也应能读取它们。当前五个 Worker 运行时绑定均已配置为 secrets，但 Supabase URL/anon key 进入浏览器后仍不是秘密。构建变量与已部署 Worker 的运行时 secrets 是两个作用域。
 
-项目包含一个自动化测试脚本 `test_extra/add_diary.py`，用于自动添加日记并触发 AI 分析。
+已确认生产 Worker 为 `diaryproject`，自定义域名为 `diary.wuzhizhii.com`，未配置单独的 zone route，并存在可回滚的历史版本。Workers Builds 的 Git 仓库、生产分支和命令因当前 OAuth 无 Builds API 权限仍需在 Dashboard 确认。完整流程见 [`docs/DEPLOY.md`](docs/DEPLOY.md)。
 
-#### 使用步骤
+## 需要确认
 
-1. **安装依赖**
-   ```bash
-   # 安装 playwright 库
-   pip install playwright
-   
-   # 安装浏览器（首次运行需要）
-   python -m playwright install chromium
-   ```
+- Cloudflare Workers Builds 当前连接的 Git 仓库、生产分支、root directory 和 build/deploy commands。
+- 其余业务表的宽松公开写策略何时迁移到可信服务端会话或 Supabase Auth。
+- Supabase Advisor 报告的公开 Storage 列表权限和 `public.rls_auto_enable()` SECURITY DEFINER 执行权限是否仍有必要。
 
-2. **准备日记内容**
-   在 `test_extra/diary.txt` 文件中编写日记内容：
-   - 前三行会被跳过（用于标题等元数据）
-   - 从第四行开始的内容会被处理并添加到日记中
+## 文档导航
 
-3. **运行脚本**
-
-   ```bash
-   cd test_extra
-   python add_diary.py
-   ```
-
-   脚本支持接收参数，以扩展功能：
-
-   ```bash
-   # 默认模式 - 正常执行原脚本内容
-   python add_diary.py
-   
-   # asmr 模式 - 在 AI 分析完成后编辑 subtitle 添加 "-asmr"
-   python add_diary.py asmr
-   ```
-
-#### 脚本功能
-
-- **默认模式**：
-  - 自动获取前一天的日期作为日记日期
-  - 读取 `diary.txt` 文件内容并格式化
-  - 自动完成用户认证
-  - 创建新日记条目并保存
-  - 自动点击最新日记卡片并触发 AI 分析
-
-- **asmr 模式**（额外执行）：
-  - 等待 AI 分析完成
-  - 点击"编辑"按钮
-  - 在 subtitle 输入框内容后添加 "-asmr" 文本
-  - 点击"Update Entry"按钮保存更新
-
-#### 注意事项
-
-- 脚本使用 Playwright 控制 Chromium 浏览器，需要保持网络连接
-- 认证密码已硬编码在脚本中，确保使用正确的密码
-- 脚本运行时会打开浏览器窗口，完成后自动关闭
-- asmr 模式需要等待 AI 分析完成，可能需要较长时间（最多等待 60 秒）
-
-## 部署到 Cloudflare Workers（OpenNext）
-
-### 部署步骤
-1. 将代码推送到 GitHub 仓库
-2. 在 Cloudflare Workers 中创建应用，并连接 GitHub 仓库
-3. 使用 Workers Builds 配置自动部署：
-   - Git repository: `DazhiWu/diaryProject`
-   - Production branch: `main`
-   - Root directory: `/`
-   - Build command: `pnpm run cf:build`
-   - Deploy command: `pnpm exec opennextjs-cloudflare deploy`
-   - Node.js 版本: `22` 或更高版本
-4. 首次本地验证可运行：
-   ```bash
-   pnpm run cf:build
-   ```
-5. 如需验证 Worker 上传配置，可运行：
-   ```bash
-   pnpm exec wrangler deploy --dry-run
-   ```
-6. 如需从本地直接部署，可运行：
-   ```bash
-   pnpm run deploy
-   ```
-
-### 环境变量配置
-在 Cloudflare Workers 的 **Variables and Secrets** 中添加以下运行期环境变量：
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `MODELSCOPE_TOKEN_API_KEY`
-- `AUTH_PASSWORD_ADMIN`（可选）
-- `AUTH_PASSWORD_VIEWER`（可选）
-
-Workers Builds 的 **Variables and secrets** 用于构建阶段。当前项目认证已改为 `/api/auth` 服务端校验，`AUTH_PASSWORD_ADMIN` 和 `AUTH_PASSWORD_VIEWER` 主要依赖运行期变量；如果将来又新增需要注入前端包的环境变量，必须在构建前添加到 Workers Builds 变量中，并重新触发构建。
-
-### Pages 迁移到 Workers 的维护记录
-本项目曾使用 Cloudflare Pages + `@cloudflare/next-on-pages` 部署。2026-07-06 02:35:20 UTC 左右的 Pages 部署是旧链路中确认可用的版本；之后即使代码未变化，仅修改 Pages 的 Variables and secrets 并 retry deployment，也可能因为 `next-on-pages` / `wrangler` / `@cloudflare/workers-types` 等临时依赖版本漂移导致构建失败。
-
-当前项目已迁移为 Cloudflare Workers + OpenNext：
-- `open-next.config.ts` 使用 `defineCloudflareConfig()`
-- `wrangler.jsonc` 指向 `.open-next/worker.js` 和 `.open-next/assets`
-- `package.json` 中 `cf:build` 使用 `opennextjs-cloudflare build`
-- Workers Builds 接管 GitHub 自动构建，后续仍然保持“推送到 GitHub main 分支后自动部署”的流程
-
-注意事项：
-- 不要再用 Cloudflare Pages 的旧项目作为生产部署入口。
-- `pnpm build` 只能证明 Next.js 构建成功，不能产出 Cloudflare Pages/Workers 所需的 OpenNext Worker bundle。
-- Windows 本地生成的 OpenNext bundle 可能出现预览或运行期异常；生产部署优先使用 Cloudflare Workers Builds 的 Linux 构建环境。
-- Cloudflare API 或 Wrangler OAuth 即使可以读 Workers/Pages 信息，也可能没有 Workers Builds 写权限；遇到 `Authentication error` 时，直接在 Cloudflare Dashboard 配置 Workers Builds 和 API token 更稳。
-
-## 常见问题解决方案
-
-### 1. 500 错误
-**原因**：环境变量未正确配置或 API 密钥无效
-**解决方案**：
-- 使用应用中的"测试环境"按钮检查环境变量配置
-- 确保已正确设置 `MODELSCOPE_TOKEN_API_KEY` 环境变量
-- 验证 API 密钥是否有效
-- 检查 Cloudflare 控制台中的部署日志
-
-### 2. AI分析失败
-**原因**：网络连接问题或 API 配额超限
-**解决方案**：
-- 检查网络连接状态
-- 验证 API 密钥是否正确配置
-- 检查 API 调用次数是否超限
-- 查看浏览器控制台获取详细错误信息
-
-### 3. 图片上传失败
-**原因**：图片大小超过限制或格式不支持
-**解决方案**：
-- 确保图片格式为常见格式（JPG、PNG、WebP等）
-- 图片会自动压缩，无需手动处理
-- 最多支持上传18张图片
-
-### 4. 本地运行正常但部署后出错
-**原因**：环境变量未正确设置或构建配置问题
-**解决方案**：
-- 在 Cloudflare Workers 的运行期 Variables and Secrets 中正确配置所有必需的环境变量
-- 如果变量参与构建，确认 Workers Builds 的 Variables and secrets 中也已配置
-- 确保环境变量名称拼写正确
-- API 密钥值正确无误
-- 检查构建日志中的错误信息
-
-### 5. 日记日期显示异常
-**原因**：时区处理不一致
-**解决方案**：
-- 项目使用 UTC 时区处理日期
-- 修改时间会显示带+16小时偏移的时间（适应特定时区需求）
-
-### 6. 认证密码配置后仍然失败
-**原因**：认证变量所在阶段不对，或部署版本早于变量更新时间。
-**解决方案**：
-- 当前项目通过 `/api/auth` 在服务端校验密码，确认 Worker 运行期 Variables and Secrets 中存在 `AUTH_PASSWORD_ADMIN` 和 `AUTH_PASSWORD_VIEWER`
-- 修改运行期变量后通常无需重新构建，但建议重新打开页面并清理浏览器缓存后再测
-- 如果未来改回前端认证变量，必须在 Workers Builds 变量中配置，并重新触发一次 build/deploy
-
-### 7. 音频播放"加载失败"提示但能正常播放
-**原因**：音频对象事件监听器竞态问题
-**解决方案**：
-- 使用 `currentAudioRef` 跟踪当前活动的音频对象
-- 在事件处理器中检查当前音频是否仍然是活动引用
-
-### 8. 日期选择器UI显示异常
-**原因**：`react-day-picker` 版本不兼容或样式缺失
-**解决方案**：
-- 当前项目已切换为原生 `input type="date"` 日期选择器
-- 确保日期输入框有 `min` 属性限制最早日期
-
-## 维护更新指南
-
-### 添加新功能
-1. 创建新组件或页面
-2. 在 `lib/` 中添加对应的 API 函数
-3. 更新主应用状态管理（如有需要）
-4. 添加必要的数据库表（如有需要）
-
-### 更新依赖
-1. 运行 `npm update` 更新所有依赖
-2. 检查 shadcn/ui 组件是否需要更新：`npx shadcn@latest update`
-3. 运行 `npm run build` 确保项目能正常构建
-4. 测试核心功能是否正常工作
-
-### 代码优化建议
-1. **性能优化**：
-   - 使用 React.memo 优化组件渲染
-   - 对频繁调用的函数使用 useMemo/useCallback
-   - 图片使用懒加载
-   - 考虑使用 Suspense 进行数据预取
-
-2. **安全优化**：
-   - 增强密码认证机制（当前使用简单的密码比对）
-   - 添加请求频率限制
-   - 加强输入验证和XSS防护
-
-3. **代码组织**：
-   - 将大型组件拆分为更小的组件
-   - 提取重复的逻辑到自定义hooks
-   - 添加类型定义文件
-
-4. **错误处理**：
-   - 统一错误处理机制
-   - 添加全局错误边界
-   - 完善错误日志记录
-
-### 扩展建议
-- 实现日记分享功能
-- 添加标签系统
-- 支持多语言国际化
-- 实现数据备份和恢复功能
-
-## 版本变更记录
-
-### 2026-07-09
-**Cloudflare Workers / OpenNext 部署迁移**
-- 将部署链路从 Cloudflare Pages + `@cloudflare/next-on-pages` 迁移到 Cloudflare Workers + OpenNext
-- 新增 `open-next.config.ts` 和 `wrangler.jsonc`，使用 `.open-next/worker.js` 与 `.open-next/assets` 作为 Worker 输出
-- 使用 Workers Builds 连接 GitHub 仓库，实现推送 `main` 分支后自动构建部署
-- Workers Builds 生产配置：
-  - Build command: `pnpm run cf:build`
-  - Deploy command: `pnpm exec opennextjs-cloudflare deploy`
-  - Root directory: `/`
-  - Node.js: `22` 或更高版本
-- 记录 Pages 旧部署失败原因：代码未变化时，Pages retry 仍可能因 `next-on-pages` 及其临时依赖版本漂移导致构建失败
-- 记录变量维护规则：运行期 Variables and Secrets 与 Workers Builds 变量是两套作用域；需要注入前端包的变量必须在构建前存在并重新 build
-
-**认证变量安全调整**
-- 认证逻辑改为通过 `/api/auth` 服务端接口校验
-- 认证密码使用运行期变量 `AUTH_PASSWORD_ADMIN` 和 `AUTH_PASSWORD_VIEWER`
-- 避免继续将认证密码编译进浏览器端代码
-
-### 2026-06-23
-**代码审计与清理**
-- 对项目代码进行全面审计，识别未使用的依赖包和组件
-- 将7个未使用的UI组件移至 `components/ui/backup/` 目录：`checkbox.tsx`, `collapsible.tsx`, `dropdown-menu.tsx`, `separator.tsx`, `sheet.tsx`, `skeleton.tsx`, `switch.tsx`
-- 将5个未使用的依赖包移至 `package.json` 的 `unusedDependencies` 字段：`@radix-ui/react-checkbox`, `@radix-ui/react-collapsible`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-separator`, `@radix-ui/react-switch`
-- 删除重复的 `package-lock.json` 文件（外层目录和内层项目各一个），保留 `pnpm-lock.yaml`
-
-**警告修复**
-- 修复 DialogContent 无障碍警告：为所有使用 DialogContent 的组件添加 `DialogDescription` 属性
-  - `health-condition-dialog.tsx`: "设置生病期间的异常记录，便于统计健康数据。"
-  - `auth-dialog.tsx`: "请输入认证密码以获取管理员权限。"
-  - `yearly-summary.tsx`: 为重要事件对话框和AI读后感对话框添加描述
-
-**构建验证**
-- 验证项目构建成功，所有页面和组件均能正常构建
-- 修复开发服务器启动问题：通过显式 `cd` 到正确目录确保 Turbopack 正确识别项目根目录
-
-### 2026-06-22
-**代码清理**
-- 移除未使用的依赖包：`@hookform/resolvers`, `next-intl`, `zod`, `autoprefixer`, `tw-animate-css`, `baseline-browser-mapping`, `@vercel/analytics`, `react-day-picker`, `@radix-ui/react-popover`, `@radix-ui/react-accordion`, `@radix-ui/react-aspect-ratio`, `@radix-ui/react-avatar`, `@radix-ui/react-context-menu`, `@radix-ui/react-menubar`, `@radix-ui/react-navigation-menu`, `@radix-ui/react-radio-group`, `@radix-ui/react-scroll-area`, `@radix-ui/react-tabs`, `@radix-ui/react-toggle`, `@radix-ui/react-toggle-group`, `@radix-ui/react-tooltip`, `@radix-ui/react-hover-card`, `cmdk`, `embla-carousel-react`, `input-otp`, `react-hook-form`, `react-resizable-panels`, `recharts`, `vaul`, `tailwindcss-animate`
-- 删除未使用的UI组件：`accordion.tsx`, `aspect-ratio.tsx`, `avatar.tsx`, `carousel.tsx`, `chart.tsx`, `command.tsx`, `context-menu.tsx`, `drawer.tsx`, `empty.tsx`, `field.tsx`, `form.tsx`, `hover-card.tsx`, `input-otp.tsx`, `item.tsx`, `kbd.tsx`, `menubar.tsx`, `navigation-menu.tsx`, `pagination.tsx`, `radio-group.tsx`, `resizable.tsx`, `scroll-area.tsx`, `sidebar.tsx`, `slider.tsx`, `tabs.tsx`, `toggle.tsx`, `toggle-group.tsx`, `tooltip.tsx`, `toaster.tsx`, `use-mobile.tsx`, `calendar.tsx`, `popover.tsx`, `alert.tsx`, `badge.tsx`, `breadcrumb.tsx`, `button-group.tsx`, `input-group.tsx`, `table.tsx`
-
-**功能修复**
-- 修复音频播放状态竞态问题：在 `message-board.tsx` 中添加 `currentAudioRef` 引用，避免切换音频时显示错误提示
-- 修复日期选择器UI：将 `react-day-picker` 替换为原生 `input type="date"`，统一健康状况设置和日记导出页面的日期选择UI
-- 添加日期限制：健康状况设置和日记导出页面的日期选择器最早可选日期限制为2024年11月1日
-
-**配置更新**
-- 移除 `@vercel/analytics` 依赖（项目部署在 Cloudflare，无需 Vercel 分析）
-- 将文本"待开发音频记录"修改为"音频记录"
+- [`AGENTS.md`](AGENTS.md)：架构摘要、开发约束和文档维护规则。
+- [`docs/DATABASE.md`](docs/DATABASE.md)：数据库、RLS、Storage 与访问模式。
+- [`docs/DEPLOY.md`](docs/DEPLOY.md)：OpenNext、Wrangler、环境变量与部署流程。
 
 ## 许可证
 
 MIT
-
-## 2026-07-09 Cloudflare Workers 部署排查记录
-
-本次维护围绕 Cloudflare Workers + OpenNext 部署后的线上异常展开。现象包括：本地功能正常，但部署后用户认证失败，`/api/test-env` 返回 `Internal Server Error`，AI 分析接口返回 500。
-
-### 最终结论
-
-问题不是单纯的环境变量缺失。通过 Cloudflare Worker 已部署版本检查，确认 `AUTH_PASSWORD_ADMIN`、`AUTH_PASSWORD_VIEWER`、`SUPABASE_URL`、`SUPABASE_ANON_KEY` 和 `MODELSCOPE_TOKEN_API_KEY` 已经存在于 Worker runtime bindings 中。
-
-真正导致线上异常的关键点是 API 路由运行时配置和运行时环境变量读取方式：
-
-- 多个 API route 显式设置了 `export const runtime = 'edge'`，在 OpenNext Workers 环境中可能导致 Cloudflare context、Node 兼容库或 AI SDK 运行异常。
-- `lib/runtimeEnv.ts` 中在 Cloudflare context 不可用时直接 fallback 到 `process.env[name]`，但 Edge runtime 或部分 Workers 路径中 `process` 可能不存在，从而让诊断接口也直接 500。
-
-修复方式：
-
-- 移除 API routes 中不必要的 `export const runtime = 'edge'`。
-- 运行时环境变量统一通过 `getCloudflareContext({ async: true })` 获取。
-- 本地 fallback 到 `process.env` 前必须先判断 `typeof process !== 'undefined'`。
-- AI 客户端不要在模块顶层读取密钥或初始化，应在请求执行时读取 runtime env 后创建客户端。
-
-### 本次涉及的关键文件
-
-- `app/api/auth/route.ts`
-- `app/api/test-env/route.ts`
-- `app/api/ai-analysis/route.ts`
-- `app/api/translate/route.ts`
-- `app/api/diary-download/route.ts`
-- `lib/runtimeEnv.ts`
-- `lib/aiAnalysis.ts`
-- `wrangler.jsonc`
-
-### Cloudflare 变量维护规则
-
-Cloudflare Workers Builds 变量和 Worker runtime 变量是两套作用域：
-
-- Workers Builds variables/secrets：只在构建阶段可用。
-- Worker runtime Variables and Secrets：只在请求运行时可用。
-
-当前项目的认证和 AI 分析属于服务端运行时逻辑，应重点确认 Worker runtime 中存在以下变量：
-
-```env
-AUTH_PASSWORD_ADMIN=...
-AUTH_PASSWORD_VIEWER=...
-SUPABASE_URL=...
-SUPABASE_ANON_KEY=...
-MODELSCOPE_TOKEN_API_KEY=...
-```
-
-注意：`wrangler secret list` 只会列出 secrets，不会列出普通 plaintext variables。如果需要查看某个已部署 Worker 版本实际包含的变量和密钥绑定，应使用：
-
-```bash
-pnpm exec wrangler deployments list --name diaryproject
-pnpm exec wrangler versions view <version-id> --name diaryproject
-pnpm exec wrangler secret list --name diaryproject
-```
-
-### NEXT_PUBLIC 变量调整记录
-
-项目已将认证相关变量从 `NEXT_PUBLIC_*` 改为服务端无前缀变量：
-
-```env
-AUTH_PASSWORD_ADMIN=...
-AUTH_PASSWORD_VIEWER=...
-```
-
-维护规则：
-
-- 不要把认证密码、AI token、Supabase service key 等敏感信息放进 `NEXT_PUBLIC_*`。
-- `NEXT_PUBLIC_*` 会被编译进浏览器 bundle，只适合真正公开的前端配置。
-- 服务端变量改名后，需要同时更新 `.env.local`、代码引用、Cloudflare Workers Builds 变量和 Worker runtime 变量。
-- 改完后应重新 push 触发部署，并用 `/api/test-env` 验证线上 runtime 是否读到变量。
-
-### 推荐验证流程
-
-本地验证：
-
-```bash
-pnpm run build
-pnpm run cf:build
-```
-
-线上验证：
-
-1. 打开 Cloudflare Workers Builds，确认最新 Git commit 已完成部署。
-2. 访问 `/api/test-env`，确认返回 JSON，而不是 `Internal Server Error`。
-3. JSON 中只应暴露变量是否存在和长度，不应暴露真实密钥值。
-4. 测试管理员密码和浏览者密码认证。
-5. 测试 AI 分析接口。
-6. 如仍有 500，使用 Cloudflare logs 或 `wrangler tail diaryproject` 查看运行时错误。
-
-### WSL / Linux 开发环境建议
-
-OpenNext 构建时提示 Windows 不是最佳运行环境。后续建议以 WSL/Linux 环境作为主要构建和部署环境：
-
-- 项目建议放在 WSL 文件系统中，例如 `~/projects/diaryProject`。
-- 不建议长期在 WSL 中直接操作 `/mnt/d/...` 下的 Windows 项目目录。
-- 日常编辑可以继续使用 VS Code/Cursor Remote WSL。
-- Cloudflare/OpenNext 构建、预览和部署优先在 WSL 中执行。
-
-推荐命令：
-
-```bash
-pnpm install
-pnpm run build
-pnpm run cf:build
-pnpm exec wrangler deploy
-```
-
-### 编码和终端记录
-
-本次检查确认项目源码文本文件统一为 UTF-8。之前对话中看到的中文乱码主要来自 Windows PowerShell 终端显示，不代表源码文件编码混乱。
-
-后续维护建议：
-
-- 源码文件继续统一 UTF-8。
-- 代码标识符、变量名、文件名尽量使用英文。
-- 用户可见文案、AI prompt、中文业务说明可以继续使用中文。
-- 修改含中文的大文件时，优先使用小范围 patch，避免整文件重写。
-- 对 Cloudflare/OpenNext 问题，优先在 WSL/Linux 中复现和验证。

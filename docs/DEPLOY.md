@@ -15,7 +15,7 @@ Next.js source
 → Cloudflare Workers
 ```
 
-README-documented automated path:
+Historically documented automated path (Dashboard confirmation still required):
 
 ```text
 GitHub `main`
@@ -25,7 +25,7 @@ GitHub `main`
 → Worker `diaryproject`
 ```
 
-The Git repository connection, production branch, account/project, routes, and custom domain are dashboard state and need confirmation.
+Cloudflare was inspected read-only on 2026-07-12. Worker identity, runtime bindings, custom domain, routes, versions, and rollback capability are confirmed below. The current OAuth token cannot read the Workers Builds API, so the Git repository connection, production branch, root directory, and build/deploy commands still need Dashboard confirmation.
 
 ## Prerequisites
 
@@ -49,7 +49,6 @@ The Git repository connection, production branch, account/project, routes, and c
 | `lib/supabaseClient.ts` | Shared Supabase client initialization |
 | `app/api/auth/route.ts` | Runtime auth password lookup |
 | `lib/aiAnalysis.ts` | Runtime ModelScope token lookup |
-| `app/api/test-env/route.ts` | Reports variable presence/length without values |
 | `.gitignore` | Excludes `.env*`, `.open-next/`, `.wrangler/`, generated types, logs, build output |
 
 There is no `.env.example` in the repository.
@@ -106,11 +105,14 @@ Rules:
 - Observability: enabled.
 - Variable preservation: `keep_vars: true`.
 - Other bindings: none declared.
-- Routes/custom domains: none versioned in the repository; dashboard state needs confirmation.
+- Custom domain: `diary.wuzhizhii.com`, production environment.
+- Zone routes: none target `diaryproject`; the custom domain targets the Worker directly.
+- Runtime bindings: `ASSETS` assets binding; all five named runtime variables (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `MODELSCOPE_TOKEN_API_KEY`, `AUTH_PASSWORD_ADMIN`, and `AUTH_PASSWORD_VIEWER`) are currently encrypted secrets.
+- Historical Worker versions and rollback capability are available.
 
 OpenNext adapts App Router pages and API routes to Workers. Plain `next build` is useful validation but not the production artifact.
 
-Cloudflare variables are plain configuration values; secrets are encrypted runtime values. ModelScope tokens and passwords belong in secrets. Anything compiled into browser code, including the anon key here, cannot remain confidential even if entered through a secret UI.
+Cloudflare variables are plain configuration values; secrets are encrypted runtime values. The five runtime bindings are currently secrets. Anything compiled into browser code, including the Supabase URL and anon key here, cannot remain confidential even if entered through a secret UI; Workers Builds still needs those two values in its separate build-time scope.
 
 ## Supabase integration
 
@@ -157,7 +159,6 @@ Account identity, token scopes, and production approvals need confirmation outsi
 
 - Homepage, styles, and static assets.
 - Diary pagination/search/calendar/detail.
-- `/api/test-env`: presence metadata only, never values; restrict/remove if production policy requires.
 - `/api/auth`: valid viewer/admin and invalid-password behavior.
 - Guest/viewer/admin UI, remembering it does not replace RLS.
 - Authorized Supabase read/create/update/delete under production policies.
@@ -176,7 +177,7 @@ Repository-confirmed source rollback:
 2. Rebuild/redeploy that commit or push the revert to the production branch.
 3. Repeat post-deployment verification.
 
-Cloudflare may provide deployment-history rollback, but availability, retention, and permissions need dashboard confirmation. Database rollback is separate and requires an explicit migration/recovery plan.
+Version history and rollback capability were verified on 2026-07-12. After explicit production approval, list versions with `pnpm exec wrangler versions list --name diaryproject` and roll back with `pnpm exec wrangler rollback <version-id> --name diaryproject`. Database rollback is separate and requires an explicit migration/recovery plan.
 
 ## Known deployment issues
 
@@ -188,8 +189,8 @@ Cloudflare may provide deployment-history rollback, but availability, retention,
 - The shared Supabase client throws at module initialization when URL/key variables are absent.
 - `pnpm lint` may fail cleanly because `eslint` is not a direct dependency.
 - Wrangler/API credentials may read project state but lack Workers Builds write permission.
-- Custom-domain state is not versioned and may point to an old Pages project or other Worker.
-- `/api/test-env` exposes variable presence and lengths; it is still a production diagnostic surface.
+- Custom-domain state is not versioned with the repository even though its current target was verified.
+- Workers Builds values and Worker runtime secrets are separate; changing one scope does not update the other.
 
 ## Deployment change checklist
 

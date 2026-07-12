@@ -176,25 +176,6 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
     }
   }
   
-  // 新增：测试环境配置的函数
-  const testEnvironment = async () => {
-    try {
-      const response = await fetch('/api/test-env');
-      const data = await response.json();
-      
-      if (data.success) {
-        console.log('环境测试结果:', data.data);
-        toast.success(`环境配置检查完成: API密钥${data.data.isConfigured ? '已' : '未'}设置`);
-      } else {
-        console.error('环境测试失败:', data.error);
-        toast.error(`环境测试失败: ${data.error}`);
-      }
-    } catch (error) {
-      console.error('环境测试请求失败:', error);
-      toast.error('环境测试请求失败');
-    }
-  }
-  
   // 处理删除操作
   const handleDelete = () => {
     setDeleteDialogOpen(true);
@@ -288,7 +269,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
           返回列表
         </Button>
         <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
-          {/* AI分析和测试环境按钮对viewer和admin都可见，但操作受保护 */}
+          {/* AI分析按钮对viewer和admin都可见，但操作受保护 */}
           {isAuthenticated && (
             <>
               <Button 
@@ -313,16 +294,6 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
                 {isTranslating ? "翻译中..." : "翻译英语"}
               </Button>
               
-              {/* 添加测试环境配置的按钮 */}
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => handleProtectedAction(testEnvironment, "测试环境")}
-                className="gap-2 hover:text-primary hover:bg-primary/5"
-              >
-                <span className="h-4 w-4">🧪</span>
-                测试环境
-              </Button>
             </>
           )}
           

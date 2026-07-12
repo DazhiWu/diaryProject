@@ -37,17 +37,18 @@ This is a personal diary application built with Next.js and Supabase. It support
 - Client-reachable modules use a shared Supabase anon client for most database/Storage operations; diary data has a compressed `localStorage` fallback.
 - AI/translation API routes keep the ModelScope token server-side; the download route returns CSV.
 - `/api/auth` compares runtime passwords and stores a UI level in browser `localStorage`; this is not Supabase Auth or a durable server session.
-- Images are compressed to WebP in the browser, uploaded to Storage, and referenced by relative paths.
+- Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
+- Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
 
 ## Database and storage
 
-Supabase stores diary, AI, health, message, audio, and yearly-summary records. Media uses `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages`. Only health/message SQL is checked in; full production schemas, RLS, relationships, and Storage policies need Supabase confirmation.
+Supabase stores diary, AI, health, message, audio, and yearly-summary records. Production was inspected on 2026-07-12: the three media buckets are public with SELECT/INSERT but no UPDATE/DELETE object policy; anonymous messages allow SELECT/INSERT only; most other browser-direct tables still have permissive public ALL policies. Only health/message SQL is checked in.
 
 Read [`docs/DATABASE.md`](docs/DATABASE.md) before changing queries, tables, RLS, buckets, paths, or access boundaries.
 
 ## Deployment
 
-Production targets Cloudflare Workers through OpenNext. The entry is `.open-next/worker.js`, assets are `.open-next/assets`, and Wrangler enables `nodejs_compat`. The former Pages path is obsolete. Build/runtime variables and dashboard-managed domains/routes require explicit handling.
+Production targets Cloudflare Workers through OpenNext. Worker `diaryproject` uses custom domain `diary.wuzhizhii.com`, no separate zone route, `.open-next/worker.js`, `.open-next/assets`, and `nodejs_compat`. Historical versions support rollback. Workers Builds Git settings still require Dashboard confirmation.
 
 Read [`docs/DEPLOY.md`](docs/DEPLOY.md) before changing builds, variables, API runtime behavior, OpenNext, Wrangler, Workers Builds, or domains.
 
@@ -91,11 +92,11 @@ pnpm deploy
 - TypeScript build errors are ignored by `next.config.mjs`.
 - Browser anon writes rely on RLS/Storage policies; UI roles are not authorization.
 - Authentication lacks Supabase Auth, signed sessions, and expiry.
-- `/api/test-env` reports variable presence/length and must never return values.
 - Public unoptimized images can affect bandwidth/performance.
-- Production schemas/policies are only partially represented.
+- Most browser-direct business tables still have permissive public ALL policies; a trusted-session redesign is required before tightening them without breaking admin features.
+- Supabase security advisors flag broad Storage listing and a public SECURITY DEFINER function; review them separately before changing production behavior.
 - `pnpm lint` lacks a direct `eslint` dependency and needs clean-install confirmation.
-- README has old Node.js 18/npm wording; `package.json` requires Node.js 22+ and pnpm 10.20.0.
+- Cloudflare Workers Builds Git repository/branch/commands still require Dashboard confirmation because the current OAuth token cannot read the Builds API.
 
 ## Documentation map
 
