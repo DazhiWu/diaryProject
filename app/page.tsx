@@ -32,8 +32,6 @@ import {
   saveLocalStorageBackup,
   type DiaryEntry as DiaryEntryType,
 } from "@/lib/diaryApi"
-import { getMultipleImageUrls } from "@/lib/imageHandler"
-import { supabase } from "@/lib/supabaseClient"
 
 // 确保Entry类型与DiaryEntry类型兼容
 export type Entry = {
@@ -47,15 +45,12 @@ export type Entry = {
 
 // 将DiaryEntryType转换为Entry类型
 function convertToEntry(diaryEntry: DiaryEntryType): Entry {
-  // 将图片路径转换为完整的URL
-  const imageUrls = getMultipleImageUrls(diaryEntry.images || [], '2024To2025_diary_images')
-  
   return {
     id: diaryEntry.id,
     date: diaryEntry.date,
     subtitle: diaryEntry.subtitle || `日记 ${diaryEntry.date.toLocaleDateString()}`,
     content: diaryEntry.content,
-    images: imageUrls,
+    images: diaryEntry.images || [],
     modifiedAt: diaryEntry.modifiedAt,
   }
 }
@@ -136,14 +131,7 @@ export default function DiaryApp() {
           debouncedSearchQuery
         )
         
-        // 将图片路径转换为完整的URL
-        const entriesWithUrls = result.entries.map(entry => {
-          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
-          return {
-            ...convertToEntry(entry),
-            images: imageUrls
-          }
-        })
+        const entriesWithUrls = result.entries.map(convertToEntry)
         
         setEntries(entriesWithUrls)
         setTotalEntriesCount(currentIsGuest ? 5 : result.totalCount) // 访客显示最多5条
@@ -163,7 +151,7 @@ export default function DiaryApp() {
         
         // 将图片路径转换为完整的URL
         const entriesWithUrls = filteredOfflineEntries.map(entry => {
-          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+          const imageUrls = entry.images || []
           return {
             ...convertToEntry(entry),
             images: imageUrls
@@ -198,7 +186,7 @@ export default function DiaryApp() {
       
       // 将图片路径转换为完整的URL
       const entriesWithUrls = filteredOfflineEntries.map(entry => {
-        const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+        const imageUrls = entry.images || []
         return {
           ...convertToEntry(entry),
           images: imageUrls
@@ -252,7 +240,7 @@ export default function DiaryApp() {
         const firstPageData = await fetchDiaryEntriesWithPagination(1, currentIsGuest ? 5 : currentEntriesPerPage, "")
         // 将图片路径转换为完整的URL
         const entriesWithUrls = firstPageData.entries.map(entry => {
-          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+          const imageUrls = entry.images || []
           return {
             ...convertToEntry(entry),
             images: imageUrls
@@ -273,7 +261,7 @@ export default function DiaryApp() {
         const localEntries = getLocalStorageBackup()
         // 将图片路径转换为完整的URL
         const entriesWithUrls = localEntries.map(entry => {
-          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+          const imageUrls = entry.images || []
           return {
             ...convertToEntry(entry),
             images: imageUrls
@@ -289,7 +277,7 @@ export default function DiaryApp() {
       const localEntries = getLocalStorageBackup()
       // 将图片路径转换为完整的URL
       const entriesWithUrls = localEntries.map(entry => {
-        const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+        const imageUrls = entry.images || []
         return {
           ...convertToEntry(entry),
           images: imageUrls
@@ -374,19 +362,7 @@ export default function DiaryApp() {
   const updateEntry = async (id: number, content: string, subtitle: string, date: Date, files: File[]): Promise<boolean> => {
     try {
       if (isOnline()) {
-        // 直接从数据库获取最新的条目信息，确保使用原始的相对路径
-        const { data: currentEntry, error } = await supabase
-          .from('diaryContent')
-          .select('image_paths')
-          .eq('id', id)
-          .single();
-          
-        if (error) {
-          toast.error("获取日记信息失败，请重试")
-          return false
-        }
-          
-        let imagePaths: string[] = currentEntry?.image_paths || [];
+        let imagePaths: string[] = selectedEntry?.id === id ? selectedEntry.images : entries.find((entry) => entry.id === id)?.images || [];
         
         // 只有当有新文件上传时才更新图片路径
         if (files.length > 0) {
