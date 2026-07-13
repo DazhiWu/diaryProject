@@ -263,8 +263,12 @@ export function MessageBoard() {
         setPlayingId(null)
       }
       
-      await deleteAudioMessage(message.id)
-      toast.success('音频已删除')
+      const result = await deleteAudioMessage(message.id)
+      if (result.residualPaths.length > 0) {
+        toast.warning(`音频记录已删除，但仍需清理存储文件：${result.residualPaths.join(', ')}`)
+      } else {
+        toast.success('音频已删除')
+      }
       // 重新加载列表
       loadMessages()
     } catch (err) {

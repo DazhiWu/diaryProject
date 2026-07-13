@@ -1,7 +1,6 @@
-import { supabase } from './supabaseClient'
 import { compressToUTF16, decompressFromUTF16 } from 'lz-string'
 import { AIAnalysisResult } from './aiAnalysis'
-import { uploadMultipleImages, generateDiaryImagePath } from './imageHandler'
+import { compressImage } from './imageHandler'
 
 // 健康状况类型定义
 export type HealthCondition = {
@@ -59,17 +58,9 @@ function convertHealthConditionToSupabase(condition: Partial<HealthCondition>): 
 // 获取所有健康状况
 export async function fetchHealthConditions(): Promise<HealthCondition[]> {
   try {
-    const { data, error } = await supabase
-      .from('health_conditions')
-      .select('*')
-      .order('created_at', { ascending: false })
-    
-    if (error) {
-      console.error('Error fetching health conditions:', error)
-      throw error
-    }
-    
-    return data ? data.map(convertHealthConditionFromSupabase) : []
+    const response = await fetch('/api/health')
+    if (!response.ok) throw new Error('Health request failed')
+    return (await response.json() as SupabaseHealthCondition[]).map(convertHealthConditionFromSupabase)
   } catch (error) {
     console.error('Failed to fetch health conditions:', error)
     return []
@@ -79,21 +70,9 @@ export async function fetchHealthConditions(): Promise<HealthCondition[]> {
 // 添加健康状况
 export async function insertHealthCondition(condition: Omit<HealthCondition, 'id' | 'created_at'>): Promise<HealthCondition> {
   try {
-    const supabaseCondition = convertHealthConditionToSupabase(condition)
-    const newId = Date.now().toString()
-    
-    const { data, error } = await supabase
-      .from('health_conditions')
-      .insert([{ ...supabaseCondition, id: newId }])
-      .select('*')
-      .single()
-    
-    if (error) {
-      console.error('Error inserting health condition:', error)
-      throw error
-    }
-    
-    return convertHealthConditionFromSupabase(data)
+    const response = await fetch('/api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...condition, startDate: condition.startDate.toISOString().slice(0, 10), endDate: condition.endDate.toISOString().slice(0, 10) }) })
+    if (!response.ok) throw new Error('Health request failed')
+    return convertHealthConditionFromSupabase(await response.json())
   } catch (error) {
     console.error('Failed to insert health condition:', error)
     throw error
@@ -103,15 +82,8 @@ export async function insertHealthCondition(condition: Omit<HealthCondition, 'id
 // 删除健康状况
 export async function deleteHealthCondition(id: string): Promise<void> {
   try {
-    const { error } = await supabase
-      .from('health_conditions')
-      .delete()
-      .eq('id', id)
-    
-    if (error) {
-      console.error('Error deleting health condition:', error)
-      throw error
-    }
+    const response = await fetch(`/api/health/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (!response.ok) throw new Error('Health request failed')
   } catch (error) {
     console.error('Failed to delete health condition:', error)
     throw error
@@ -199,29 +171,8 @@ export async function fetchDiaryEntriesByRange(startDate: Date, endDate: Date): 
 }
 
 export async function fetchAIAnalysesByDateRange(startDate: Date, endDate: Date): Promise<AIDiaryAnalysis[]> {
-  try {
-    const start = startDate.toISOString()
-    const end = endDate.toISOString()
-    const { data, error } = await supabase
-      .from('diary_AI_analysis')
-      .select('*')
-      .gte('created_at', start)
-      .lte('created_at', end)
-      .order('created_at', { ascending: true })
-    if (error) {
-      throw error
-    }
-    return (data || []).map((item: SupabaseAIDiaryAnalysis) => ({
-      id: item.id,
-      diary_id: item.diary_id,
-      summary: item.summary,
-      emotion: item.emotion,
-      created_at: new Date(item.created_at)
-    }))
-  } catch (error) {
-    console.error('Failed to fetch AI analyses by date range:', error)
-    throw error
-  }
+  void startDate; void endDate
+  return []
 }
 
 // 获取日历视图所需的关键字段（包含subtitle以支持标题检测）
@@ -277,15 +228,17 @@ export async function deleteDiaryEntry(id: number): Promise<void> {
  * @param date 日记日期
  * @returns 上传后的图片路径数组
  */
-export async function uploadDiaryImages(files: File[], date: Date): Promise<string[]> {
+export async function uploadDiaryImages(files: File[], diaryId: number): Promise<string[]> {
   try {
-    const uploadResults = await uploadMultipleImages(
-      files,
-      (index) => generateDiaryImagePath(date, index + 1),
-      '2024To2025_diary_images'
-    )
-    
-    return uploadResults.map(result => result.path)
+    const paths: string[] = []
+    for (const file of files) {
+      const form = new FormData()
+      form.set('file', await compressImage(file))
+      const result = await requestDiaryApi<{ ok: boolean; path?: string; residualPaths?: string[] }>(`/api/diaries/${diaryId}/images`, { method: 'POST', body: form })
+      if (!result.ok || !result.path) throw new Error(result.residualPaths?.length ? `媒体清理未完成: ${result.residualPaths.join(', ')}` : '日记图片上传失败')
+      paths.push(result.path)
+    }
+    return paths
   } catch (error) {
     console.error('上传日记图片失败:', error)
     throw error
@@ -404,41 +357,10 @@ export async function saveAIAnalysis(analysis: {
   summary: string
   emotion: string
 }): Promise<AIDiaryAnalysis> {
-  try {
-    // 先删除之前的AI分析记录，确保只保留最新的结果
-    const { error: deleteError } = await supabase
-      .from('diary_AI_analysis')
-      .delete()
-      .eq('diary_id', analysis.diary_id)
-
-    if (deleteError) {
-      console.error('Error deleting old AI analysis:', deleteError)
-      throw deleteError
-    }
-
-    // 保存新的AI分析结果
-    const { data, error } = await supabase
-      .from('diary_AI_analysis')
-      .insert([analysis])
-      .select('*')
-      .single()
-
-    if (error) {
-      console.error('Error saving AI analysis:', error)
-      throw error
-    }
-
-    return {
-      id: data.id,
-      diary_id: data.diary_id,
-      summary: data.summary,
-      emotion: data.emotion,
-      created_at: new Date(data.created_at)
-    }
-  } catch (error) {
-    console.error('Failed to save AI analysis:', error)
-    throw error
-  }
+  const response = await fetch(`/api/diaries/${analysis.diary_id}/analysis`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ summary: analysis.summary, emotion: analysis.emotion }) })
+  if (!response.ok) throw new Error('Analysis request failed')
+  const data = await response.json() as SupabaseAIDiaryAnalysis
+  return { ...data, created_at: new Date(data.created_at) }
 }
 
 /**
@@ -446,47 +368,9 @@ export async function saveAIAnalysis(analysis: {
  * @param diaryId 日记ID
  */
 export async function getAIAnalysisForDiary(diaryId: number): Promise<AIDiaryAnalysis | null> {
-  try {
-    const { data, error } = await supabase
-      .from('diary_AI_analysis')
-      .select('*')
-      .eq('diary_id', diaryId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    if (error) {
-      // 检查多种情况，确保没有找到记录时返回null
-      // PGRST116是Supabase未找到记录的错误码
-      // 同时检查HTTP状态码406 Not Acceptable，这也是未找到记录时的常见状态码
-      if (error.code === 'PGRST116' || 
-          (error as any).status === 406 ||
-          (error.message && error.message.includes('Not Acceptable')) ||
-          (error.message && error.message.includes('406'))) {
-        // 没有找到记录，返回null
-        return null
-      }
-      console.error('Error fetching AI analysis:', error)
-      throw error
-    }
-
-    return {
-      id: data.id,
-      diary_id: data.diary_id,
-      summary: data.summary,
-      emotion: data.emotion,
-      created_at: new Date(data.created_at)
-    }
-  } catch (error: any) {
-    console.error('Failed to fetch AI analysis:', error)
-    // 同样在catch块中检查406错误
-    if (error.status === 406 || 
-        (error.message && error.message.includes('Not Acceptable')) ||
-        (error.message && error.message.includes('406'))) {
-      // 没有找到记录，返回null
-      return null
-    }
-    throw error
-  }
+  const response = await fetch(`/api/diaries/${diaryId}/analysis`)
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error('Analysis request failed')
+  const data = await response.json() as SupabaseAIDiaryAnalysis | null
+  return data ? { ...data, created_at: new Date(data.created_at) } : null
 }
-

@@ -309,22 +309,19 @@ export default function DiaryApp() {
 
     try {
       if (isOnline()) {
-        let imagePaths: string[] = []
-        
-        // 上传图片到 Supabase Storage
-        if (files.length > 0) {
-          imagePaths = await uploadDiaryImages(files, entryDate)
-        }
-        
-        // Save to Supabase
+        // Create metadata first so image paths are allocated by the protected server workflow.
         const result = await insertDiaryEntry({
           date: entryDate,
           subtitle: defaultSubtitle,
           content,
-          images: imagePaths,
+          images: [],
         })
         
         if (result.success && result.data) {
+          if (files.length > 0) {
+            const imagePaths = await uploadDiaryImages(files, result.data.id)
+            result.data.images = imagePaths
+          }
           if (result.data) {
             setEntries([convertToEntry(result.data), ...entries])
           }
@@ -371,7 +368,7 @@ export default function DiaryApp() {
         
         // 只有当有新文件上传时才更新图片路径
         if (files.length > 0) {
-          imagePaths = await uploadDiaryImages(files, date)
+          imagePaths = await uploadDiaryImages(files, id)
         }
         
         // Update in Supabase

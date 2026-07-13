@@ -87,6 +87,7 @@ export function AudioUploader({ onUploadSuccess, onCancel }: AudioUploaderProps)
         title.trim(),
         author.trim() || '致致',
         date,
+        audioDuration ?? await getAudioDuration(audioFile),
         (stage, progress) => {
           setUploadStage(stage)
           setUploadProgress(progress)
@@ -193,7 +194,7 @@ export function AudioUploader({ onUploadSuccess, onCancel }: AudioUploaderProps)
                 点击选择音频文件
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                支持 MP3, WAV, OGG, AAC, M4A, FLAC 格式，最大 50MB
+                仅支持 MP3 格式，最大 50MB
               </p>
             </div>
           ) : (
@@ -225,7 +226,7 @@ export function AudioUploader({ onUploadSuccess, onCancel }: AudioUploaderProps)
           <input
             ref={audioInputRef}
             type="file"
-            accept="audio/*,.mp3,.wav,.ogg,.aac,.m4a,.flac"
+            accept="audio/mpeg,.mp3"
             onChange={handleAudioSelect}
             className="hidden"
             disabled={uploading}
