@@ -124,6 +124,14 @@ Never substitute a service-role key for `SUPABASE_ANON_KEY`. A future privileged
 
 These files are not a complete migration set. The applied production migration is recorded in Supabase migration history as `restrict_anonymous_messages_public_access`.
 
+## Stateless-session authorization migration preflight
+
+Before an approved migration adds the planned diary/media constraints, execute `supabase/verification/20260712_media_preflight.sql` in the Supabase SQL editor or through another explicitly approved read-only production connection. Every violation result set must be empty. Do not run a migration, coerce data, or repair records when a query returns rows; obtain a separately approved data-repair decision first.
+
+If a production read-only connection is unavailable, prepare the SQL and leave the production-preflight step unchecked. An operator with approved access must run the file manually and record the execution date, operator, query status, and empty/nonempty outcome outside source control. Do not commit live query results, credentials, or connection metadata.
+
+After the approved migration runs, execute `supabase/verification/20260712_media_postflight.sql` and re-run the preflight file. The postflight confirms required column properties, unique indexes, and the sequence ledger; the repeated preflight result sets must remain empty. Prepared SQL, syntax checks, and local tests never count as production-preflight completion.
+
 ## Change checklist
 
 After database or Storage changes, verify:
