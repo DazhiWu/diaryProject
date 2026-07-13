@@ -43,6 +43,11 @@ export type Entry = {
   modifiedAt: Date | null | undefined
 }
 
+function diaryImageUrls(paths: string[] | null | undefined, modifiedAt: Date | null | undefined): string[] {
+  const version = modifiedAt?.toISOString() ?? ''
+  return (paths ?? []).map((path) => `/api/media/diary?path=${encodeURIComponent(path)}&v=${encodeURIComponent(version)}`)
+}
+
 // 将DiaryEntryType转换为Entry类型
 function convertToEntry(diaryEntry: DiaryEntryType): Entry {
   return {
@@ -50,7 +55,7 @@ function convertToEntry(diaryEntry: DiaryEntryType): Entry {
     date: diaryEntry.date,
     subtitle: diaryEntry.subtitle || `日记 ${diaryEntry.date.toLocaleDateString()}`,
     content: diaryEntry.content,
-    images: diaryEntry.images || [],
+    images: diaryImageUrls(diaryEntry.images, diaryEntry.modifiedAt),
     modifiedAt: diaryEntry.modifiedAt,
   }
 }
@@ -151,7 +156,7 @@ export default function DiaryApp() {
         
         // 将图片路径转换为完整的URL
         const entriesWithUrls = filteredOfflineEntries.map(entry => {
-          const imageUrls = entry.images || []
+          const imageUrls = diaryImageUrls(entry.images, entry.modifiedAt)
           return {
             ...convertToEntry(entry),
             images: imageUrls
@@ -186,7 +191,7 @@ export default function DiaryApp() {
       
       // 将图片路径转换为完整的URL
       const entriesWithUrls = filteredOfflineEntries.map(entry => {
-        const imageUrls = entry.images || []
+        const imageUrls = diaryImageUrls(entry.images, entry.modifiedAt)
         return {
           ...convertToEntry(entry),
           images: imageUrls
@@ -240,7 +245,7 @@ export default function DiaryApp() {
         const firstPageData = await fetchDiaryEntriesWithPagination(1, currentIsGuest ? 5 : currentEntriesPerPage, "")
         // 将图片路径转换为完整的URL
         const entriesWithUrls = firstPageData.entries.map(entry => {
-          const imageUrls = entry.images || []
+          const imageUrls = diaryImageUrls(entry.images, entry.modifiedAt)
           return {
             ...convertToEntry(entry),
             images: imageUrls
@@ -261,7 +266,7 @@ export default function DiaryApp() {
         const localEntries = getLocalStorageBackup()
         // 将图片路径转换为完整的URL
         const entriesWithUrls = localEntries.map(entry => {
-          const imageUrls = entry.images || []
+          const imageUrls = diaryImageUrls(entry.images, entry.modifiedAt)
           return {
             ...convertToEntry(entry),
             images: imageUrls
@@ -277,7 +282,7 @@ export default function DiaryApp() {
       const localEntries = getLocalStorageBackup()
       // 将图片路径转换为完整的URL
       const entriesWithUrls = localEntries.map(entry => {
-        const imageUrls = entry.images || []
+        const imageUrls = diaryImageUrls(entry.images, entry.modifiedAt)
         return {
           ...convertToEntry(entry),
           images: imageUrls
@@ -666,7 +671,7 @@ export default function DiaryApp() {
       const fullEntry = await fetchDiaryEntryByDate(entry.date);
       if (fullEntry) {
         // 将图片路径转换为完整的URL
-        const imageUrls = fullEntry.images || []
+        const imageUrls = diaryImageUrls(fullEntry.images, fullEntry.modifiedAt)
         const convertedEntry = {
           ...convertToEntry(fullEntry),
           images: imageUrls

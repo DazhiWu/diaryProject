@@ -76,6 +76,8 @@ These findings need a separate security design before production changes. Adviso
 
 Production confirms all three buckets are public. No bucket-specific `file_size_limit` or `allowed_mime_types` is configured, so project/platform limits apply.
 
+The repository has prepared, but has not applied, `supabase/migrations/20260712_01_media_invariants.sql` and its rollback script. It requires the documented read-only preflight to be empty and then enforces unique diary dates, non-null JSON-array `image_paths`, date-matched diary paths, the `diary_image_sequences` high-water ledger, yearly-image paths, and root-level MP3 audio paths. It leaves `private.diary_image_paths_backup_20260713` untouched. Do not run either SQL script without separate production approval.
+
 The shared `storage.objects` policies allow `PUBLIC INSERT` and broad `PUBLIC SELECT`. There is no UPDATE or DELETE policy:
 
 - public object URLs and listing work;
@@ -109,7 +111,8 @@ Database-row and Storage-object changes are not transactional. Failed metadata w
 
 ## Access patterns
 
-- Browser-direct: diary CRUD, health, messages, audio, yearly summaries, and Storage.
+- Browser-direct: diary CRUD, health, messages, audio, yearly summaries, and remaining Storage writes.
+- Media reads: `/api/media/diary`, `/api/media/yearly`, and `/api/media/audio` use the server-only service-role boundary and fixed buckets. Diary images inherit latest-five/viewer/admin access, yearly images are readable by all roles, and audio is admin-only with single-range streaming support. The buckets remain public in this batch; do not change their policies or visibility yet.
 - Shared server client: `/api/diary-download` uses the same anon client through `lib/diaryApi.ts`.
 - Pagination: diary/messages use exact counts and `.range()`.
 - Search: diary `content`/`subtitle` use OR `ilike`.
@@ -130,7 +133,7 @@ Before an approved migration adds the planned diary/media constraints, execute `
 
 If a production read-only connection is unavailable, prepare the SQL and leave the production-preflight step unchecked. An operator with approved access must run the file manually and record the execution date, operator, query status, and empty/nonempty outcome outside source control. Do not commit live query results, credentials, or connection metadata.
 
-After the approved migration runs, execute `supabase/verification/20260712_media_postflight.sql` and re-run the preflight file. The postflight confirms required column properties, unique indexes, and the sequence ledger; the repeated preflight result sets must remain empty. Prepared SQL, syntax checks, and local tests never count as production-preflight completion.
+After the approved migration runs, execute `supabase/verification/20260712_media_postflight.sql` and re-run the preflight file. The postflight confirms required column properties, unique indexes, triggers, the sequence ledger, and backup-table preservation; the repeated preflight result sets must remain empty. Prepared SQL, syntax checks, and local tests never count as production-preflight completion.
 
 ## Change checklist
 

@@ -126,7 +126,7 @@ Cloudflare variables are plain configuration values; secrets are encrypted runti
 - Browser code requires `SUPABASE_URL` and `SUPABASE_ANON_KEY` in the build output.
 - `/api/diary-download` still imports the same shared anon client. `lib/server/supabaseAdmin.ts` is the separate server-only service-role factory for authorized routes added in later batches; it is not a browser import path.
 - RLS and Storage policies are the online security boundary because browser code uses the anon client directly.
-- Media uses `getPublicUrl()`. Private buckets would require signed URLs and code/policy changes.
+- Media reads use same-origin authorized proxy routes with the runtime service-role credential: diary and yearly images are versioned by their record timestamps, and admin audio supports HTTP Range streaming. Buckets remain public during this batch; private-bucket policy changes are deferred until every write caller has migrated.
 - See [`DATABASE.md`](DATABASE.md) for tables, RLS, buckets, and path details.
 
 ## Deployment procedure

@@ -34,16 +34,16 @@ This is a personal diary application built with Next.js and Supabase. It support
 ## Architecture summary
 
 - `app/page.tsx` switches among diary list/calendar/create/edit/detail, export, yearly-summary, message, and audio views.
-- Client-reachable modules use a shared Supabase anon client for most database/Storage operations; diary data has a compressed `localStorage` fallback.
+- Client-reachable modules still use a shared Supabase anon client for most database/Storage operations; diary, yearly-image, and audio reads now use same-origin media proxies, and diary data has a compressed `localStorage` fallback.
 - Diary reads and CRUD run through server routes: guests receive only the latest five rows, while writes, AI analysis, and CSV export require an admin session. Translation requires viewer or admin. AI/translation routes keep the ModelScope token server-side.
 - `/api/auth` validates passwords behind an Origin/rate-limit boundary and writes a signed HttpOnly Cookie; `/api/auth/session` is the browser role source. This is not Supabase Auth, and current direct anon data paths remain until later migration batches.
-- `lib/server/` contains server-only environment, session, Origin, rate-limit, and privileged Supabase-client boundaries. Do not import these modules from browser code.
+- `lib/server/` contains server-only environment, session, Origin, rate-limit, privileged Supabase-client, path-validation, and media-proxy boundaries. Do not import these modules from browser code.
 - Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
 
 ## Database and storage
 
-Supabase stores diary, AI, health, message, audio, and yearly-summary records. Production was inspected on 2026-07-12: the three media buckets are public with SELECT/INSERT but no UPDATE/DELETE object policy; anonymous messages allow SELECT/INSERT only; most other browser-direct tables still have permissive public ALL policies. Only health/message SQL is checked in.
+Supabase stores diary, AI, health, message, audio, and yearly-summary records. Production was inspected on 2026-07-12: the three media buckets are public with SELECT/INSERT but no UPDATE/DELETE object policy; anonymous messages allow SELECT/INSERT only; most other browser-direct tables still have permissive public ALL policies. The checked-in media-invariants migration remains unapplied until separately approved production preflight and execution.
 
 Read [`docs/DATABASE.md`](docs/DATABASE.md) before changing queries, tables, RLS, buckets, paths, or access boundaries.
 

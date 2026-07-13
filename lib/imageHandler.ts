@@ -116,14 +116,9 @@ export async function uploadImage(
       throw error
     }
 
-    // 生成访问 URL
-    const { data: { publicUrl } } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(path)
-
     return {
       path,
-      url: publicUrl
+      url: getImageUrl(path, bucket)
     }
   } catch (error) {
     console.error('上传图片失败:', error)
@@ -158,11 +153,9 @@ export async function uploadMultipleImages(
  * @returns 访问 URL
  */
 export function getImageUrl(path: string, bucket: string): string {
-  const { data: { publicUrl } } = supabase.storage
-    .from(bucket)
-    .getPublicUrl(path)
-  
-  return publicUrl
+  if (bucket === '2024To2025_diary_images') return `/api/media/diary?path=${encodeURIComponent(path)}`
+  if (bucket === '2025_Summary_Images') return `/api/media/yearly?path=${encodeURIComponent(path)}`
+  throw new Error('Unsupported media bucket')
 }
 
 /**
