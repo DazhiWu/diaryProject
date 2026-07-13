@@ -224,7 +224,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleDeleteEvent = async (id: number) => {
     try {
-      await deleteImportantEvent(id)
+      await deleteImportantEvent(id, selectedYear)
       // 更新本地状态
       setYearlySummary(prev => ({
         ...prev,
@@ -242,7 +242,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       let updatedEvent: ImportantEvent
       if (editingEvent) {
         // 更新现有事件
-        updatedEvent = await updateImportantEvent(Number(editingEvent.id), eventForm)
+        updatedEvent = await updateImportantEvent(Number(editingEvent.id), eventForm, selectedYear)
         setYearlySummary(prev => ({
           ...prev,
           importantEvents: prev.importantEvents.map(event => 
@@ -298,7 +298,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleDeleteAnalysis = async (id: number) => {
     try {
-      await deleteAIAnalysisSection(id)
+      await deleteAIAnalysisSection(id, selectedYear)
       // 更新本地状态
       setYearlySummary(prev => ({
         ...prev,
@@ -319,12 +319,12 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         updatedAnalysis = await updateAIAnalysisSection(Number(editingAnalysis.id), {
           title: analysisForm.title,
           content: analysisForm.content
-        })
+        }, selectedYear)
         
         // 处理观点的更新
         // 先删除所有现有观点
         for (const opinion of editingAnalysis.opinions) {
-          await deleteAIAnalysisOpinion(Number(opinion.id))
+          await deleteAIAnalysisOpinion(Number(opinion.id), selectedYear)
         }
         
         // 再添加新观点（过滤掉空观点）
@@ -338,7 +338,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           const newOpinion = await addAIAnalysisOpinion(Number(updatedAnalysis.id), {
             content: opinion.content,
             analysis: opinion.analysis
-          });
+          }, selectedYear);
           newOpinions.push(newOpinion);
         }
         
@@ -379,7 +379,7 @@ const YearlySummary: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           const newOpinion = await addAIAnalysisOpinion(Number(updatedAnalysis.id), {
             content: opinion.content,
             analysis: opinion.analysis
-          });
+          }, selectedYear);
           newOpinions.push(newOpinion);
         }
         

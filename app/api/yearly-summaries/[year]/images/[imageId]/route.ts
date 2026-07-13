@@ -1,0 +1,13 @@
+import { NextResponse } from 'next/server'
+
+import { YEARLY_BUCKET, createSupabaseUploadStore, databaseFirstDelete } from '@/lib/server/mediaMutations'
+import { assertAllowedOrigin } from '@/lib/server/origin'
+import { HttpError, readSession, requireAdmin } from '@/lib/server/session'
+import { getSupabaseAdmin } from '@/lib/server/supabaseAdmin'
+
+function responseFor(error: unknown) { return error instanceof HttpError ? NextResponse.json({ error: error.message }, { status: error.status }) : NextResponse.json({ error: 'Media request failed' }, { status: 500 }) }
+function idFrom(value: string) { const id = Number(value); if (!Number.isSafeInteger(id) || id < 1) throw new HttpError(400, 'Invalid image id'); return id }
+async function image(id: number) { const supabase = await getSupabaseAdmin(); const { data, error } = await supabase.from('yearly_images').select('id, storage_path').eq('id', id).maybeSingle(); if (error) throw new Error('Yearly image query failed'); if (!data) throw new HttpError(404, 'Image not found'); return { supabase, data } }
+
+export async function PUT(request: Request, { params }: { params: Promise<{ imageId: string }> }) { try { await assertAllowedOrigin(request); requireAdmin(await readSession(request.headers.get('cookie'))); const { supabase, data } = await image(idFrom((await params).imageId)); const file = (await request.formData()).get('file'); if (!(file instanceof File) || file.type !== 'image/webp') throw new HttpError(400, 'A WebP image is required'); await (await createSupabaseUploadStore()).upload(YEARLY_BUCKET, data.storage_path, file, { upsert: true, contentType: 'image/webp' }); const { data: updated, error } = await supabase.from('yearly_images').update({ updated_at: new Date().toISOString() }).eq('id', data.id).select('id, storage_path, updated_at').single(); if (error) throw new Error('Yearly image metadata write failed'); return NextResponse.json({ id: updated.id, path: updated.storage_path, updatedAt: updated.updated_at }) } catch (error) { return responseFor(error) } }
+export async function DELETE(request: Request, { params }: { params: Promise<{ imageId: string }> }) { try { await assertAllowedOrigin(request); requireAdmin(await readSession(request.headers.get('cookie'))); const { supabase, data } = await image(idFrom((await params).imageId)); return NextResponse.json(await databaseFirstDelete(YEARLY_BUCKET, data.storage_path, async () => { const { error } = await supabase.from('yearly_images').delete().eq('id', data.id); if (error) throw new Error('Yearly image metadata delete failed') }, await createSupabaseUploadStore())) } catch (error) { return responseFor(error) } }

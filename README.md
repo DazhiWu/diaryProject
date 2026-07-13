@@ -19,7 +19,7 @@
 - `viewer`：查看全部历史日记及翻译。
 - `admin`：创建、编辑、删除、AI 分析、翻译、CSV 导出、健康管理、年度总结和音频管理等操作。
 
-`/api/auth` 写入签名 HttpOnly Cookie，浏览器通过 `/api/auth/session` 获取角色，且不保存会话令牌或角色到 `localStorage`。这不是 Supabase Auth。日记读取/CRUD、AI、翻译和 CSV 已迁入服务端授权 API；Batch 4 将迁移剩余媒体写入、健康与年度总结元数据 API。设计与批次边界见 [`docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md)。
+`/api/auth` 写入签名 HttpOnly Cookie，浏览器通过 `/api/auth/session` 获取角色，且不保存会话令牌或角色到 `localStorage`。这不是 Supabase Auth。日记读取/CRUD、AI、翻译、CSV、媒体写入、健康和年度总结元数据均通过服务端授权 API；`anonymous_messages` 是保留的浏览器 anon SELECT/INSERT 例外。设计与批次边界见 [`docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md)。
 
 ## 架构
 
@@ -30,7 +30,7 @@
 - `lib/`：Supabase 访问、AI、媒体、运行时环境变量和业务 API。
 - `test_extra/`：部分 SQL 示例、实验和 UI 自动化辅助文件，不是完整迁移或测试套件。
 
-媒体读取通过同源代理：日记按 guest/viewer/admin 规则授权，年度图片对所有角色可读，音频限 admin 并支持单 Range 流式响应。Bucket 仍公开；浏览器直连的媒体写入、健康和年度总结元数据仍待 Batch 4 迁移，不能提前收紧 Storage Policy、RLS 或 grants。
+媒体读写通过同源 API：日记按 guest/viewer/admin 规则授权，年度图片对所有角色可读，音频限 admin 并支持单 Range 流式响应；写入、替换和删除要求 admin Cookie。删除若元数据成功而 Storage 清理失败，界面会提示残留路径。Bucket 仍公开；在单独批准的 Batch 5 前不能收紧 Storage Policy、RLS 或 grants。
 
 生产部署通过 OpenNext 适配到 Cloudflare Workers。详细结构与长期约束见 [`AGENTS.md`](AGENTS.md)。
 
@@ -104,7 +104,7 @@ pnpm cf:build
 
 Storage bucket 为 `2024To2025_diary_images`、`2025_Summary_Images` 和 `audio_messages`。
 
-Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postflight 与重复 preflight。三个 Storage bucket 仍公开；媒体读取已部署为授权代理并在生产验证。其余浏览器直连业务表和媒体写入仍保持现有策略，待 Batch 4 完成后再处理。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
+Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postflight 与重复 preflight。Batch 4 将所有敏感媒体写入、健康和年度总结元数据迁入授权 API；三个 Storage bucket 仍公开，且不在本批次修改任何 Bucket、RLS、grant 或 Storage Policy。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
 
 ## Cloudflare Workers 部署
 

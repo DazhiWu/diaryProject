@@ -34,13 +34,13 @@ This is a personal diary application built with Next.js and Supabase. It support
 ## Architecture summary
 
 - `app/page.tsx` switches among diary list/calendar/create/edit/detail, export, yearly-summary, message, and audio views.
-- Client-reachable modules retain the shared Supabase anon client only for remaining Batch 4 domains and anonymous messages; diary reads/CRUD, AI, translation, CSV, and media reads use same-origin authorized APIs. Diary data retains a compressed `localStorage` fallback.
+- Client-reachable modules retain the shared Supabase anon client only for `anonymous_messages` SELECT/INSERT; diary reads/CRUD, AI, translation, CSV, media mutations/reads, health, and yearly summaries use same-origin authorized APIs. Diary data retains a compressed `localStorage` fallback.
 - AI/translation API routes keep the ModelScope token server-side; the download route returns CSV.
 - `/api/auth` writes a signed HttpOnly Cookie and `/api/auth/session` is the browser role source. This is not Supabase Auth; sessions use `SESSION_VERSION`, not a database session table.
 - Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
 - Diary and yearly media read through fixed-bucket proxies; diary inherits latest-five/viewer/admin access, yearly is readable by all roles, and audio is admin-only with single-range streaming. Buckets remain public until Batch 5.
-- Batch 3 completed on 2026-07-13: the media-invariants migration, postflight/repeated preflight, workerd preview, and production diary/audio proxy checks passed. Batch 4 is next: move media writes plus health/yearly-summary metadata behind admin APIs; do not change Bucket, RLS, grants, or Storage Policy in Batch 4.
+- Batch 3 completed on 2026-07-13: the media-invariants migration, postflight/repeated preflight, workerd preview, and production diary/audio proxy checks passed. Batch 4 moved media writes plus health/yearly-summary metadata behind admin APIs with DB-first deletion and residual-path responses; do not change Bucket, RLS, grants, or Storage Policy until Batch 5.
 
 ## Database and storage
 

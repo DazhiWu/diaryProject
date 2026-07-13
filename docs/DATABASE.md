@@ -62,7 +62,7 @@ Production Data API grants give anon/authenticated broad table privileges. RLS i
 - `INSERT` for `anon` and `authenticated`, subject to the 2–1000 character check.
 - No UPDATE or DELETE policy, so client updates/deletes are blocked.
 
-Most remaining application tables currently have a `PUBLIC FOR ALL USING (true)` policy. This permits anon reads and writes despite guest/viewer/admin UI restrictions. Diary APIs and media reads now use the service-role server boundary, but remaining health, yearly-summary and media-write clients still require Batch 4 replacement APIs before policies/grants can be tightened.
+Most remaining application tables currently have a `PUBLIC FOR ALL USING (true)` policy. This permits anon reads and writes despite guest/viewer/admin UI restrictions. Application clients now use the service-role server boundary for diary, AI, media, health, and yearly-summary domains; `anonymous_messages` remains the deliberate anon SELECT/INSERT exception. Batch 5 may tighten policies/grants only after deployed role regression confirms these replacement APIs.
 
 Supabase security advisors additionally report:
 
@@ -112,7 +112,7 @@ Database-row and Storage-object changes are not transactional. Failed metadata w
 ## Access patterns
 
 - Server APIs: diary reads/CRUD, AI analysis, translation, CSV, and media reads. Diary media has latest-five/viewer/admin authorization; yearly media is readable by every role; audio is admin-only and supports a single HTTP Range.
-- Browser-direct pending Batch 4: health, yearly-summary metadata, and diary/yearly/audio Storage writes. `anonymous_messages` remains the deliberate anon `SELECT`/`INSERT` exception.
+- Authorized APIs: media write/replace/delete, health, and yearly-summary metadata require an admin Cookie plus Origin validation. Upload metadata failures trigger storage compensation; DB-first deletes report remaining object paths when cleanup fails. `anonymous_messages` remains the deliberate browser anon `SELECT`/`INSERT` exception.
 - Shared server client: `/api/diary-download` still uses the same anon client through `lib/diaryApi.ts`.
 - Pagination: diary/messages use exact counts and `.range()`.
 - Search: diary `content`/`subtitle` use OR `ilike`.
