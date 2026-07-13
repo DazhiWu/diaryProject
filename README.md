@@ -24,7 +24,7 @@
 ## 架构
 
 - `app/page.tsx`：以客户端状态在列表、日历、新建、详情、编辑、导出、年度总结、留言和音频视图间切换。
-- `app/api/`：认证、AI 分析、翻译和 CSV 下载路由。
+- `app/api/`：认证、受 Cookie 会话保护的日记读取/CRUD、AI 分析、翻译和 CSV 下载路由；访客读取由服务端限定为最新五篇。
 - `components/`：业务组件与 `components/ui/` 基础组件；文件通常使用 kebab-case，导出的 React 组件使用 PascalCase。
 - `hooks/`：认证等级和健康状况 hooks。项目未使用 React Context 作为全局状态容器。
 - `lib/`：Supabase 访问、AI、媒体、运行时环境变量和业务 API。

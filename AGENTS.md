@@ -35,7 +35,7 @@ This is a personal diary application built with Next.js and Supabase. It support
 
 - `app/page.tsx` switches among diary list/calendar/create/edit/detail, export, yearly-summary, message, and audio views.
 - Client-reachable modules use a shared Supabase anon client for most database/Storage operations; diary data has a compressed `localStorage` fallback.
-- AI/translation API routes keep the ModelScope token server-side; the download route returns CSV.
+- Diary reads and CRUD run through server routes: guests receive only the latest five rows, while writes, AI analysis, and CSV export require an admin session. Translation requires viewer or admin. AI/translation routes keep the ModelScope token server-side.
 - `/api/auth` validates passwords behind an Origin/rate-limit boundary and writes a signed HttpOnly Cookie; `/api/auth/session` is the browser role source. This is not Supabase Auth, and current direct anon data paths remain until later migration batches.
 - `lib/server/` contains server-only environment, session, Origin, rate-limit, and privileged Supabase-client boundaries. Do not import these modules from browser code.
 - Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
