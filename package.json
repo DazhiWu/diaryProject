@@ -14,7 +14,9 @@
     "dev": "next dev",
     "lint": "eslint .",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.4",
@@ -56,6 +58,7 @@
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "typescript": "^5",
+    "vitest": "^4.1.10",
     "wrangler": "^4.108.0"
   }
 }
