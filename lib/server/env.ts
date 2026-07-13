@@ -7,7 +7,7 @@ export type AuthConfiguration = {
   admin: string | undefined
 }
 
-export function validateAuthConfiguration({ viewer, admin }: AuthConfiguration): asserts viewer is string & asserts admin is string {
+export function validateAuthConfiguration({ viewer, admin }: AuthConfiguration): void {
   if (!viewer) {
     throw new Error('AUTH_PASSWORD_VIEWER must be configured')
   }

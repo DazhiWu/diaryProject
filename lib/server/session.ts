@@ -87,7 +87,9 @@ export async function readSession(cookieHeader: string | null, now = Date.now())
   const signature = decodeBase64Url(encodedSignature)
   if (!signature) return null
 
-  const verified = await crypto.subtle.verify('HMAC', await signingKey(), signature, new TextEncoder().encode(encodedPayload))
+  const signatureBytes = new Uint8Array(signature.byteLength)
+  signatureBytes.set(signature)
+  const verified = await crypto.subtle.verify('HMAC', await signingKey(), signatureBytes, new TextEncoder().encode(encodedPayload))
   if (!verified) return null
 
   const payloadBytes = decodeBase64Url(encodedPayload)

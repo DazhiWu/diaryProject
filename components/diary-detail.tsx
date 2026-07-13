@@ -252,9 +252,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
   }
 
   const handleProtectedAction = (action: () => void, actionName: string, requiredLevel: 'viewer' | 'admin' = 'admin') => {
-    // 再次检查localStorage确保状态最新
-    const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel') as 'guest' | 'viewer' | 'admin' || 'guest';
-    if (storedAuthLevel === 'admin' || (requiredLevel === 'viewer' && storedAuthLevel === 'viewer')) {
+    if (auth.authLevel === 'admin' || (requiredLevel === 'viewer' && auth.authLevel === 'viewer')) {
       action();
     } else {
       toast.error(`请先进行管理员认证才能${actionName}`);
@@ -269,8 +267,8 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
           返回列表
         </Button>
         <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
-          {/* AI分析按钮对viewer和admin都可见，但操作受保护 */}
-          {isAuthenticated && (
+          {/* AI 分析仅限管理员；翻译仍对 viewer/admin 可用。 */}
+          {isAdmin && (
             <>
               <Button 
                 variant="outline" 

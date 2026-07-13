@@ -87,30 +87,7 @@ export default function DiaryApp() {
   const isViewer = auth.isViewer;
   const isGuest = !isAuthenticated;
 
-  // 确保认证状态已经从localStorage加载完成
-  const [authReady, setAuthReady] = useState(false);
-
-  // 当认证状态就绪后，初始化数据加载
-  useEffect(() => {
-    // 只有当authLevel不是初始值'guest'，或者我们确定localStorage中确实没有认证信息时，才标记为就绪
-    const checkAuthReady = () => {
-      if (typeof window !== 'undefined') {
-        const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel');
-        // 如果有存储的认证信息，或者组件已经渲染了一段时间，就认为认证状态就绪
-        setAuthReady(true);
-      }
-    };
-
-    // 立即检查一次
-    checkAuthReady();
-    
-    // 给一个小延迟，确保所有初始化操作都完成
-    const timer = setTimeout(() => {
-      setAuthReady(true);
-    }, 100);
-
-    return () => clearTimeout(timer);
-  }, [auth.authLevel]);
+  const authReady = !auth.isLoading;
 
   // 当认证状态就绪或变化时重新加载日记列表，确保分页显示正确
   useEffect(() => {
@@ -507,10 +484,7 @@ export default function DiaryApp() {
   }, [debouncedSearchQuery, selectedDate])
 
   const handleProtectedAction = (action: () => void, actionName: string, requiredLevel: 'viewer' | 'admin' = 'admin') => {
-    // 再次检查localStorage确保状态最新
-    const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel') as 'guest' | 'viewer' | 'admin' || 'guest';
-    
-    if (storedAuthLevel === 'admin' || (requiredLevel === 'viewer' && storedAuthLevel === 'viewer')) {
+    if (auth.authLevel === 'admin' || (requiredLevel === 'viewer' && auth.authLevel === 'viewer')) {
       action();
     } else {
       toast.error(`请先进行管理员认证才能${actionName}`);
@@ -532,8 +506,8 @@ export default function DiaryApp() {
                 用户认证
               </Button>
               
-              {/* 只有在认证后显示写日记和下载按钮 */}
-              {isAuthenticated && (
+              {/* 仅管理员可写入或导出 */}
+              {isAdmin && (
                 <>
                   <Button onClick={() => handleProtectedAction(() => setView("new"), "添加日记")} size="sm" className="gap-2 bg-primary/90 hover:bg-primary">
                     <PlusIcon className="h-4 w-4" />
