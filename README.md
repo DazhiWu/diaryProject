@@ -13,24 +13,24 @@
 - 支持按日期范围导出 CSV，以及上传、播放、编辑元数据和删除音频。
 - Supabase 读取失败时可回退到浏览器中已有的压缩日记备份；这不是完整的离线 CRUD 或 PWA 支持。
 
-## 当前权限模型与下一阶段目标
+## 权限模型
 
 - `guest`：按日期排序查看最新 5 篇日记，并可访问公开显示的年度总结和匿名留言。
-- `viewer`：当前主要用于查看全部历史日记；下一阶段目标是允许翻译，但禁止 AI 分析和 CSV 导出，相关按钮不显示。
-- `admin`：当前承担创建、编辑、删除、AI 分析、翻译、CSV 导出、健康管理、年度总结和音频管理等操作；下一阶段将由服务端 Session 强制执行。
+- `viewer`：查看全部历史日记及翻译。
+- `admin`：创建、编辑、删除、AI 分析、翻译、CSV 导出、健康管理、年度总结和音频管理等操作。
 
-当前 `/api/auth` 使用运行时密码比较后返回等级，浏览器把等级保存在 `localStorage`；这仍不是可信授权。下一阶段已批准改为无状态服务端签名 HttpOnly Cookie Session，并将敏感数据库访问迁移到服务端 API。设计见 [`docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md)。
+`/api/auth` 写入签名 HttpOnly Cookie，浏览器通过 `/api/auth/session` 获取角色，且不保存会话令牌或角色到 `localStorage`。这不是 Supabase Auth。日记读取/CRUD、AI、翻译和 CSV 已迁入服务端授权 API；Batch 4 将迁移剩余媒体写入、健康与年度总结元数据 API。设计与批次边界见 [`docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md)。
 
 ## 架构
 
 - `app/page.tsx`：以客户端状态在列表、日历、新建、详情、编辑、导出、年度总结、留言和音频视图间切换。
-- `app/api/`：认证、AI 分析、翻译和 CSV 下载路由。
+- `app/api/`：认证、受 Cookie 会话保护的日记读取/CRUD、AI、翻译、CSV 与媒体代理路由。
 - `components/`：业务组件与 `components/ui/` 基础组件；文件通常使用 kebab-case，导出的 React 组件使用 PascalCase。
 - `hooks/`：认证等级和健康状况 hooks。项目未使用 React Context 作为全局状态容器。
 - `lib/`：Supabase 访问、AI、媒体、运行时环境变量和业务 API。
 - `test_extra/`：部分 SQL 示例、实验和 UI 自动化辅助文件，不是完整迁移或测试套件。
 
-当前浏览器仍直接使用 Supabase anon client；完整后端授权、私有 Storage 和按需媒体代理属于下一阶段，尚未实现。
+媒体读取通过同源代理：日记按 guest/viewer/admin 规则授权，年度图片对所有角色可读，音频限 admin 并支持单 Range 流式响应。Bucket 仍公开；浏览器直连的媒体写入、健康和年度总结元数据仍待 Batch 4 迁移，不能提前收紧 Storage Policy、RLS 或 grants。
 
 生产部署通过 OpenNext 适配到 Cloudflare Workers。详细结构与长期约束见 [`AGENTS.md`](AGENTS.md)。
 
@@ -53,6 +53,10 @@ SUPABASE_ANON_KEY=
 MODELSCOPE_TOKEN_API_KEY=
 AUTH_PASSWORD_ADMIN=
 AUTH_PASSWORD_VIEWER=
+SESSION_SECRET=
+SESSION_VERSION=
+SUPABASE_SERVICE_ROLE_KEY=
+APP_ORIGIN=
 ```
 
 | 变量 | 用途 | 要求 |
@@ -62,6 +66,10 @@ AUTH_PASSWORD_VIEWER=
 | `MODELSCOPE_TOKEN_API_KEY` | AI 分析和翻译 | 启用 AI 功能时必需；仅服务端运行时 |
 | `AUTH_PASSWORD_ADMIN` | 管理员密码 | 启用管理员模式时必需；仅服务端运行时 |
 | `AUTH_PASSWORD_VIEWER` | 浏览者密码 | 启用浏览者模式时必需；仅服务端运行时 |
+| `SESSION_SECRET` | Cookie 会话 HMAC 密钥 | 必需；仅服务端运行时，至少 32 字节 |
+| `SESSION_VERSION` | 会话整体失效版本 | 必需；仅服务端运行时；认证密码变更后递增 |
+| `SUPABASE_SERVICE_ROLE_KEY` | 受信任服务端 Supabase client | 受保护后端 API 必需；绝不进入浏览器 |
+| `APP_ORIGIN` | 生产写请求 Origin 边界 | 必需；仅服务端运行时 |
 
 安装并启动：
 
@@ -96,7 +104,7 @@ pnpm cf:build
 
 Storage bucket 为 `2024To2025_diary_images`、`2025_Summary_Images` 和 `audio_messages`。
 
-生产 Supabase 状态已于 2026-07-12 只读核查：业务表均启用 RLS；匿名留言只允许 anon/authenticated 读取和新增；其余浏览器直连业务表仍有宽松的公开写策略。三个 Storage bucket 均公开，只允许公开读取和插入对象，不允许覆盖或删除。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
+Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postflight 与重复 preflight。三个 Storage bucket 仍公开；媒体读取已部署为授权代理并在生产验证。其余浏览器直连业务表和媒体写入仍保持现有策略，待 Batch 4 完成后再处理。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
 
 ## Cloudflare Workers 部署
 
@@ -110,7 +118,7 @@ Next.js source
 ```bash
 pnpm cf:build
 pnpm exec wrangler deploy --dry-run
-pnpm deploy
+pnpm run deploy
 ```
 
 `SUPABASE_URL` 和 `SUPABASE_ANON_KEY` 由 `next.config.mjs` 注入浏览器构建，因此 Cloudflare 构建阶段必须可用；共享 Supabase client 被服务端路径导入时，运行时也应能读取它们。当前五个 Worker 运行时绑定均已配置为 secrets，但 Supabase URL/anon key 进入浏览器后仍不是秘密。构建变量与已部署 Worker 的运行时 secrets 是两个作用域。

@@ -47,13 +47,13 @@ Cloudflare was inspected read-only on 2026-07-12. Worker identity, runtime bindi
 | `wrangler.jsonc` | Worker name/entry, compatibility, assets, variable preservation, observability |
 | `lib/runtimeEnv.ts` | Cloudflare runtime binding lookup with `process.env` fallback |
 | `lib/supabaseClient.ts` | Shared Supabase client initialization |
-| `app/api/auth/route.ts` | Current runtime password lookup; future Cookie Session entry point |
+| `app/api/auth/route.ts` | Runtime password lookup and signed Cookie Session entry point |
 | `lib/aiAnalysis.ts` | Runtime ModelScope token lookup |
 | `.gitignore` | Excludes `.env*`, `.open-next/`, `.wrangler/`, generated types, logs, build output |
 
 There is no `.env.example` in the repository.
 
-The current deployment does not yet use `SESSION_SECRET`, `SESSION_VERSION`, or `SUPABASE_SERVICE_ROLE_KEY`. These are reserved for the approved backend-authorization redesign and must not be added to `next.config.mjs` or browser code.
+The deployed backend-authorization routes use `SESSION_SECRET`, `SESSION_VERSION`, and `SUPABASE_SERVICE_ROLE_KEY` as Worker runtime secrets. They must never be added to `next.config.mjs` or browser code.
 
 ## Build commands
 
@@ -66,14 +66,14 @@ pnpm start
 pnpm cf:build
 pnpm cf-typegen
 pnpm preview
-pnpm deploy
+pnpm run deploy
 pnpm exec wrangler deploy --dry-run
 ```
 
 - `pnpm build`: `next build`; validates Next.js but does not create a deployable Worker bundle.
 - `pnpm cf:build`: produces `.open-next/` through `opennextjs-cloudflare build`.
 - `pnpm preview`: builds and starts the OpenNext Cloudflare preview.
-- `pnpm deploy`: OpenNext build followed by deploy.
+- `pnpm run deploy`: OpenNext build followed by deploy. Use `pnpm run` explicitly because `pnpm deploy` invokes pnpm's built-in command instead of this package script.
 - `pnpm cf-typegen`: generates ignored `cloudflare-env.d.ts`.
 - `pnpm lint`: declared, but `eslint` is not a direct dependency; confirm clean-install behavior if it fails.
 
@@ -158,7 +158,7 @@ Cloudflare variables are plain configuration values; secrets are encrypted runti
 1. Authenticate Wrangler with the intended account.
 2. Supply required local/build values without committing `.env.local`.
 3. Run `pnpm cf:build` and optionally the Wrangler dry-run.
-4. Run `pnpm deploy`.
+4. Run `pnpm run deploy`, or deploy an already-built bundle with `pnpm exec opennextjs-cloudflare deploy`.
 5. Verify Worker behavior, variables, logs, routes, and domain.
 
 Account identity, token scopes, and production approvals need confirmation outside the repository.
@@ -167,11 +167,11 @@ Account identity, token scopes, and production approvals need confirmation outsi
 
 - Homepage, styles, and static assets.
 - Diary pagination/search/calendar/detail.
-- `/api/auth`: current valid viewer/admin and invalid-password behavior; future Cookie Session behavior must be tested separately.
-- Guest/viewer/admin UI; the next-phase target is viewer translation-only access with hidden AI/CSV controls. Current UI does not replace RLS.
+- `/api/auth` and `/api/auth/session`: valid viewer/admin Cookie-session behavior and invalid-password behavior.
+- Guest/viewer/admin API and UI access. Cookie authorization does not replace RLS for the domains still using the anon client.
 - Authorized Supabase read/create/update/delete under production policies.
-- Diary image upload/display and stored relative path.
-- Audio/yearly image behavior when in scope.
+- Diary image proxy display, yearly-image proxy display, and admin audio Range streaming. Batch 3 production verification on 2026-07-13 returned `200 image/webp` for a viewer diary image and `206` with `Content-Range`/`Accept-Ranges` for admin audio.
+- Media writes remain Batch 4 work; do not make buckets private or alter Storage policies before its direct-client scan is clean.
 - AI analysis and translation with the runtime token.
 - CSV export from `/api/diary-download`.
 - Browser console/network errors and Cloudflare logs/observability.

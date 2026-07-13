@@ -62,7 +62,7 @@ Production Data API grants give anon/authenticated broad table privileges. RLS i
 - `INSERT` for `anon` and `authenticated`, subject to the 2–1000 character check.
 - No UPDATE or DELETE policy, so client updates/deletes are blocked.
 
-Most other application tables currently have a `PUBLIC FOR ALL USING (true)` policy. This permits anon reads and writes despite guest/viewer/admin UI restrictions. The approved future design will move these operations behind server APIs before tightening policies; until then, the current UI roles are not authorization.
+Most remaining application tables currently have a `PUBLIC FOR ALL USING (true)` policy. This permits anon reads and writes despite guest/viewer/admin UI restrictions. Diary APIs and media reads now use the service-role server boundary, but remaining health, yearly-summary and media-write clients still require Batch 4 replacement APIs before policies/grants can be tightened.
 
 Supabase security advisors additionally report:
 
@@ -75,6 +75,8 @@ These findings are tracked by the approved future design in [`superpowers/specs/
 ## Storage
 
 Production confirms all three buckets are public. No bucket-specific `file_size_limit` or `allowed_mime_types` is configured, so project/platform limits apply.
+
+The `20260712_01_media_invariants.sql` migration was applied to production on 2026-07-13 after an empty Batch 0 preflight. Its postflight passed and the preflight was repeated with all violation result sets empty. It enforces diary date/path and media-path invariants, uses `public.diary_image_paths` for concurrency-safe path ownership, and maintains the internal `private.diary_image_sequences` ledger. Keep `20260712_01_media_invariants_rollback.sql` for emergency recovery only; do not run it after later schema changes without separate approval.
 
 The shared `storage.objects` policies allow `PUBLIC INSERT` and broad `PUBLIC SELECT`. There is no UPDATE or DELETE policy:
 
@@ -109,20 +111,21 @@ Database-row and Storage-object changes are not transactional. Failed metadata w
 
 ## Access patterns
 
-- Browser-direct: diary CRUD, health, messages, audio, yearly summaries, and Storage.
-- Shared server client: `/api/diary-download` uses the same anon client through `lib/diaryApi.ts`.
+- Server APIs: diary reads/CRUD, AI analysis, translation, CSV, and media reads. Diary media has latest-five/viewer/admin authorization; yearly media is readable by every role; audio is admin-only and supports a single HTTP Range.
+- Browser-direct pending Batch 4: health, yearly-summary metadata, and diary/yearly/audio Storage writes. `anonymous_messages` remains the deliberate anon `SELECT`/`INSERT` exception.
+- Shared server client: `/api/diary-download` still uses the same anon client through `lib/diaryApi.ts`.
 - Pagination: diary/messages use exact counts and `.range()`.
 - Search: diary `content`/`subtitle` use OR `ilike`.
 - Cache: diary fallback uses compressed `localStorage`; yearly summaries use a five-minute in-memory cache.
 
-Never substitute a service-role key for `SUPABASE_ANON_KEY`. A future privileged client must use a separate server-only variable and module.
+Never substitute a service-role key for `SUPABASE_ANON_KEY`. The privileged client is `lib/server/supabaseAdmin.ts`, uses the separate server-only `SUPABASE_SERVICE_ROLE_KEY`, and must be called only from authorized routes.
 
 ## Checked-in SQL
 
 - `test_extra/CREATE_HEALTH_CONDITIONS_TABLE.sql`: partial historical health schema/policies.
 - `test_extra/CREATE_ANONYMOUS_MESSAGE_TABLE.sql`: anonymous-message schema with SELECT/INSERT-only policies and the content-length check.
 
-These files are not a complete migration set. The applied production migration is recorded in Supabase migration history as `restrict_anonymous_messages_public_access`.
+These files are not a complete migration set. Applied production migrations include `restrict_anonymous_messages_public_access` and the 2026-07-13 `media_invariants` migration.
 
 ## Change checklist
 

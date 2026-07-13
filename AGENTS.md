@@ -34,17 +34,17 @@ This is a personal diary application built with Next.js and Supabase. It support
 ## Architecture summary
 
 - `app/page.tsx` switches among diary list/calendar/create/edit/detail, export, yearly-summary, message, and audio views.
-- Client-reachable modules currently use a shared Supabase anon client for most database/Storage operations; diary data has a compressed `localStorage` fallback. A future approved redesign will move sensitive operations behind server APIs.
+- Client-reachable modules retain the shared Supabase anon client only for remaining Batch 4 domains and anonymous messages; diary reads/CRUD, AI, translation, CSV, and media reads use same-origin authorized APIs. Diary data retains a compressed `localStorage` fallback.
 - AI/translation API routes keep the ModelScope token server-side; the download route returns CSV.
-- `/api/auth` currently compares runtime passwords and stores a UI level in browser `localStorage`; this is not trusted authorization. The approved next phase is a stateless signed HttpOnly Cookie Session with `SESSION_VERSION`, not a database session table.
+- `/api/auth` writes a signed HttpOnly Cookie and `/api/auth/session` is the browser role source. This is not Supabase Auth; sessions use `SESSION_VERSION`, not a database session table.
 - Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
-- Next-phase target: viewer may translate but must not use or see AI analysis/CSV export controls; admin retains those capabilities. Do not claim this is enforced until the signed-session/API migration is complete.
-- The approved backend-authorization design is documented in [`docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](docs/superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md); do not treat it as implemented until code, migrations, and deployment verification are complete.
+- Diary and yearly media read through fixed-bucket proxies; diary inherits latest-five/viewer/admin access, yearly is readable by all roles, and audio is admin-only with single-range streaming. Buckets remain public until Batch 5.
+- Batch 3 completed on 2026-07-13: the media-invariants migration, postflight/repeated preflight, workerd preview, and production diary/audio proxy checks passed. Batch 4 is next: move media writes plus health/yearly-summary metadata behind admin APIs; do not change Bucket, RLS, grants, or Storage Policy in Batch 4.
 
 ## Database and storage
 
-Supabase stores diary, AI, health, message, audio, and yearly-summary records. Production was inspected on 2026-07-12: the three media buckets are public with SELECT/INSERT but no UPDATE/DELETE object policy; anonymous messages allow SELECT/INSERT only; most other browser-direct tables still have permissive public ALL policies. Only health/message SQL is checked in.
+Supabase stores diary, AI, health, message, audio, and yearly-summary records. The three media buckets remain public with SELECT/INSERT but no UPDATE/DELETE object policy; anonymous messages allow SELECT/INSERT only; most remaining browser-direct tables still have permissive public ALL policies. Batch 3 introduced and production-applied media invariants; read `docs/DATABASE.md` before altering any database or Storage boundary.
 
 Read [`docs/DATABASE.md`](docs/DATABASE.md) before changing queries, tables, RLS, buckets, paths, or access boundaries.
 
@@ -63,6 +63,10 @@ Read [`docs/DEPLOY.md`](docs/DEPLOY.md) before changing builds, variables, API r
 | `MODELSCOPE_TOKEN_API_KEY` | Server-side AI/translation credential | For AI features |
 | `AUTH_PASSWORD_ADMIN` | Admin password | For admin mode |
 | `AUTH_PASSWORD_VIEWER` | Viewer password | For viewer mode |
+| `SESSION_SECRET` | Cookie-session HMAC key | Yes, server-only |
+| `SESSION_VERSION` | Session revocation version | Yes, server-only |
+| `SUPABASE_SERVICE_ROLE_KEY` | Privileged server Supabase client | For protected backend APIs, server-only |
+| `APP_ORIGIN` | Production state-changing request Origin | Yes, server-only |
 
 Never record values or substitute a service-role key for the anon key. See `docs/DEPLOY.md` for stage/secrecy details.
 
@@ -77,7 +81,7 @@ pnpm start
 pnpm cf:build
 pnpm cf-typegen
 pnpm preview
-pnpm deploy
+pnpm run deploy
 ```
 
 ## Important conventions
@@ -93,9 +97,9 @@ pnpm deploy
 
 - TypeScript build errors are ignored by `next.config.mjs`.
 - Browser anon writes rely on RLS/Storage policies; UI roles are not authorization.
-- Authentication currently lacks server-signed sessions and expiry; localStorage role state is not authorization.
+- Cookie roles are enforced for diary APIs and media reads, but remaining direct anon write paths are not yet protected by those Cookies.
 - Public unoptimized images can affect bandwidth/performance.
-- Most browser-direct business tables still have permissive public ALL policies; the approved trusted-session redesign must be implemented before tightening them without breaking admin features.
+- Most remaining browser-direct business tables still have permissive public ALL policies; Batch 4 replacement APIs must be live before Batch 5 tightens them.
 - Supabase security advisors flag broad Storage listing and a public SECURITY DEFINER function; review them separately before changing production behavior.
 - `pnpm lint` lacks a direct `eslint` dependency and needs clean-install confirmation.
 - Cloudflare Workers Builds Git repository/branch/commands still require Dashboard confirmation because the current OAuth token cannot read the Builds API.
