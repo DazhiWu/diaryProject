@@ -1,5 +1,7 @@
-import { fetchDiaryEntriesByRange } from '@/lib/diaryApi';
 import { NextResponse } from 'next/server';
+import { assertAllowedOrigin } from '@/lib/server/origin';
+import { HttpError, readSession, requireAdmin } from '@/lib/server/session';
+import { getSupabaseAdmin } from '@/lib/server/supabaseAdmin';
 
 // 生成CSV格式的日记数据
 function generateCSV(diaryEntries: Array<{date: Date; content: string}>): string {
@@ -23,6 +25,8 @@ function generateCSV(diaryEntries: Array<{date: Date; content: string}>): string
 
 export async function POST(request: Request) {
   try {
+    await assertAllowedOrigin(request);
+    requireAdmin(await readSession(request.headers.get('cookie')));
     const body = await request.json();
     const { startDate, endDate } = body;
 
@@ -47,11 +51,12 @@ export async function POST(request: Request) {
     }
 
     // 获取指定日期范围内的日记
-    const diaryEntries = await fetchDiaryEntriesByRange(start, end);
+    const { data: diaryEntries, error } = await (await getSupabaseAdmin()).from('diaryContent').select('date, content').gte('date', startDate).lte('date', endDate).order('date', { ascending: true });
+    if (error) throw new Error('Diary export failed');
     
     // 只保留需要的字段：日期和内容
-    const filteredEntries = diaryEntries.map(entry => ({
-      date: entry.date,
+    const filteredEntries = (diaryEntries ?? []).map(entry => ({
+      date: new Date(entry.date),
       content: entry.content
     }));
 
@@ -68,13 +73,10 @@ export async function POST(request: Request) {
       }
     });
   } catch (error: any) {
+    if (error instanceof HttpError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('API路由中的错误:', error);
     
     // 返回具体的错误信息
-    const errorMessage = error.message || '下载日记失败';
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Diary export failed' }, { status: 500 });
   }
 }

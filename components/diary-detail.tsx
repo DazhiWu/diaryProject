@@ -10,8 +10,6 @@ import { MehIcon } from './icons'
 import type { Entry } from "@/app/page"
 import { useState, useEffect } from "react"
 
-import { saveAIAnalysis, getAIAnalysisForDiary, updateDiaryEntry } from "@/lib/diaryApi"
-import { supabase } from "@/lib/supabaseClient"
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/useAuth"
 import { AuthDialog } from "@/components/auth-dialog"
@@ -52,7 +50,9 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
     const fetchAIAnalysis = async () => {
       try {
         console.log(`正在获取日记ID ${entry.id} 的AI分析结果...`);
-        const analysis = await getAIAnalysisForDiary(entry.id);
+        const response = await fetch(`/api/diaries/${entry.id}/analysis`);
+        if (!response.ok) return;
+        const analysis = await response.json();
         if (analysis) {
           console.log(`获取到AI分析结果:`, analysis);
           setAiSummary(analysis.summary);
@@ -82,8 +82,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
     const originalEmotion = aiEmotion;
     
     try {
-      // 通过API路由调用AI分析
-      const response = await fetch('/api/ai-analysis', { 
+      const response = await fetch(`/api/diaries/${entry.id}/analysis`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -124,43 +123,12 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
       const data = JSON.parse(responseText);
       console.log(`API返回的AI分析结果:`, data);
       
-      // 先保存到数据库
-      console.log(`正在保存AI分析结果到数据库...`);
-      const savedAnalysis = await saveAIAnalysis({
-        diary_id: entry.id,
-        summary: data.summary,
-        emotion: data.emotion
-      });
-      console.log(`AI分析结果保存成功:`, savedAnalysis);
-      
-      // 更新日记标题
+      const savedAnalysis = data.analysis;
       if (onUpdateEntry) {
-        onUpdateEntry(entry.id, { subtitle: data.summary });
+        onUpdateEntry(entry.id, { subtitle: data.subtitle });
       }
-      
-      // 将AI生成的标题更新到数据库的diaryContent表
-      console.log(`正在更新日记ID ${entry.id} 的标题到数据库...`);
-      // 直接从数据库获取最新的条目信息，确保使用原始的相对路径
-      const { data: currentEntry, error } = await supabase
-        .from('diaryContent')
-        .select('image_paths')
-        .eq('id', entry.id)
-        .single();
-      
-      await updateDiaryEntry(entry.id, { 
-        subtitle: data.summary, 
-        images: currentEntry?.image_paths || [] // 确保使用原始的相对路径
-      });
-      console.log(`日记标题更新到数据库成功`);
-      
-      // 重新从数据库获取最新的分析结果，确保数据一致性
-      console.log(`正在从数据库重新获取AI分析结果...`);
-      const analysisFromDb = await getAIAnalysisForDiary(entry.id);
-      if (analysisFromDb) {
-        console.log(`从数据库获取到最新的AI分析结果:`, analysisFromDb);
-        setAiSummary(analysisFromDb.summary);
-        setAiEmotion(analysisFromDb.emotion);
-      }
+      setAiSummary(savedAnalysis.summary);
+      setAiEmotion(savedAnalysis.emotion);
       
       toast.success("AI分析完成！");
     } catch (error: any) {

@@ -666,7 +666,7 @@ export default function DiaryApp() {
       const fullEntry = await fetchDiaryEntryByDate(entry.date);
       if (fullEntry) {
         // 将图片路径转换为完整的URL
-        const imageUrls = getMultipleImageUrls(fullEntry.images || [], '2024To2025_diary_images')
+        const imageUrls = fullEntry.images || []
         const convertedEntry = {
           ...convertToEntry(fullEntry),
           images: imageUrls
