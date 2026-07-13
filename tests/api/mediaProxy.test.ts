@@ -4,6 +4,9 @@ import {
   audioMedia,
   diaryMedia,
   diaryMediaUrl,
+  jsonbContainsPath,
+  streamStorageBody,
+  storageObjectUrl,
   storageSizeFromContentRange,
   yearlyMedia,
   yearlyMediaUrl,
@@ -32,6 +35,23 @@ function request(path: string, range?: string) {
 }
 
 describe('media proxies', () => {
+  it('serializes a diary JSONB containment value for the Storage path query', () => {
+    expect(jsonbContainsPath('2026/20260713_1.webp')).toBe('["2026/20260713_1.webp"]')
+  })
+
+  it('adapts an upstream Storage stream without buffering it', async () => {
+    const source = stream('abcdef')
+    const adapted = streamStorageBody(source)
+
+    expect(adapted).not.toBe(source)
+    await expect(new Response(adapted).text()).resolves.toBe('abcdef')
+  })
+
+  it('normalizes a CRLF runtime Storage URL before appending an object path', () => {
+    expect(storageObjectUrl('https://project.supabase.co\r', 'bucket', '2026/20260713_1.webp'))
+      .toBe('https://project.supabase.co/storage/v1/object/bucket/2026/20260713_1.webp')
+  })
+
   it('derives the audio size from a GET Range Content-Range instead of a Storage HEAD response', () => {
     expect(storageSizeFromContentRange('bytes 0-0/12345')).toBe(12345)
     expect(() => storageSizeFromContentRange(null)).toThrow('Invalid storage range response')

@@ -112,11 +112,23 @@ async function storageError(response: Response, stage: string): Promise<MediaRun
   return new MediaRuntimeError(stage, message, code, bodyType(response.body))
 }
 
+export function storageObjectUrl(storageUrl: string, bucket: string, path: string): string {
+  const objectPath = path.split('/').map(encodeURIComponent).join('/')
+  return new URL(`/storage/v1/object/${encodeURIComponent(bucket)}/${objectPath}`, storageUrl.trim()).toString()
+}
+
+export function streamStorageBody(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  return body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>())
+}
+
+export function jsonbContainsPath(path: string): string {
+  return JSON.stringify([path])
+}
+
 async function storageFetch(bucket: string, path: string, init: RequestInit): Promise<Response> {
   const [url, serviceRole] = await Promise.all([requireServerEnv('SUPABASE_URL'), requireServerEnv('SUPABASE_SERVICE_ROLE_KEY')])
-  const objectPath = path.split('/').map(encodeURIComponent).join('/')
   try {
-    return await fetch(`${url}/storage/v1/object/${bucket}/${objectPath}`, { ...init, headers: { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole, ...init.headers } })
+    return await fetch(storageObjectUrl(url, bucket, path), { ...init, headers: { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole, ...init.headers } })
   } catch {
     throw new MediaRuntimeError('storage-fetch', 'Storage request failed')
   }
@@ -126,10 +138,10 @@ export async function createSupabaseMediaStore(): Promise<MediaStore> {
   const supabase = await getSupabaseAdmin()
   async function metadata(table: string, column: string, path: string): Promise<Owner | null> {
     const query = table === 'diaryContent'
-      ? supabase.from(table).select('id').contains(column, [path]).maybeSingle()
+      ? supabase.from(table).select('id').contains(column, jsonbContainsPath(path)).maybeSingle()
       : supabase.from(table).select('id').eq(column, path).maybeSingle()
     const { data, error } = await query
-    if (error) throw new Error('Media metadata query failed')
+    if (error) throw new MediaRuntimeError('metadata-query', 'Media metadata query failed', error.code)
     return data as Owner | null
   }
   return {
@@ -153,7 +165,7 @@ export async function createSupabaseMediaStore(): Promise<MediaStore> {
       const response = await storageFetch(bucket, path, { headers: range ? { Range: `bytes=${range.start}-${range.end}` } : undefined })
       if (response.status === 404) throw new HttpError(404, 'Media not found')
       if (!response.ok || (range && response.status !== 206)) throw await storageError(response, 'storage-download')
-      return { body: response.body, contentType: response.headers.get('content-type'), size: Number(response.headers.get('content-length')) || 0 }
+      return { body: response.body ? streamStorageBody(response.body) : null, contentType: response.headers.get('content-type'), size: Number(response.headers.get('content-length')) || 0 }
     },
   }
 }
