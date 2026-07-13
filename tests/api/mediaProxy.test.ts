@@ -4,6 +4,7 @@ import {
   audioMedia,
   diaryMedia,
   diaryMediaUrl,
+  storageSizeFromContentRange,
   yearlyMedia,
   yearlyMediaUrl,
   type MediaStore,
@@ -31,6 +32,11 @@ function request(path: string, range?: string) {
 }
 
 describe('media proxies', () => {
+  it('derives the audio size from a GET Range Content-Range instead of a Storage HEAD response', () => {
+    expect(storageSizeFromContentRange('bytes 0-0/12345')).toBe(12345)
+    expect(() => storageSizeFromContentRange(null)).toThrow('Invalid storage range response')
+  })
+
   it('returns 403 for a real image owned by the sixth diary and 404 for no owner', async () => {
     expect((await diaryMedia(request('/api/media/diary?path=2020%2F20200101_1.webp'), 'guest', store)).status).toBe(403)
     expect((await diaryMedia(request('/api/media/diary?path=2020%2F20200101_9.webp'), 'guest', store)).status).toBe(404)

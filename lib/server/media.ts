@@ -14,6 +14,10 @@ type Owner = { id: number | string }
 type Download = { body: ReadableStream<Uint8Array> | null; contentType: string | null; size: number }
 type MediaStat = { contentType: string | null; size: number }
 
+class MediaRuntimeError extends Error {
+  constructor(readonly stage: string, message: string, readonly code?: string, readonly dataType?: string) { super(message) }
+}
+
 export interface MediaStore {
   diaryOwner(path: string): Promise<Owner | null>
   latestDiaryIds(): Promise<number[]>
@@ -25,6 +29,10 @@ export interface MediaStore {
 
 function responseFor(error: unknown): Response {
   if (error instanceof HttpError) return Response.json({ error: error.message }, { status: error.status })
+  const detail = error instanceof MediaRuntimeError
+    ? { stage: error.stage, errorType: error.constructor.name, code: error.code, message: error.message, dataType: error.dataType }
+    : { stage: 'unexpected', errorType: error instanceof Error ? error.constructor.name : typeof error, message: 'Media runtime failure' }
+  console.error('[media-proxy]', detail)
   return Response.json({ error: 'Media request failed' }, { status: 500 })
 }
 
@@ -86,10 +94,32 @@ export function yearlyMediaUrl(path: string, updatedAt: string | Date | null | u
 
 export function audioMediaUrl(path: string): string { return `/api/media/audio?path=${encodeURIComponent(path)}` }
 
+export function storageSizeFromContentRange(value: string | null): number {
+  const match = /^bytes \d+-\d+\/(\d+)$/u.exec(value ?? '')
+  const size = Number(match?.[1])
+  if (!Number.isSafeInteger(size) || size < 1) throw new MediaRuntimeError('storage-range-stat', 'Invalid storage range response')
+  return size
+}
+
+function bodyType(body: ReadableStream<Uint8Array> | null): string {
+  return body?.constructor?.name ?? 'null'
+}
+
+async function storageError(response: Response, stage: string): Promise<MediaRuntimeError> {
+  const detail = await response.json().catch(() => null) as { code?: unknown; message?: unknown } | null
+  const code = typeof detail?.code === 'string' ? detail.code : String(response.status)
+  const message = typeof detail?.message === 'string' ? detail.message.slice(0, 160) : `Storage request failed (${response.status})`
+  return new MediaRuntimeError(stage, message, code, bodyType(response.body))
+}
+
 async function storageFetch(bucket: string, path: string, init: RequestInit): Promise<Response> {
   const [url, serviceRole] = await Promise.all([requireServerEnv('SUPABASE_URL'), requireServerEnv('SUPABASE_SERVICE_ROLE_KEY')])
   const objectPath = path.split('/').map(encodeURIComponent).join('/')
-  return fetch(`${url}/storage/v1/object/${bucket}/${objectPath}`, { ...init, headers: { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole, ...init.headers } })
+  try {
+    return await fetch(`${url}/storage/v1/object/${bucket}/${objectPath}`, { ...init, headers: { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole, ...init.headers } })
+  } catch {
+    throw new MediaRuntimeError('storage-fetch', 'Storage request failed')
+  }
 }
 
 export async function createSupabaseMediaStore(): Promise<MediaStore> {
@@ -112,26 +142,18 @@ export async function createSupabaseMediaStore(): Promise<MediaStore> {
     yearlyOwner: (path) => metadata('yearly_images', 'storage_path', path),
     audioOwner: (path) => metadata('audio_messages', 'audio_path', path),
     stat: async (bucket, path) => {
-      const head = await storageFetch(bucket, path, { method: 'HEAD' })
-      if (head.status === 404) throw new HttpError(404, 'Media not found')
-      if (!head.ok) throw new Error('Media storage request failed')
-      const size = Number(head.headers.get('content-length'))
-      if (!Number.isSafeInteger(size) || size < 1) throw new Error('Invalid media size')
-      return { contentType: head.headers.get('content-type'), size }
+      const response = await storageFetch(bucket, path, { headers: { Range: 'bytes=0-0' } })
+      if (response.status === 404) throw new HttpError(404, 'Media not found')
+      if (response.status !== 206) throw await storageError(response, 'storage-range-stat')
+      const size = storageSizeFromContentRange(response.headers.get('content-range'))
+      await response.body?.cancel()
+      return { contentType: response.headers.get('content-type'), size }
     },
     download: async (bucket, path, range) => {
-      const { size } = await (async () => {
-        const head = await storageFetch(bucket, path, { method: 'HEAD' })
-        if (head.status === 404) throw new HttpError(404, 'Media not found')
-        if (!head.ok) throw new Error('Media storage request failed')
-        const objectSize = Number(head.headers.get('content-length'))
-        if (!Number.isSafeInteger(objectSize) || objectSize < 1) throw new Error('Invalid media size')
-        return { size: objectSize }
-      })()
       const response = await storageFetch(bucket, path, { headers: range ? { Range: `bytes=${range.start}-${range.end}` } : undefined })
       if (response.status === 404) throw new HttpError(404, 'Media not found')
-      if (!response.ok) throw new Error('Media storage request failed')
-      return { body: response.body, contentType: response.headers.get('content-type'), size }
+      if (!response.ok || (range && response.status !== 206)) throw await storageError(response, 'storage-download')
+      return { body: response.body, contentType: response.headers.get('content-type'), size: Number(response.headers.get('content-length')) || 0 }
     },
   }
 }
