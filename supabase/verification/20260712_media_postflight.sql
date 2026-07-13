@@ -22,3 +22,11 @@ SELECT date, last_sequence
 FROM public.diary_image_sequences
 ORDER BY date DESC
 LIMIT 5;
+
+SELECT event_object_table AS table_name, trigger_name
+FROM information_schema.triggers
+WHERE event_object_schema = 'public'
+  AND trigger_name IN ('diary_image_invariants_trigger', 'yearly_image_path_trigger', 'audio_path_trigger')
+ORDER BY table_name, trigger_name;
+
+SELECT to_regclass('private.diary_image_paths_backup_20260713') AS preserved_backup_table;
