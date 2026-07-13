@@ -2,11 +2,14 @@
 -- This migration intentionally does not repair or coerce production data.
 BEGIN;
 
+SET LOCAL lock_timeout = '5s';
+LOCK TABLE public."diaryContent", public.yearly_images, public.audio_messages IN SHARE ROW EXCLUSIVE MODE;
+
 DO $$
 DECLARE diary_date_is_unique boolean;
 BEGIN
   IF to_regnamespace('private') IS NULL THEN RAISE EXCEPTION 'private schema is required to record rollback state'; END IF;
-  IF to_regclass('public.diary_image_paths') IS NOT NULL OR to_regclass('public.diary_image_sequences') IS NOT NULL OR to_regclass('private.media_invariants_20260712_01_state') IS NOT NULL THEN RAISE EXCEPTION 'a media-invariants table already exists'; END IF;
+  IF to_regclass('public.diary_image_paths') IS NOT NULL OR to_regclass('private.diary_image_sequences') IS NOT NULL OR to_regclass('private.media_invariants_20260712_01_state') IS NOT NULL THEN RAISE EXCEPTION 'a media-invariants table already exists'; END IF;
   IF to_regprocedure('public.enforce_diary_image_invariants()') IS NOT NULL OR to_regprocedure('public.enforce_yearly_image_path()') IS NOT NULL OR to_regprocedure('public.enforce_audio_path()') IS NOT NULL THEN RAISE EXCEPTION 'a media-invariants function already exists'; END IF;
   IF EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid IN ('public."diaryContent"'::regclass, 'public.yearly_images'::regclass, 'public.audio_messages'::regclass) AND t.tgname IN ('diary_image_invariants_trigger', 'yearly_image_path_trigger', 'audio_path_trigger')) THEN RAISE EXCEPTION 'a media-invariants trigger already exists'; END IF;
   IF to_regclass('public.yearly_images_storage_path_unique_idx') IS NOT NULL OR to_regclass('public.audio_messages_audio_path_unique_idx') IS NOT NULL THEN RAISE EXCEPTION 'a media-invariants index already exists'; END IF;
@@ -47,7 +50,8 @@ CREATE TABLE private.media_invariants_20260712_01_state (
   diary_trigger_oid oid, yearly_trigger_oid oid, audio_trigger_oid oid,
   diary_function_hash text, yearly_function_hash text, audio_function_hash text,
   diary_trigger_hash text, yearly_trigger_hash text, audio_trigger_hash text,
-  yearly_index_hash text, audio_index_hash text
+  yearly_index_hash text, audio_index_hash text,
+  diary_paths_table_hash text, diary_sequences_table_hash text
 );
 
 INSERT INTO private.media_invariants_20260712_01_state (
@@ -69,8 +73,13 @@ CREATE TABLE public.diary_image_paths (
   sequence integer NOT NULL CHECK (sequence > 0)
 );
 ALTER TABLE public.diary_image_paths ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.diary_image_paths FROM PUBLIC;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN REVOKE ALL ON TABLE public.diary_image_paths FROM anon; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN REVOKE ALL ON TABLE public.diary_image_paths FROM authenticated; END IF;
+END $$;
 
-CREATE TABLE public.diary_image_sequences (
+CREATE TABLE private.diary_image_sequences (
   date date PRIMARY KEY,
   last_sequence integer NOT NULL CHECK (last_sequence >= 0)
 );
@@ -79,7 +88,7 @@ INSERT INTO public.diary_image_paths (path, diary_id, diary_date, sequence)
 SELECT p.path, d.id, d.date, (substring(p.path FROM '_([0-9]+)\.webp$'))::integer
 FROM public."diaryContent" d CROSS JOIN LATERAL jsonb_array_elements_text(d.image_paths) p(path);
 
-INSERT INTO public.diary_image_sequences (date, last_sequence)
+INSERT INTO private.diary_image_sequences (date, last_sequence)
 SELECT d.date, COALESCE(max(m.sequence), 0)
 FROM public."diaryContent" d LEFT JOIN public.diary_image_paths m ON m.diary_id = d.id
 GROUP BY d.date;
@@ -98,13 +107,13 @@ BEGIN
   DELETE FROM public.diary_image_paths WHERE diary_id = NEW.id;
   INSERT INTO public.diary_image_paths (path, diary_id, diary_date, sequence)
   SELECT p.path, NEW.id, NEW.date, (substring(p.path FROM '_([0-9]+)\.webp$'))::integer FROM jsonb_array_elements_text(NEW.image_paths) p(path);
-  INSERT INTO public.diary_image_sequences (date, last_sequence) VALUES (NEW.date, max_sequence)
-  ON CONFLICT (date) DO UPDATE SET last_sequence = GREATEST(public.diary_image_sequences.last_sequence, EXCLUDED.last_sequence);
+  INSERT INTO private.diary_image_sequences (date, last_sequence) VALUES (NEW.date, max_sequence)
+  ON CONFLICT (date) DO UPDATE SET last_sequence = GREATEST(private.diary_image_sequences.last_sequence, EXCLUDED.last_sequence);
   RETURN NEW;
 END $$;
 REVOKE ALL ON FUNCTION public.enforce_diary_image_invariants() FROM PUBLIC;
 
-CREATE TRIGGER diary_image_invariants_trigger BEFORE INSERT OR UPDATE OF date, image_paths ON public."diaryContent" FOR EACH ROW EXECUTE FUNCTION public.enforce_diary_image_invariants();
+CREATE TRIGGER diary_image_invariants_trigger AFTER INSERT OR UPDATE OF date, image_paths ON public."diaryContent" FOR EACH ROW EXECUTE FUNCTION public.enforce_diary_image_invariants();
 
 ALTER TABLE public."diaryContent" ALTER COLUMN image_paths SET DEFAULT '[]'::jsonb;
 ALTER TABLE public."diaryContent" ALTER COLUMN image_paths SET NOT NULL;
@@ -118,7 +127,7 @@ CREATE FUNCTION public.enforce_audio_path() RETURNS trigger LANGUAGE plpgsql SET
 CREATE TRIGGER audio_path_trigger BEFORE INSERT OR UPDATE OF audio_path ON public.audio_messages FOR EACH ROW EXECUTE FUNCTION public.enforce_audio_path();
 
 UPDATE private.media_invariants_20260712_01_state s SET
-  diary_paths_oid = 'public.diary_image_paths'::regclass, diary_sequences_oid = 'public.diary_image_sequences'::regclass,
+  diary_paths_oid = 'public.diary_image_paths'::regclass, diary_sequences_oid = 'private.diary_image_sequences'::regclass,
   yearly_index_oid = 'public.yearly_images_storage_path_unique_idx'::regclass, audio_index_oid = 'public.audio_messages_audio_path_unique_idx'::regclass,
   diary_function_oid = 'public.enforce_diary_image_invariants()'::regprocedure, yearly_function_oid = 'public.enforce_yearly_image_path()'::regprocedure, audio_function_oid = 'public.enforce_audio_path()'::regprocedure,
   diary_trigger_oid = (SELECT oid FROM pg_trigger WHERE tgrelid = 'public."diaryContent"'::regclass AND tgname = 'diary_image_invariants_trigger'),
@@ -126,6 +135,8 @@ UPDATE private.media_invariants_20260712_01_state s SET
   audio_trigger_oid = (SELECT oid FROM pg_trigger WHERE tgrelid = 'public.audio_messages'::regclass AND tgname = 'audio_path_trigger'),
   diary_function_hash = md5(pg_get_functiondef('public.enforce_diary_image_invariants()'::regprocedure)), yearly_function_hash = md5(pg_get_functiondef('public.enforce_yearly_image_path()'::regprocedure)), audio_function_hash = md5(pg_get_functiondef('public.enforce_audio_path()'::regprocedure)),
   diary_trigger_hash = md5(pg_get_triggerdef((SELECT oid FROM pg_trigger WHERE tgrelid = 'public."diaryContent"'::regclass AND tgname = 'diary_image_invariants_trigger'))), yearly_trigger_hash = md5(pg_get_triggerdef((SELECT oid FROM pg_trigger WHERE tgrelid = 'public.yearly_images'::regclass AND tgname = 'yearly_image_path_trigger'))), audio_trigger_hash = md5(pg_get_triggerdef((SELECT oid FROM pg_trigger WHERE tgrelid = 'public.audio_messages'::regclass AND tgname = 'audio_path_trigger'))),
-  yearly_index_hash = md5(pg_get_indexdef('public.yearly_images_storage_path_unique_idx'::regclass)), audio_index_hash = md5(pg_get_indexdef('public.audio_messages_audio_path_unique_idx'::regclass));
+  yearly_index_hash = md5(pg_get_indexdef('public.yearly_images_storage_path_unique_idx'::regclass)), audio_index_hash = md5(pg_get_indexdef('public.audio_messages_audio_path_unique_idx'::regclass)),
+  diary_paths_table_hash = md5((SELECT relrowsecurity::text || ':' || relforcerowsecurity::text FROM pg_class WHERE oid = 'public.diary_image_paths'::regclass) || COALESCE((SELECT string_agg(attnum || ':' || attname || ':' || atttypid || ':' || atttypmod || ':' || attnotnull, '|' ORDER BY attnum) FROM pg_attribute WHERE attrelid = 'public.diary_image_paths'::regclass AND attnum > 0 AND NOT attisdropped), '') || COALESCE((SELECT string_agg(conname || ':' || pg_get_constraintdef(oid), '|' ORDER BY conname) FROM pg_constraint WHERE conrelid = 'public.diary_image_paths'::regclass), '')),
+  diary_sequences_table_hash = md5((SELECT relrowsecurity::text || ':' || relforcerowsecurity::text FROM pg_class WHERE oid = 'private.diary_image_sequences'::regclass) || COALESCE((SELECT string_agg(attnum || ':' || attname || ':' || atttypid || ':' || atttypmod || ':' || attnotnull, '|' ORDER BY attnum) FROM pg_attribute WHERE attrelid = 'private.diary_image_sequences'::regclass AND attnum > 0 AND NOT attisdropped), '') || COALESCE((SELECT string_agg(conname || ':' || pg_get_constraintdef(oid), '|' ORDER BY conname) FROM pg_constraint WHERE conrelid = 'private.diary_image_sequences'::regclass), ''));
 
 COMMIT;

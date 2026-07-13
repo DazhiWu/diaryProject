@@ -19,7 +19,7 @@ WHERE schemaname = 'public'
 ORDER BY tablename, indexname;
 
 SELECT date, last_sequence
-FROM public.diary_image_sequences
+FROM private.diary_image_sequences
 ORDER BY date DESC
 LIMIT 5;
 
