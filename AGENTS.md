@@ -36,7 +36,8 @@ This is a personal diary application built with Next.js and Supabase. It support
 - `app/page.tsx` switches among diary list/calendar/create/edit/detail, export, yearly-summary, message, and audio views.
 - Client-reachable modules use a shared Supabase anon client for most database/Storage operations; diary data has a compressed `localStorage` fallback.
 - AI/translation API routes keep the ModelScope token server-side; the download route returns CSV.
-- `/api/auth` compares runtime passwords and stores a UI level in browser `localStorage`; this is not Supabase Auth or a durable server session.
+- `/api/auth` validates passwords behind an Origin/rate-limit boundary and writes a signed HttpOnly Cookie; `/api/auth/session` is the browser role source. This is not Supabase Auth, and current direct anon data paths remain until later migration batches.
+- `lib/server/` contains server-only environment, session, Origin, rate-limit, and privileged Supabase-client boundaries. Do not import these modules from browser code.
 - Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
 
@@ -61,8 +62,12 @@ Read [`docs/DEPLOY.md`](docs/DEPLOY.md) before changing builds, variables, API r
 | `MODELSCOPE_TOKEN_API_KEY` | Server-side AI/translation credential | For AI features |
 | `AUTH_PASSWORD_ADMIN` | Admin password | For admin mode |
 | `AUTH_PASSWORD_VIEWER` | Viewer password | For viewer mode |
+| `SESSION_SECRET` | Cookie-session HMAC key, at least 32 bytes | Yes, server-only |
+| `SESSION_VERSION` | Session revocation version | Yes, server-only |
+| `SUPABASE_SERVICE_ROLE_KEY` | Privileged server Supabase client credential | For protected backend APIs, server-only |
+| `APP_ORIGIN` | Production state-changing request Origin | Yes, server-only |
 
-Never record values or substitute a service-role key for the anon key. See `docs/DEPLOY.md` for stage/secrecy details.
+Never record values or substitute a service-role key for the anon key. `SESSION_VERSION` must be incremented after either auth password changes. See `docs/DEPLOY.md` for stage/secrecy details.
 
 ## Common commands
 
@@ -91,7 +96,8 @@ pnpm deploy
 
 - TypeScript build errors are ignored by `next.config.mjs`.
 - Browser anon writes rely on RLS/Storage policies; UI roles are not authorization.
-- Authentication lacks Supabase Auth, signed sessions, and expiry.
+- Authentication is not Supabase Auth and has no logout endpoint/control in this phase. Sessions expire naturally or when `SESSION_VERSION` changes.
+- Sensitive browser-direct data and Storage access is not yet migrated; the privileged client exists but must only be used by authorized server routes.
 - Public unoptimized images can affect bandwidth/performance.
 - Most browser-direct business tables still have permissive public ALL policies; a trusted-session redesign is required before tightening them without breaking admin features.
 - Supabase security advisors flag broad Storage listing and a public SECURITY DEFINER function; review them separately before changing production behavior.

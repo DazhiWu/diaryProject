@@ -84,14 +84,21 @@ pnpm exec wrangler deploy --dry-run
 | `MODELSCOPE_TOKEN_API_KEY` | `lib/aiAnalysis.ts` | For AI/translation | Yes | Server runtime secret via Cloudflare binding or local `process.env` |
 | `AUTH_PASSWORD_ADMIN` | `app/api/auth/route.ts` | For admin mode | Yes | Server runtime secret |
 | `AUTH_PASSWORD_VIEWER` | `app/api/auth/route.ts` | For viewer mode | Yes | Server runtime secret |
+| `SESSION_SECRET` | `lib/server/session.ts` | Yes | Yes | Server runtime secret; at least 32 bytes, used for HMAC Cookie signatures |
+| `SESSION_VERSION` | `lib/server/session.ts` | Yes | Yes | Server runtime secret; increment after either auth password changes to invalidate existing sessions |
+| `SUPABASE_SERVICE_ROLE_KEY` | `lib/server/supabaseAdmin.ts` | For protected backend APIs | Yes | Server runtime secret; never expose through `next.config.mjs` or browser modules |
+| `APP_ORIGIN` | `lib/server/origin.ts` | Yes | Yes | Server runtime secret used to authorize production state-changing Origins |
 
 Rules:
 
 - Configure Supabase URL/anon key where Workers Builds can read them before `pnpm cf:build`; `next.config.mjs` injects them into the client bundle.
+- Configure auth/session, Origin, and service-role variables only as Worker runtime secrets. Do not place them in `next.config.mjs`, build-time public variables, browser code, logs, or source control.
+- Configure the `LOGIN_RATE_LIMITER` Worker binding from `wrangler.jsonc`; it enforces five login attempts per 60 seconds by client IP. Do not rename or reuse namespace `2026071201` for an unrelated binding.
+- Use ignored `.dev.vars` for local workerd preview runtime values; `.env.local` supplies Next.js build values but is not a substitute for Worker runtime bindings.
 - Configure ModelScope and password credentials in deployed Worker runtime **Variables and Secrets**, preferably encrypted secrets.
 - Workers Builds variables and deployed runtime variables are separate scopes. Configure each value wherever its code path requires it.
 - `keep_vars: true` asks Wrangler to preserve dashboard-managed values during deployment; confirm behavior before changing it.
-- Never use a Supabase service-role key as `SUPABASE_ANON_KEY`. No service-role variable exists here.
+- Never use a Supabase service-role key as `SUPABASE_ANON_KEY`.
 
 ## Cloudflare configuration
 
@@ -104,10 +111,10 @@ Rules:
 - Compatibility flag: `nodejs_compat`.
 - Observability: enabled.
 - Variable preservation: `keep_vars: true`.
-- Other bindings: none declared.
+- Rate-limit binding: `LOGIN_RATE_LIMITER`, configured in `wrangler.jsonc` for five calls per 60 seconds.
 - Custom domain: `diary.wuzhizhii.com`, production environment.
 - Zone routes: none target `diaryproject`; the custom domain targets the Worker directly.
-- Runtime bindings: `ASSETS` assets binding; all five named runtime variables (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `MODELSCOPE_TOKEN_API_KEY`, `AUTH_PASSWORD_ADMIN`, and `AUTH_PASSWORD_VIEWER`) are currently encrypted secrets.
+- Runtime bindings: `ASSETS` assets binding and `LOGIN_RATE_LIMITER`. Configure the named runtime secrets in the preceding table before enabling Cookie login; actual production binding values require operator confirmation.
 - Historical Worker versions and rollback capability are available.
 
 OpenNext adapts App Router pages and API routes to Workers. Plain `next build` is useful validation but not the production artifact.
@@ -117,8 +124,7 @@ Cloudflare variables are plain configuration values; secrets are encrypted runti
 ## Supabase integration
 
 - Browser code requires `SUPABASE_URL` and `SUPABASE_ANON_KEY` in the build output.
-- `/api/diary-download` imports the same shared client; there is no privileged server credential.
-- If future server administration needs a service-role key, create a distinct server-only variable/client and never expose it through `next.config.mjs`.
+- `/api/diary-download` still imports the same shared anon client. `lib/server/supabaseAdmin.ts` is the separate server-only service-role factory for authorized routes added in later batches; it is not a browser import path.
 - RLS and Storage policies are the online security boundary because browser code uses the anon client directly.
 - Media uses `getPublicUrl()`. Private buckets would require signed URLs and code/policy changes.
 - See [`DATABASE.md`](DATABASE.md) for tables, RLS, buckets, and path details.

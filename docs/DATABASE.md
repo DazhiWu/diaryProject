@@ -4,7 +4,7 @@
 
 The application uses Supabase PostgreSQL and Storage through a shared browser-visible anon client. Production metadata, policies, grants, constraints, indexes, and buckets were inspected read-only on 2026-07-12. The repository still lacks a complete migration history, so future schema changes must be exported as authoritative migrations rather than inferred from this document.
 
-The app does not create a Supabase Auth session. `/api/auth` only returns a UI level stored in browser `localStorage`; it does not change the Supabase role. Browser and shared-server-client requests therefore use the anon role.
+The app does not create a Supabase Auth session. Batch 1 introduced signed HttpOnly application Cookies, but they do not change the Supabase role. Browser and the existing shared client still use the anon role until later API migration batches move sensitive operations behind the server-only service-role client. The service-role credential must never be used in browser code.
 
 ## Production tables
 
@@ -62,7 +62,7 @@ Production Data API grants give anon/authenticated broad table privileges. RLS i
 - `INSERT` for `anon` and `authenticated`, subject to the 2–1000 character check.
 - No UPDATE or DELETE policy, so client updates/deletes are blocked.
 
-Most other application tables currently have a `PUBLIC FOR ALL USING (true)` policy. This permits anon reads and writes despite guest/viewer/admin UI restrictions. Tightening these policies without breaking current admin features requires a trusted server session, Supabase Auth, or server-only privileged API design.
+Most other application tables currently have a `PUBLIC FOR ALL USING (true)` policy. This permits anon reads and writes despite guest/viewer/admin UI restrictions. Do not tighten these policies merely because Cookie sessions now exist: most current browser data paths still use the anon client. The planned authorized server-route migration must complete first.
 
 Supabase security advisors additionally report:
 
@@ -115,7 +115,7 @@ Database-row and Storage-object changes are not transactional. Failed metadata w
 - Search: diary `content`/`subtitle` use OR `ilike`.
 - Cache: diary fallback uses compressed `localStorage`; yearly summaries use a five-minute in-memory cache.
 
-Never substitute a service-role key for `SUPABASE_ANON_KEY`. A future privileged client must use a separate server-only variable and module.
+Never substitute a service-role key for `SUPABASE_ANON_KEY`. The privileged client is `lib/server/supabaseAdmin.ts`, uses the separate server-only `SUPABASE_SERVICE_ROLE_KEY`, and must be called only from authorized server routes.
 
 ## Checked-in SQL
 

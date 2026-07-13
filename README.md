@@ -19,7 +19,7 @@
 - `viewer`：查看全部日记和搜索功能。
 - `admin`：创建、编辑、删除、AI 分析、健康管理和音频管理等操作。
 
-`/api/auth` 使用运行时密码比较后返回等级，浏览器把等级保存在 `localStorage`。这不是 Supabase Auth、服务端会话或可信授权；真正的数据安全必须由 Supabase RLS、Data API grants 和 Storage policies 保证。
+`/api/auth` 使用运行时密码验证后写入签名的 HttpOnly Cookie；浏览器只通过 `/api/auth/session` 读取 `guest`、`viewer` 或 `admin` 等级，不保存会话令牌或认证等级到 `localStorage`。这不是 Supabase Auth。当前敏感数据的浏览器直连尚未在后续迁移批次移除，因此 RLS、Data API grants 和 Storage policies 仍是实际数据边界。
 
 ## 架构
 
@@ -51,6 +51,10 @@ SUPABASE_ANON_KEY=
 MODELSCOPE_TOKEN_API_KEY=
 AUTH_PASSWORD_ADMIN=
 AUTH_PASSWORD_VIEWER=
+SESSION_SECRET=
+SESSION_VERSION=
+SUPABASE_SERVICE_ROLE_KEY=
+APP_ORIGIN=
 ```
 
 | 变量 | 用途 | 要求 |
@@ -60,6 +64,10 @@ AUTH_PASSWORD_VIEWER=
 | `MODELSCOPE_TOKEN_API_KEY` | AI 分析和翻译 | 启用 AI 功能时必需；仅服务端运行时 |
 | `AUTH_PASSWORD_ADMIN` | 管理员密码 | 启用管理员模式时必需；仅服务端运行时 |
 | `AUTH_PASSWORD_VIEWER` | 浏览者密码 | 启用浏览者模式时必需；仅服务端运行时 |
+| `SESSION_SECRET` | Cookie 会话 HMAC 密钥 | 必需；仅服务端运行时，至少 32 字节 |
+| `SESSION_VERSION` | 使现有会话整体失效的版本号 | 必需；仅服务端运行时；变更任一认证密码后递增 |
+| `SUPABASE_SERVICE_ROLE_KEY` | 后端受信任 Supabase client 凭据 | 后端 API 迁移时必需；仅服务端运行时，绝不进入浏览器 |
+| `APP_ORIGIN` | 生产状态变更请求的 Origin 边界 | 必需；仅服务端运行时 |
 
 安装并启动：
 
