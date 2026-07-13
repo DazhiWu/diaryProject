@@ -32,8 +32,6 @@ import {
   saveLocalStorageBackup,
   type DiaryEntry as DiaryEntryType,
 } from "@/lib/diaryApi"
-import { getMultipleImageUrls } from "@/lib/imageHandler"
-import { supabase } from "@/lib/supabaseClient"
 
 // 确保Entry类型与DiaryEntry类型兼容
 export type Entry = {
@@ -45,17 +43,19 @@ export type Entry = {
   modifiedAt: Date | null | undefined
 }
 
+function diaryImageUrls(paths: string[] | null | undefined, modifiedAt: Date | null | undefined): string[] {
+  const version = modifiedAt?.toISOString() ?? ''
+  return (paths ?? []).map((path) => `/api/media/diary?path=${encodeURIComponent(path)}&v=${encodeURIComponent(version)}`)
+}
+
 // 将DiaryEntryType转换为Entry类型
 function convertToEntry(diaryEntry: DiaryEntryType): Entry {
-  // 将图片路径转换为完整的URL
-  const imageUrls = getMultipleImageUrls(diaryEntry.images || [], '2024To2025_diary_images')
-  
   return {
     id: diaryEntry.id,
     date: diaryEntry.date,
     subtitle: diaryEntry.subtitle || `日记 ${diaryEntry.date.toLocaleDateString()}`,
     content: diaryEntry.content,
-    images: imageUrls,
+    images: diaryImageUrls(diaryEntry.images, diaryEntry.modifiedAt),
     modifiedAt: diaryEntry.modifiedAt,
   }
 }
@@ -87,30 +87,7 @@ export default function DiaryApp() {
   const isViewer = auth.isViewer;
   const isGuest = !isAuthenticated;
 
-  // 确保认证状态已经从localStorage加载完成
-  const [authReady, setAuthReady] = useState(false);
-
-  // 当认证状态就绪后，初始化数据加载
-  useEffect(() => {
-    // 只有当authLevel不是初始值'guest'，或者我们确定localStorage中确实没有认证信息时，才标记为就绪
-    const checkAuthReady = () => {
-      if (typeof window !== 'undefined') {
-        const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel');
-        // 如果有存储的认证信息，或者组件已经渲染了一段时间，就认为认证状态就绪
-        setAuthReady(true);
-      }
-    };
-
-    // 立即检查一次
-    checkAuthReady();
-    
-    // 给一个小延迟，确保所有初始化操作都完成
-    const timer = setTimeout(() => {
-      setAuthReady(true);
-    }, 100);
-
-    return () => clearTimeout(timer);
-  }, [auth.authLevel]);
+  const authReady = !auth.isLoading;
 
   // 当认证状态就绪或变化时重新加载日记列表，确保分页显示正确
   useEffect(() => {
@@ -159,14 +136,7 @@ export default function DiaryApp() {
           debouncedSearchQuery
         )
         
-        // 将图片路径转换为完整的URL
-        const entriesWithUrls = result.entries.map(entry => {
-          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
-          return {
-            ...convertToEntry(entry),
-            images: imageUrls
-          }
-        })
+        const entriesWithUrls = result.entries.map(convertToEntry)
         
         setEntries(entriesWithUrls)
         setTotalEntriesCount(currentIsGuest ? 5 : result.totalCount) // 访客显示最多5条
@@ -186,7 +156,7 @@ export default function DiaryApp() {
         
         // 将图片路径转换为完整的URL
         const entriesWithUrls = filteredOfflineEntries.map(entry => {
-          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+          const imageUrls = diaryImageUrls(entry.images, entry.modifiedAt)
           return {
             ...convertToEntry(entry),
             images: imageUrls
@@ -221,7 +191,7 @@ export default function DiaryApp() {
       
       // 将图片路径转换为完整的URL
       const entriesWithUrls = filteredOfflineEntries.map(entry => {
-        const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+        const imageUrls = diaryImageUrls(entry.images, entry.modifiedAt)
         return {
           ...convertToEntry(entry),
           images: imageUrls
@@ -275,7 +245,7 @@ export default function DiaryApp() {
         const firstPageData = await fetchDiaryEntriesWithPagination(1, currentIsGuest ? 5 : currentEntriesPerPage, "")
         // 将图片路径转换为完整的URL
         const entriesWithUrls = firstPageData.entries.map(entry => {
-          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+          const imageUrls = diaryImageUrls(entry.images, entry.modifiedAt)
           return {
             ...convertToEntry(entry),
             images: imageUrls
@@ -296,7 +266,7 @@ export default function DiaryApp() {
         const localEntries = getLocalStorageBackup()
         // 将图片路径转换为完整的URL
         const entriesWithUrls = localEntries.map(entry => {
-          const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+          const imageUrls = diaryImageUrls(entry.images, entry.modifiedAt)
           return {
             ...convertToEntry(entry),
             images: imageUrls
@@ -312,7 +282,7 @@ export default function DiaryApp() {
       const localEntries = getLocalStorageBackup()
       // 将图片路径转换为完整的URL
       const entriesWithUrls = localEntries.map(entry => {
-        const imageUrls = getMultipleImageUrls(entry.images || [], '2024To2025_diary_images')
+        const imageUrls = diaryImageUrls(entry.images, entry.modifiedAt)
         return {
           ...convertToEntry(entry),
           images: imageUrls
@@ -397,19 +367,7 @@ export default function DiaryApp() {
   const updateEntry = async (id: number, content: string, subtitle: string, date: Date, files: File[]): Promise<boolean> => {
     try {
       if (isOnline()) {
-        // 直接从数据库获取最新的条目信息，确保使用原始的相对路径
-        const { data: currentEntry, error } = await supabase
-          .from('diaryContent')
-          .select('image_paths')
-          .eq('id', id)
-          .single();
-          
-        if (error) {
-          toast.error("获取日记信息失败，请重试")
-          return false
-        }
-          
-        let imagePaths: string[] = currentEntry?.image_paths || [];
+        let imagePaths: string[] = selectedEntry?.id === id ? selectedEntry.images : entries.find((entry) => entry.id === id)?.images || [];
         
         // 只有当有新文件上传时才更新图片路径
         if (files.length > 0) {
@@ -507,10 +465,7 @@ export default function DiaryApp() {
   }, [debouncedSearchQuery, selectedDate])
 
   const handleProtectedAction = (action: () => void, actionName: string, requiredLevel: 'viewer' | 'admin' = 'admin') => {
-    // 再次检查localStorage确保状态最新
-    const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel') as 'guest' | 'viewer' | 'admin' || 'guest';
-    
-    if (storedAuthLevel === 'admin' || (requiredLevel === 'viewer' && storedAuthLevel === 'viewer')) {
+    if (auth.authLevel === 'admin' || (requiredLevel === 'viewer' && auth.authLevel === 'viewer')) {
       action();
     } else {
       toast.error(`请先进行管理员认证才能${actionName}`);
@@ -532,8 +487,8 @@ export default function DiaryApp() {
                 用户认证
               </Button>
               
-              {/* 只有在认证后显示写日记和下载按钮 */}
-              {isAuthenticated && (
+              {/* 仅管理员可写入或导出 */}
+              {isAdmin && (
                 <>
                   <Button onClick={() => handleProtectedAction(() => setView("new"), "添加日记")} size="sm" className="gap-2 bg-primary/90 hover:bg-primary">
                     <PlusIcon className="h-4 w-4" />
@@ -716,7 +671,7 @@ export default function DiaryApp() {
       const fullEntry = await fetchDiaryEntryByDate(entry.date);
       if (fullEntry) {
         // 将图片路径转换为完整的URL
-        const imageUrls = getMultipleImageUrls(fullEntry.images || [], '2024To2025_diary_images')
+        const imageUrls = diaryImageUrls(fullEntry.images, fullEntry.modifiedAt)
         const convertedEntry = {
           ...convertToEntry(fullEntry),
           images: imageUrls

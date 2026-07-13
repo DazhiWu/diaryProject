@@ -7,46 +7,34 @@ interface AuthHook {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isViewer: boolean;
+  isLoading: boolean;
   authenticateUser: (password: string) => Promise<boolean>;
-  logout: () => void;
 }
 
-// 简单的密码验证（实际应用中应该使用更安全的方式）
 export const useAuth = (): AuthHook => {
-  // 在初始化时使用默认值'guest'，然后在useEffect中从localStorage获取实际状态
-  // 这样可以避免SSR环境中localStorage不存在的问题
   const [authLevel, setAuthLevel] = useState<AuthLevel>('guest');
+  const [isLoading, setIsLoading] = useState(true);
 
-  // 初始检查和localStorage监听
   useEffect(() => {
-    // 只在浏览器环境中执行，避免SSR错误
-    if (typeof window !== 'undefined') {
-      const checkAuthStatus = () => {
-        const storedAuthLevel = localStorage.getItem('diaryAppAuthLevel');
-        setAuthLevel((storedAuthLevel as AuthLevel) || 'guest');
-      };
+    let active = true;
+    localStorage.removeItem('diaryAppAuthLevel');
+    localStorage.removeItem('diaryAppAuthStatus');
 
-      // 初始检查，确保组件能获取到正确的认证状态
-      checkAuthStatus();
+    void fetch('/api/auth/session')
+      .then(async (response) => response.ok ? response.json() : { role: 'guest' })
+      .then((data: { role?: AuthLevel }) => {
+        if (active) setAuthLevel(data.role === 'viewer' || data.role === 'admin' ? data.role : 'guest');
+      })
+      .catch(() => {
+        if (active) setAuthLevel('guest');
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
 
-      // 监听localStorage变化，以处理跨标签页和组件的认证状态更新
-      const handleStorageChange = (event: StorageEvent) => {
-        if (event.key === 'diaryAppAuthLevel') {
-          checkAuthStatus();
-        }
-      };
-
-      // 添加事件监听器
-      window.addEventListener('storage', handleStorageChange);
-
-      // 清理函数
-      return () => {
-        window.removeEventListener('storage', handleStorageChange);
-      };
-    }
+    return () => { active = false; };
   }, []);
 
-  // 验证用户密码
   const authenticateUser = useCallback(async (password: string): Promise<boolean> => {
     const response = await fetch('/api/auth', {
       method: 'POST',
@@ -62,31 +50,11 @@ export const useAuth = (): AuthHook => {
 
     const data = await response.json();
 
-    if (data.authLevel === 'admin') {
-      // 直接更新状态，确保当前组件能立即响应
-      setAuthLevel('admin');
-      // 更新localStorage，触发其他组件的状态更新
-      localStorage.setItem('diaryAppAuthLevel', 'admin');
-      localStorage.setItem('diaryAppAuthStatus', 'authenticated');
-      return true;
-    } else if (data.authLevel === 'viewer') {
-      // 直接更新状态，确保当前组件能立即响应
-      setAuthLevel('viewer');
-      // 更新localStorage，触发其他组件的状态更新
-      localStorage.setItem('diaryAppAuthLevel', 'viewer');
-      localStorage.setItem('diaryAppAuthStatus', 'authenticated');
+    if (data.role === 'admin' || data.role === 'viewer') {
+      setAuthLevel(data.role);
       return true;
     }
     return false;
-  }, []);
-
-  // 登出用户
-  const logout = useCallback(() => {
-    // 直接更新状态，确保当前组件能立即响应
-    setAuthLevel('guest');
-    // 更新localStorage，触发其他组件的状态更新
-    localStorage.removeItem('diaryAppAuthLevel');
-    localStorage.removeItem('diaryAppAuthStatus');
   }, []);
 
   return {
@@ -94,7 +62,7 @@ export const useAuth = (): AuthHook => {
     isAuthenticated: authLevel !== 'guest',
     isAdmin: authLevel === 'admin',
     isViewer: authLevel === 'viewer',
+    isLoading,
     authenticateUser,
-    logout
   };
 };

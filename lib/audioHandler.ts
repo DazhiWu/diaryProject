@@ -122,11 +122,6 @@ export async function uploadAudioFile(
       throw error
     }
 
-    // 生成访问 URL
-    const { data: { publicUrl } } = supabase.storage
-      .from(AUDIO_BUCKET)
-      .getPublicUrl(path)
-
     // 模拟进度更新（Supabase 不原生支持上传进度）
     if (onProgress) {
       onProgress(100)
@@ -134,7 +129,7 @@ export async function uploadAudioFile(
 
     return {
       path,
-      url: publicUrl
+      url: getAudioUrl(path)
     }
   } catch (error) {
     console.error('上传音频文件失败:', error)
@@ -148,11 +143,7 @@ export async function uploadAudioFile(
  * @returns 访问 URL
  */
 export function getAudioUrl(path: string): string {
-  const { data: { publicUrl } } = supabase.storage
-    .from(AUDIO_BUCKET)
-    .getPublicUrl(path)
-  
-  return publicUrl
+  return `/api/media/audio?path=${encodeURIComponent(path)}`
 }
 
 /**

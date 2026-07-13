@@ -138,6 +138,21 @@ export type SupabaseDiaryEntry = {
   created_at?: string
 }
 
+type DiaryApiRow = SupabaseDiaryEntry
+
+function dateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+async function requestDiaryApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init)
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null
+    throw new Error(body?.error ?? 'Diary request failed')
+  }
+  return response.status === 204 ? undefined as T : response.json() as Promise<T>
+}
+
 function convertFromSupabase(entry: SupabaseDiaryEntry): DiaryEntry {
   // 统一使用UTC时区处理日期
   return {
@@ -174,42 +189,13 @@ function convertToSupabase(entry: Partial<DiaryEntry>): Partial<SupabaseDiaryEnt
 }
 
 export async function fetchAllDiaryEntries(): Promise<DiaryEntry[]> {
-  try {
-    const { data, error } = await supabase
-      .from('diaryContent')
-      .select('id, date, subtitle, content, modifiedAt, image_paths, created_at')
-      .order('date', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching diary entries:', error)
-      throw error
-    }
-
-    return data ? data.map(convertFromSupabase) : []
-  } catch (error) {
-    console.error('Failed to fetch diary entries:', error)
-    throw error
-  }
+  const result = await requestDiaryApi<{ entries: DiaryApiRow[] }>('/api/diaries?page=1&pageSize=50')
+  return result.entries.map(convertFromSupabase)
 }
 
 export async function fetchDiaryEntriesByRange(startDate: Date, endDate: Date): Promise<DiaryEntry[]> {
-  try {
-    const start = startDate.toISOString().split('T')[0]
-    const end = endDate.toISOString().split('T')[0]
-    const { data, error } = await supabase
-      .from('diaryContent')
-      .select('*')
-      .gte('date', start)
-      .lte('date', end)
-      .order('date', { ascending: true })
-    if (error) {
-      throw error
-    }
-    return data ? data.map(convertFromSupabase) : []
-  } catch (error) {
-    console.error('Failed to fetch diary entries by range:', error)
-    throw error
-  }
+  const result = await requestDiaryApi<{ entries: DiaryApiRow[] }>(`/api/diaries?page=1&pageSize=50&start=${encodeURIComponent(dateKey(startDate))}&end=${encodeURIComponent(dateKey(endDate))}`)
+  return result.entries.map(convertFromSupabase)
 }
 
 export async function fetchAIAnalysesByDateRange(startDate: Date, endDate: Date): Promise<AIDiaryAnalysis[]> {
@@ -240,57 +226,13 @@ export async function fetchAIAnalysesByDateRange(startDate: Date, endDate: Date)
 
 // 获取日历视图所需的关键字段（包含subtitle以支持标题检测）
 export async function fetchCalendarEntries(): Promise<{id: number; date: Date; subtitle?: string | null}[]> {
-  try {
-    // 选择ID、日期和subtitle字段，以便检测特殊标题
-    const { data, error } = await supabase
-      .from('diaryContent')
-      .select('id, date, subtitle')
-      .order('date', { ascending: false })
-      
-    if (error) {
-      console.error('Error fetching calendar entries:', error)
-      throw error
-    }
-    
-    // 返回ID、日期和subtitle
-    return data ? data.map(item => ({
-      id: item.id,
-      date: new Date(item.date),
-      subtitle: item.subtitle
-    })) : []
-  } catch (error) {
-    console.error('Failed to fetch calendar entries:', error)
-    return []
-  }
+  const entries = await requestDiaryApi<Array<{ id: number; date: string; subtitle?: string | null }>>('/api/diaries/calendar')
+  return entries.map((entry) => ({ ...entry, date: new Date(entry.date) }))
 }
 
 // 根据日期查询完整的日记条目
 export async function fetchDiaryEntryByDate(date: Date): Promise<DiaryEntry | null> {
-  try {
-    // 直接使用本地时区的年月日构建日期字符串，避免时区转换问题
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0'); // 月份从0开始，需要+1
-    const day = String(date.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}`;
-    
-    const { data, error } = await supabase
-      .from('diaryContent')
-      .select('*')
-      .eq('date', dateStr)
-      .order('modifiedAt', { ascending: false })
-      .limit(1)
-      
-    if (error) {
-      console.error('Error fetching diary entry by date:', error)
-      throw error
-    }
-    
-    // 返回第一个匹配的日记条目（如果有）
-    return data && data.length > 0 ? convertFromSupabase(data[0]) : null
-  } catch (error) {
-    console.error('Failed to fetch diary entry by date:', error)
-    return null
-  }
+  try { return convertFromSupabase(await requestDiaryApi<DiaryApiRow>(`/api/diaries?date=${encodeURIComponent(dateKey(date))}`)) } catch { return null }
 }
 
 /**
@@ -305,61 +247,15 @@ export async function fetchDiaryEntriesWithPagination(
   pageSize: number = 10,
   searchQuery?: string
 ): Promise<{ entries: DiaryEntry[], totalCount: number }> {
-  try {
-    // 计算偏移量
-    const offset = (page - 1) * pageSize
-    
-    // 基础查询 - Supabase V2 使用 range 而不是 offset
-    let query = supabase
-      .from('diaryContent')
-      .select('*', { count: 'exact' })
-      .order('date', { ascending: false })
-      .range(offset, offset + pageSize - 1)
-    
-    // 如果有搜索关键词，添加搜索条件
-    if (searchQuery && searchQuery.trim() !== '') {
-      const searchTerm = searchQuery.trim().toLowerCase()
-      query = query.or(
-        `content.ilike.%${searchTerm}%,subtitle.ilike.%${searchTerm}%`
-      )
-    }
-    
-    const { data, error, count } = await query
-    
-    if (error) {
-      console.error('Error fetching paginated diary entries:', error)
-      throw error
-    }
-    
-    return {
-      entries: data ? data.map(convertFromSupabase) : [],
-      totalCount: count || 0
-    }
-  } catch (error) {
-    console.error('Failed to fetch paginated diary entries:', error)
-    throw error
-  }
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (searchQuery?.trim()) query.set('search', searchQuery.trim())
+  const result = await requestDiaryApi<{ entries: DiaryApiRow[]; totalCount: number }>(`/api/diaries?${query}`)
+  return { entries: result.entries.map(convertFromSupabase), totalCount: result.totalCount }
 }
 
 export async function insertDiaryEntry(entry: Partial<DiaryEntry>): Promise<{ success: boolean; data?: DiaryEntry; message?: string }> {
   try {
-    const supabaseEntry = convertToSupabase(entry)
-    
-    const { data, error } = await supabase
-      .from('diaryContent')
-      .insert([supabaseEntry])
-      .select('*')
-      .single()
-
-    if (error) {
-      // console.error('Error inserting diary entry:', error)
-      // 检查是否是唯一约束冲突
-      if (error.code === '23505') { // PostgreSQL唯一约束冲突错误码
-        return { success: false, message: '该日期已经存在日记，请选择其他日期或编辑现有日记' }
-      }
-      return { success: false, message: '添加日记时发生错误' }
-    }
-
+    const data = await requestDiaryApi<DiaryApiRow>('/api/diaries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(convertToSupabase(entry)) })
     return { success: true, data: convertFromSupabase(data) }
   } catch (error) {
     console.error('Failed to insert diary entry:', error)
@@ -368,55 +264,11 @@ export async function insertDiaryEntry(entry: Partial<DiaryEntry>): Promise<{ su
 }
 
 export async function updateDiaryEntry(id: number, entry: Partial<DiaryEntry>): Promise<DiaryEntry> {
-  try {
-    const supabaseEntry = convertToSupabase({ ...entry, modifiedAt: new Date() })
-    
-    const { data, error } = await supabase
-      .from('diaryContent')
-      .update(supabaseEntry)
-      .eq('id', id)
-      .select('id, date, subtitle, content, modifiedAt, image_paths, created_at')
-      .single()
-
-    if (error) {
-      console.error('Error updating diary entry:', error)
-      throw error
-    }
-
-    return convertFromSupabase(data)
-  } catch (error) {
-    console.error('Failed to update diary entry:', error)
-    throw error
-  }
+  return convertFromSupabase(await requestDiaryApi<DiaryApiRow>(`/api/diaries/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(convertToSupabase(entry)) }))
 }
 
 export async function deleteDiaryEntry(id: number): Promise<void> {
-  try {
-    // 先删除相关的AI分析记录
-    const { error: aiAnalysisError } = await supabase
-      .from('diary_AI_analysis')
-      .delete()
-      .eq('diary_id', id)
-
-    if (aiAnalysisError) {
-      console.error('Error deleting AI analysis records:', aiAnalysisError)
-      throw aiAnalysisError
-    }
-
-    // 再删除日记记录
-    const { error: diaryError } = await supabase
-      .from('diaryContent')
-      .delete()
-      .eq('id', id)
-
-    if (diaryError) {
-      console.error('Error deleting diary entry:', diaryError)
-      throw diaryError
-    }
-  } catch (error) {
-    console.error('Failed to delete diary entry:', error)
-    throw error
-  }
+  await requestDiaryApi<void>(`/api/diaries/${id}`, { method: 'DELETE' })
 }
 
 /**

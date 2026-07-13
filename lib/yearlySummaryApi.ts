@@ -96,7 +96,7 @@ function convertToSupabaseAIAnalysisSection(section: Omit<AIAnalysisSection, 'id
 }
 
 function convertFromSupabaseInvestmentImage(image: any): InvestmentImage {
-  const url = getImageUrl(image.storage_path, '2025_Summary_Images')
+  const url = `${getImageUrl(image.storage_path, '2025_Summary_Images')}&v=${encodeURIComponent(image.updated_at ?? '')}`
   return {
     id: image.id,
     url,
@@ -248,7 +248,7 @@ export async function fetchInvestmentImages(year: string): Promise<InvestmentIma
 
       const { data: imagesData, error: imagesError } = await supabase
         .from('yearly_images')
-        .select('id, yearly_summary_id, storage_path, created_at')
+        .select('id, yearly_summary_id, storage_path, created_at, updated_at')
         .eq('yearly_summary_id', summaryId)
         .order('created_at', { ascending: true })
         .range(from, to)
@@ -605,7 +605,7 @@ export async function addInvestmentImage(year: string, file: File): Promise<Inve
         yearly_summary_id: summaryId,
         storage_path: uploadResult.path
       }])
-      .select('id, yearly_summary_id, storage_path, created_at')
+      .select('id, yearly_summary_id, storage_path, created_at, updated_at')
       .single()
 
     if (newImageError) throw newImageError
