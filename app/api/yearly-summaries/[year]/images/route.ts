@@ -20,7 +20,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ yea
     const sequence = Date.now() * 1000 + Math.floor(Math.random() * 1000) + 1
     const path = yearlyImagePath(sequence); const storage = await createSupabaseUploadStore()
     await storage.upload(YEARLY_BUCKET, path, file, { contentType: 'image/webp' })
-    const inserted = await supabase.from('yearly_images').insert({ yearly_summary_id: summary.id, storage_path: path }).select('id, storage_path, updated_at').single()
+    const inserted = await supabase.from('yearly_images').insert({ yearly_summary_id: summary.id, storage_path: path, alt: `Yearly image ${sequence}` }).select('id, storage_path, updated_at').single()
     if (inserted.error) { try { await storage.remove(YEARLY_BUCKET, path); return NextResponse.json({ ok: false, residualPaths: [] }, { status: 500 }) } catch { return NextResponse.json({ ok: false, residualPaths: [path] }, { status: 500 }) } }
     return NextResponse.json({ id: inserted.data.id, path, updatedAt: inserted.data.updated_at }, { status: 201 })
   } catch (error) { return responseFor(error) }

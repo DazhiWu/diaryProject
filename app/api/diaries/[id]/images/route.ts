@@ -20,13 +20,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const result = await createDiaryImage({ diaryId: id, diaryDate: diary.date, file }, {
       ...storage,
       nextDiarySequence: async () => {
-        const { data: ledger, error: ledgerError } = await supabase.from('diary_image_sequences').select('last_sequence').eq('date', diary.date).maybeSingle()
-        if (ledgerError) throw new Error('Diary sequence query failed')
-        const sequences = (diary.image_paths ?? []).map((path: string) => Number(/_(\d+)\.webp$/u.exec(path)?.[1]) || 0)
-        const next = Math.max(ledger?.last_sequence ?? 0, ...sequences, 0) + 1
-        const { error: saveError } = await supabase.from('diary_image_sequences').upsert({ date: diary.date, last_sequence: next })
-        if (saveError) throw new Error('Diary sequence write failed')
-        return next
+        const { data: latest, error: sequenceError } = await supabase.from('diary_image_paths').select('sequence').eq('diary_id', id).order('sequence', { ascending: false }).limit(1).maybeSingle()
+        if (sequenceError) throw new Error('Diary sequence query failed')
+        return (latest?.sequence ?? 0) + 1
       },
     }, {
       appendDiaryImage: async (_id, path) => {
