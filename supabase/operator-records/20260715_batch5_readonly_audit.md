@@ -6,7 +6,7 @@
 
 **Cloudflare version read:** `c41d583a-af78-426e-9808-369424df1531`, the 100% version in the latest `diaryproject` deployment, confirmed with read-only `pnpm exec wrangler deployments list --name diaryproject`. No Worker action was attempted.
 
-**Production-audit consistency checkpoint:** all three target buckets remain `public = true`; exactly the two audited global `storage.objects` policies remain; no Storage bucket policy exists; all ten target public tables have enabled/non-forced RLS, zero direct `PUBLIC` table ACLs, and no column ACLs; and the exact anonymous-message trimmed-length constraint and two legacy anon/authenticated policies remain. These results exactly match the reviewed migration preconditions.
+**Production-audit consistency checkpoint (pre-change baseline):** at the recorded audit time, all three target buckets were `public = true`; exactly the two audited global `storage.objects` policies remained; no Storage bucket policy existed; all ten target public tables had enabled/non-forced RLS, zero direct `PUBLIC` table ACLs, and no column ACLs; and the exact anonymous-message trimmed-length constraint and two legacy anon/authenticated policies remained. These results matched the reviewed migration preconditions before phased execution began.
 
 **2026-07-15 pre-mutation gate:** the full audit was rerun at 02:53:45 UTC and the deployment version was reconfirmed. In Codex, inherited `TMP`/`TEMP` pointed to the Windows Temp directory; after setting all temporary-directory variables to `/tmp/diaryproject-codex` in one shell, `pnpm test` passed (10 files, 42 tests) and `pnpm exec tsc --noEmit` passed. `pnpm build` then failed in the Codex sandbox when Turbopack attempted to create a process/bind a port (`Operation not permitted`). No direct-access test, database mutation, Storage mutation, policy/grant change, bucket update, migration, or Worker deployment was attempted. Phased execution is stopped pending a clean rerun of all preflight checks.
 
@@ -36,13 +36,17 @@
 
 **Revised Storage policy phase completed:** after explicit approval, `batch5_private_media_storage_policies_v2` applied and its fail-closed postflight passed. Behavior run `e11cedab-49d3-4192-9ea3-3d6e185d4d02` exited `0`: anon list/upload/overwrite were denied; nominal delete responses did not remove seeded objects; direct public URLs remained `200` while buckets were public; diary/yearly/audio proxies returned the required `200`/`403`/`200`/`200`/`206`; cleanup completed. Independent verification found zero tagged diary rows and Storage objects, zero Storage policies, two RLS-enabled Storage relations, three public target buckets, 16 `supabase_storage_admin` ACL entries each for anon/authenticated/service_role, and zero unexpected ACL grantors. No bucket, application-table RLS/grant, or Worker change occurred. Private-bucket updates require separate approval.
 
+**Private buckets completed:** after separate approval, the service-role Storage API set `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages` to `public=false`; the private-bucket postflight passed. Behavior run `2dcc7fcf-8b2a-4572-a511-1cb726346231` exited `0`: every direct public object URL returned `400`; anon list/upload/overwrite/delete did not expose or mutate objects; diary/yearly/audio proxies returned `200`/`403`/`200`/`200`/`206`; cleanup completed. Independent verification found zero tagged diary rows and Storage objects, three private buckets, zero Storage policies, two RLS-enabled Storage relations, exact 16-entry `supabase_storage_admin` ACL baselines for anon/authenticated/service_role, and zero unexpected grantor. Application-table RLS/grant migrations remain unapplied and require their own phased approvals.
+
 ## Storage
 
-- `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages` are all `public = true`; all have no configured MIME or size limit.
-- The only `storage.objects` policies are global, apply to `{public}`, and are not bucket-scoped:
+The following bullets preserve the pre-change audit baseline. The current production state is recorded above under **Private buckets completed**.
+
+- `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages` were all `public = true`; all had no configured MIME or size limit.
+- The only `storage.objects` policies were global, applied to `{public}`, and were not bucket-scoped:
   - `Enable Insert access for all users`: `FOR INSERT WITH CHECK (true)`.
   - `Public read images 13zwbcf_0`: `FOR SELECT USING (true)`.
-- No policy exists on `storage.buckets`.
+- No policy existed on `storage.buckets`.
 
 ## Application tables
 
