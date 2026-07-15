@@ -171,7 +171,7 @@ Account identity, token scopes, and production approvals need confirmation outsi
 - Guest/viewer/admin API and UI access. Cookie authorization does not replace RLS for the domains still using the anon client.
 - Authorized Supabase read/create/update/delete under production policies.
 - Diary image proxy display, yearly-image proxy display, and admin audio Range streaming. Batch 3 production verification on 2026-07-13 returned `200 image/webp` for a viewer diary image and `206` with `Content-Range`/`Accept-Ranges` for admin audio.
-- Batch 4 media writes, health, and yearly-summary metadata use authorized APIs. Before Batch 5, run the direct-client scan and deployed guest/viewer/admin mutation regression; do not make buckets private or alter Storage policies in this batch.
+- Batch 4 media writes, health, and yearly-summary metadata use authorized APIs. Production regression passed on 2026-07-15 for guest/viewer/admin rejection, health/yearly CRUD, diary/yearly media upload/replace/delete plus proxy reads, and audio Range streaming; the direct-client Storage scan was clean. Do not make buckets private or alter Storage policies until Batch 5.
 - AI analysis and translation with the runtime token.
 - CSV export from `/api/diary-download`.
 - Browser console/network errors and Cloudflare logs/observability.

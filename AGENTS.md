@@ -40,7 +40,7 @@ This is a personal diary application built with Next.js and Supabase. It support
 - Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
 - Diary and yearly media read through fixed-bucket proxies; diary inherits latest-five/viewer/admin access, yearly is readable by all roles, and audio is admin-only with single-range streaming. Buckets remain public until Batch 5.
-- Batch 3 completed on 2026-07-13: the media-invariants migration, postflight/repeated preflight, workerd preview, and production diary/audio proxy checks passed. Batch 4 moved media writes plus health/yearly-summary metadata behind admin APIs with DB-first deletion and residual-path responses; do not change Bucket, RLS, grants, or Storage Policy until Batch 5.
+- Batch 3 completed on 2026-07-13: the media-invariants migration, postflight/repeated preflight, workerd preview, and production diary/audio proxy checks passed. Batch 4 completed production regression on 2026-07-15: media writes plus health/yearly-summary metadata use admin APIs with DB-first deletion and residual-path responses; do not change Bucket, RLS, grants, or Storage Policy until Batch 5.
 
 ## Database and storage
 

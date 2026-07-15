@@ -104,7 +104,7 @@ pnpm cf:build
 
 Storage bucket 为 `2024To2025_diary_images`、`2025_Summary_Images` 和 `audio_messages`。
 
-Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postflight 与重复 preflight。Batch 4 将所有敏感媒体写入、健康和年度总结元数据迁入授权 API；三个 Storage bucket 仍公开，且不在本批次修改任何 Bucket、RLS、grant 或 Storage Policy。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
+Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postflight 与重复 preflight。Batch 4 已于 2026-07-15 通过生产回归：敏感媒体写入、健康和年度总结元数据均使用授权 API，并覆盖了写入、更新、删除、代理读取和角色拒绝。三个 Storage bucket 仍公开，且不在本批次修改任何 Bucket、RLS、grant 或 Storage Policy。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
 
 ## Cloudflare Workers 部署
 

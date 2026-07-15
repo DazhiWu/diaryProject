@@ -76,7 +76,7 @@ These findings are tracked by the approved future design in [`superpowers/specs/
 
 Production confirms all three buckets are public. No bucket-specific `file_size_limit` or `allowed_mime_types` is configured, so project/platform limits apply.
 
-The `20260712_01_media_invariants.sql` migration was applied to production on 2026-07-13 after an empty Batch 0 preflight. Its postflight passed and the preflight was repeated with all violation result sets empty. It enforces diary date/path and media-path invariants, uses `public.diary_image_paths` for concurrency-safe path ownership, and maintains the internal `private.diary_image_sequences` ledger. Keep `20260712_01_media_invariants_rollback.sql` for emergency recovery only; do not run it after later schema changes without separate approval.
+The `20260712_01_media_invariants.sql` migration was applied to production on 2026-07-13 after an empty Batch 0 preflight. Its postflight passed and the preflight was repeated with all violation result sets empty. It enforces diary date/path and media-path invariants, uses `public.diary_image_paths` for concurrency-safe path ownership, and maintains the internal `private.diary_image_sequences` ledger. The authorized diary-image route reads the public path index for its next candidate and does not query the private ledger through the Data API. Keep `20260712_01_media_invariants_rollback.sql` for emergency recovery only; do not run it after later schema changes without separate approval.
 
 The shared `storage.objects` policies allow `PUBLIC INSERT` and broad `PUBLIC SELECT`. There is no UPDATE or DELETE policy:
 
