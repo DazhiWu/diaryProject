@@ -54,7 +54,7 @@ The inspected Supabase project also contains `diaryInfo` and `rss_articles`. Cur
 
 ## Row Level Security and grants
 
-Production Data API grants give anon/authenticated broad table privileges. RLS is therefore the effective row-operation boundary.
+Batch 5 is being applied to production one approved domain at a time. `diaryContent` and `diary_AI_analysis` now have no anon/authenticated table grants and no RLS policies; RLS remains enabled and service-role CRUD remains available to the authorized APIs. Health, yearly-summary, audio, and anonymous-message grants/policies retain their pre-change state until their own phases are approved.
 
 `anonymous_messages` is intentionally limited to:
 
@@ -62,28 +62,27 @@ Production Data API grants give anon/authenticated broad table privileges. RLS i
 - `INSERT` for `anon` and `authenticated`, subject to the 2–1000 character check.
 - No UPDATE or DELETE policy, so client updates/deletes are blocked.
 
-Most remaining application tables currently have a `PUBLIC FOR ALL USING (true)` policy. This permits anon reads and writes despite guest/viewer/admin UI restrictions. Application clients now use the service-role server boundary for diary, AI, media, health, and yearly-summary domains; `anonymous_messages` remains the deliberate anon SELECT/INSERT exception. Batch 5 may tighten policies/grants only after deployed role regression confirms these replacement APIs.
+Health, yearly-summary, and audio tables still have a `PUBLIC FOR ALL USING (true)` policy. This permits direct anon reads and writes despite guest/viewer/admin UI restrictions, although current application clients use the service-role server boundary. `anonymous_messages` remains the deliberate anon SELECT/INSERT exception. Each remaining Batch 5 domain requires its own postflight and deployed role regression before the next domain starts.
 
-Supabase security advisors additionally report:
+The pre-Batch-5 Supabase security-advisor findings still requiring a final rerun include:
 
-- broad permissive ALL policies on the remaining browser-direct tables;
+- broad permissive ALL policies on the not-yet-migrated health/yearly/audio tables;
 - a `public.rls_auto_enable()` SECURITY DEFINER function executable by anon/authenticated;
-- broad Storage SELECT policy that allows listing all three public buckets.
 
-These findings are tracked by the approved future design in [`superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md). Do not apply the final tightening piecemeal before the replacement APIs are live. Advisor remediation: [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter).
+These findings are tracked by the approved design in [`superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md). Apply only the reviewed, separately approved domain migrations and rerun advisors after the final phase. Advisor remediation: [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter).
 
 ## Storage
 
-Production confirms all three buckets are public. No bucket-specific `file_size_limit` or `allowed_mime_types` is configured, so project/platform limits apply.
+Production confirms all three buckets are private. No bucket-specific `file_size_limit` or `allowed_mime_types` is configured, so project/platform limits apply.
 
 The `20260712_01_media_invariants.sql` migration was applied to production on 2026-07-13 after an empty Batch 0 preflight. Its postflight passed and the preflight was repeated with all violation result sets empty. It enforces diary date/path and media-path invariants, uses `public.diary_image_paths` for concurrency-safe path ownership, and maintains the internal `private.diary_image_sequences` ledger. The authorized diary-image route reads the public path index for its next candidate and does not query the private ledger through the Data API. Keep `20260712_01_media_invariants_rollback.sql` for emergency recovery only; do not run it after later schema changes without separate approval.
 
-The shared `storage.objects` policies allow `PUBLIC INSERT` and broad `PUBLIC SELECT`. There is no UPDATE or DELETE policy:
+The two former global `storage.objects` policies were removed in Batch 5. Platform-owned relation ACLs remain unchanged, but RLS is enabled with no anon/authenticated policy:
 
-- public object URLs and listing work;
-- new object paths can be uploaded;
-- existing objects cannot be overwritten;
-- application-side object deletion is blocked and cleanup is manual.
+- direct public object URLs are denied because the buckets are private;
+- browser anon listing, upload, overwrite, and delete do not expose or mutate objects;
+- authorized service-role APIs retain read/write/delete access;
+- diary/yearly/audio proxy behavior remains unchanged.
 
 ### `2024To2025_diary_images`
 
@@ -91,21 +90,21 @@ The shared `storage.objects` policies allow `PUBLIC INSERT` and broad `PUBLIC SE
 - Browser compression limits width to 1920px and writes WebP at quality `0.8`.
 - Relative paths are stored in `diaryContent.image_paths`.
 - Upload uses `upsert: false`; a duplicate path fails instead of overwriting.
-- Diary update/delete does not remove old objects.
+- Authorized diary replace/delete routes perform Storage cleanup and report residual paths when cleanup fails.
 
 ### `2025_Summary_Images`
 
 - Yearly images use `yearly/<uuid>_<index>.webp` for insert-only uniqueness.
 - Relative paths are stored in `yearly_images.storage_path`.
-- Replacing an image uploads a new object and updates the database reference; the old object remains for manual cleanup.
-- Deleting a metadata row does not remove the Storage object.
+- Replacing an image uploads a new object and updates the database reference through the authorized API.
+- Authorized delete routes perform DB-first deletion and report any object path that still needs cleanup.
 
 ### `audio_messages`
 
 - The client accepts MP3, WAV, OGG, AAC, WebM, M4A, or FLAC and imposes a 50 MB limit.
 - Object paths use `<timestamp>_<random>.<extension>`.
 - Upload uses `upsert: false`.
-- Code attempts object cleanup after metadata failures/deletes, but production Storage DELETE policy blocks that cleanup; manual deletion is required.
+- Authorized APIs compensate failed metadata writes and perform DB-first deletion with residual-path reporting.
 
 Database-row and Storage-object changes are not transactional. Failed metadata writes can leave orphaned objects, and failed object cleanup must be handled manually.
 
@@ -113,7 +112,7 @@ Database-row and Storage-object changes are not transactional. Failed metadata w
 
 - Server APIs: diary reads/CRUD, AI analysis, translation, CSV, and media reads. Diary media has latest-five/viewer/admin authorization; yearly media is readable by every role; audio is admin-only and supports a single HTTP Range.
 - Authorized APIs: media write/replace/delete, health, and yearly-summary metadata require an admin Cookie plus Origin validation. Upload metadata failures trigger storage compensation; DB-first deletes report remaining object paths when cleanup fails. `anonymous_messages` remains the deliberate browser anon `SELECT`/`INSERT` exception.
-- Shared server client: `/api/diary-download` still uses the same anon client through `lib/diaryApi.ts`.
+- CSV export: `/api/diary-download` is admin-only and queries through the server service-role client.
 - Pagination: diary/messages use exact counts and `.range()`.
 - Search: diary `content`/`subtitle` use OR `ilike`.
 - Cache: diary fallback uses compressed `localStorage`; yearly summaries use a five-minute in-memory cache.
@@ -125,7 +124,7 @@ Never substitute a service-role key for `SUPABASE_ANON_KEY`. The privileged clie
 - `test_extra/CREATE_HEALTH_CONDITIONS_TABLE.sql`: partial historical health schema/policies.
 - `test_extra/CREATE_ANONYMOUS_MESSAGE_TABLE.sql`: anonymous-message schema with SELECT/INSERT-only policies and the content-length check.
 
-These files are not a complete migration set. Applied production migrations include `restrict_anonymous_messages_public_access` and the 2026-07-13 `media_invariants` migration.
+These files are not a complete migration set. Applied production migrations include `restrict_anonymous_messages_public_access`, the 2026-07-13 `media_invariants` migration, and the approved Batch 5 Storage plus diary/AI phases.
 
 ## Change checklist
 

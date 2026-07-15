@@ -39,12 +39,12 @@ This is a personal diary application built with Next.js and Supabase. It support
 - `/api/auth` writes a signed HttpOnly Cookie and `/api/auth/session` is the browser role source. This is not Supabase Auth; sessions use `SESSION_VERSION`, not a database session table.
 - Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
-- Diary and yearly media read through fixed-bucket proxies; diary inherits latest-five/viewer/admin access, yearly is readable by all roles, and audio is admin-only with single-range streaming. Buckets remain public until Batch 5.
-- Batch 3 completed on 2026-07-13: the media-invariants migration, postflight/repeated preflight, workerd preview, and production diary/audio proxy checks passed. Batch 4 completed production regression on 2026-07-15: media writes plus health/yearly-summary metadata use admin APIs with DB-first deletion and residual-path responses; do not change Bucket, RLS, grants, or Storage Policy until Batch 5.
+- Diary and yearly media read through fixed-bucket proxies; diary inherits latest-five/viewer/admin access, yearly is readable by all roles, and audio is admin-only with single-range streaming. All three media buckets are private; browser anon Storage access is denied.
+- Batch 3 completed media invariants on 2026-07-13, and Batch 4 completed authorized media/health/yearly APIs plus production regression on 2026-07-15. Batch 5 is executing by separately approved domains: Storage and diary/AI are complete; health, yearly-summary, audio, and anonymous messages remain pending.
 
 ## Database and storage
 
-Supabase stores diary, AI, health, message, audio, and yearly-summary records. The three media buckets remain public with SELECT/INSERT but no UPDATE/DELETE object policy; anonymous messages allow SELECT/INSERT only; most remaining browser-direct tables still have permissive public ALL policies. Batch 3 introduced and production-applied media invariants; read `docs/DATABASE.md` before altering any database or Storage boundary.
+Supabase stores diary, AI, health, message, audio, and yearly-summary records. The three media buckets are private with no anon Storage object policy; diary and AI tables have no anon/authenticated grants or policies; anonymous messages still allow SELECT/INSERT only; the remaining health/yearly/audio tables retain their pre-Batch-5 permissive policies until separately approved. Batch 3 introduced and production-applied media invariants; read `docs/DATABASE.md` before altering any database or Storage boundary.
 
 Read [`docs/DATABASE.md`](docs/DATABASE.md) before changing queries, tables, RLS, buckets, paths, or access boundaries.
 
@@ -96,11 +96,11 @@ pnpm run deploy
 ## Known issues and risks
 
 - TypeScript build errors are ignored by `next.config.mjs`.
-- Browser anon writes rely on RLS/Storage policies; UI roles are not authorization.
+- The deliberate browser anon message path relies on RLS; UI roles are not authorization.
 - Cookie roles are enforced for diary APIs and media reads, but remaining direct anon write paths are not yet protected by those Cookies.
 - Public unoptimized images can affect bandwidth/performance.
-- Most remaining browser-direct business tables still have permissive public ALL policies; Batch 4 replacement APIs must be live before Batch 5 tightens them.
-- Supabase security advisors flag broad Storage listing and a public SECURITY DEFINER function; review them separately before changing production behavior.
+- Health, yearly-summary, and audio tables still have permissive public ALL policies pending their separately approved Batch 5 phases; their replacement APIs are already live.
+- Supabase security advisors must be rerun after all Batch 5 domains; the public SECURITY DEFINER function remains a separate review item.
 - `pnpm lint` lacks a direct `eslint` dependency and needs clean-install confirmation.
 - Cloudflare Workers Builds Git repository/branch/commands still require Dashboard confirmation because the current OAuth token cannot read the Builds API.
 

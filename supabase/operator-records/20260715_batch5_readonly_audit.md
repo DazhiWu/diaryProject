@@ -40,6 +40,8 @@
 
 **Application-table ACL grantor gate:** at 2026-07-15 08:02 UTC, a read-only `aclexplode` audit confirmed that all ten remaining Batch 5 tables are owned by `postgres`, the Supabase SQL execution role is the same non-superuser `postgres`, and every anon/authenticated/service_role table privilege has `postgres` as its sole grantor. Each role has the expected eight table privileges per target relation. The reviewed forward `REVOKE` and rollback `GRANT` statements can therefore operate on the original grant chain; the Storage cross-grantor failure mode does not apply. Both diary/AI tables still have RLS enabled, their exact reviewed permissive policy, and effective CRUD for anon/authenticated/service_role. No application-table mutation has occurred.
 
+**Diary/AI domain completed:** after separate approval, migration `20260715080441 batch5_diary_ai_rls` and its fail-closed postflight passed. Behavior run `cdce7dd8-b0c1-406d-a83e-01e082b78f29` recorded `401` for anon SELECT/INSERT on both tables; guest/viewer/admin diary APIs returned `200`; AI reads returned guest `401`, viewer `403`, admin `200`; cleanup completed; and admin CSV export returned `200 text/csv`. Tests passed 10 files/42 tests. Independent verification found zero tagged diary/analysis rows, both tables RLS-enabled, zero policies, zero anon/authenticated ACL entries, and 16 service-role ACL entries with grantor `postgres`. Two Wrangler control-plane reads failed with `fetch failed` and one Supabase migration-list call returned HTTP 520, but production Worker behavior, SQL postflight, and the database migration record were healthy; no Worker deployment occurred. Health and later domains remain unapplied and require separate approvals.
+
 ## Storage
 
 The following bullets preserve the pre-change audit baseline. The current production state is recorded above under **Private buckets completed**.
@@ -54,9 +56,9 @@ The following bullets preserve the pre-change audit baseline. The current produc
 
 - All Batch 5 target tables have RLS enabled, RLS not forced, and owner `postgres`.
 - Every target public table has zero direct table-level `PUBLIC` ACL entries. This satisfies the final-approval prerequisite; the reviewed forward migrations therefore remove only the audited `anon`/`authenticated` grants and policies.
-- `anon`, `authenticated`, and `service_role` currently have direct table-level `ALL`-equivalent privileges on the target tables; no column-level ACL (`pg_attribute.attacl`) exists. All audited entries have the sole grantor `postgres`, which is also the table owner and current migration execution role.
-- Sensitive-table policies are permissive `FOR ALL TO public USING (true)`:
-  - `Enable read access for all users` on `diaryContent`, `diary_AI_analysis`, `health_conditions`, and `audio_messages`.
+- At the pre-change audit, `anon`, `authenticated`, and `service_role` had direct table-level `ALL`-equivalent privileges on every target table; no column-level ACL (`pg_attribute.attacl`) existed. All audited entries had the sole grantor `postgres`. The current diary/AI state is recorded above; remaining domains retain this baseline until migrated.
+- Sensitive-table policies in the pre-change baseline were permissive `FOR ALL TO public USING (true)`:
+  - `Enable read access for all users` was present on `diaryContent`, `diary_AI_analysis`, `health_conditions`, and `audio_messages`; the diary/AI copies are now removed.
   - `Policy with security definer functions` on the yearly-summary tables.
 - `anonymous_messages_content_length_check` is validated and exactly enforces `char_length(btrim(content)) >= 2 AND char_length(btrim(content)) <= 1000`.
 - `anonymous_messages` currently grants SELECT/INSERT policies to both `anon` and `authenticated`. Repository inspection found only the browser anon client path; there is no Supabase Auth caller, so the final migration removes `authenticated` access and retains anon SELECT/INSERT only.

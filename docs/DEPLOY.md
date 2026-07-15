@@ -126,9 +126,9 @@ Cloudflare variables are plain configuration values; secrets are encrypted runti
 ## Supabase integration
 
 - Browser code requires `SUPABASE_URL` and `SUPABASE_ANON_KEY` in the build output.
-- `/api/diary-download` still imports the same shared anon client. `lib/server/supabaseAdmin.ts` is the separate server-only service-role factory for authorized routes added in later batches; it is not a browser import path.
-- RLS and Storage policies are the online security boundary because browser code uses the anon client directly.
-- Media reads use same-origin authorized proxy routes with the runtime service-role credential: diary and yearly images are versioned by their record timestamps, and admin audio supports HTTP Range streaming. Buckets remain public during this batch; private-bucket policy changes are deferred until every write caller has migrated.
+- `/api/diary-download` is admin-only and uses `lib/server/supabaseAdmin.ts`; the service-role factory is not a browser import path.
+- RLS, grants, and Storage policies are the online security boundary for the remaining deliberate anon client paths.
+- Media reads use same-origin authorized proxy routes with the runtime service-role credential: diary and yearly images are versioned by their record timestamps, and admin audio supports HTTP Range streaming. All three media buckets are private and direct browser anon Storage access is denied.
 - See [`DATABASE.md`](DATABASE.md) for tables, RLS, buckets, and path details.
 
 ## Deployment procedure
@@ -171,7 +171,7 @@ Account identity, token scopes, and production approvals need confirmation outsi
 - Guest/viewer/admin API and UI access. Cookie authorization does not replace RLS for the domains still using the anon client.
 - Authorized Supabase read/create/update/delete under production policies.
 - Diary image proxy display, yearly-image proxy display, and admin audio Range streaming. Batch 3 production verification on 2026-07-13 returned `200 image/webp` for a viewer diary image and `206` with `Content-Range`/`Accept-Ranges` for admin audio.
-- Batch 4 media writes, health, and yearly-summary metadata use authorized APIs. Production regression passed on 2026-07-15 for guest/viewer/admin rejection, health/yearly CRUD, diary/yearly media upload/replace/delete plus proxy reads, and audio Range streaming; the direct-client Storage scan was clean. Do not make buckets private or alter Storage policies until Batch 5.
+- Batch 4 media writes, health, and yearly-summary metadata use authorized APIs. Batch 5 production verification on 2026-07-15 confirmed private buckets, denied direct anon Storage access, unchanged diary/yearly/audio proxies, revoked diary/AI anon Data API access, guest/viewer/admin diary behavior, admin-only AI reads, and admin CSV export. Remaining table domains require separate approval.
 - AI analysis and translation with the runtime token.
 - CSV export from `/api/diary-download`.
 - Browser console/network errors and Cloudflare logs/observability.

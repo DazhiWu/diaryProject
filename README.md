@@ -30,7 +30,7 @@
 - `lib/`：Supabase 访问、AI、媒体、运行时环境变量和业务 API。
 - `test_extra/`：部分 SQL 示例、实验和 UI 自动化辅助文件，不是完整迁移或测试套件。
 
-媒体读写通过同源 API：日记按 guest/viewer/admin 规则授权，年度图片对所有角色可读，音频限 admin 并支持单 Range 流式响应；写入、替换和删除要求 admin Cookie。删除若元数据成功而 Storage 清理失败，界面会提示残留路径。Bucket 仍公开；在单独批准的 Batch 5 前不能收紧 Storage Policy、RLS 或 grants。
+媒体读写通过同源 API：日记按 guest/viewer/admin 规则授权，年度图片对所有角色可读，音频限 admin 并支持单 Range 流式响应；写入、替换和删除要求 admin Cookie。删除若元数据成功而 Storage 清理失败，界面会提示残留路径。三个媒体 Bucket 已在 Batch 5 中设为私有，浏览器 anon 不能直接列出或写入对象，读取必须经过授权代理。Batch 5 已收紧 diary/AI 表，其他业务表按域等待单独批准。
 
 生产部署通过 OpenNext 适配到 Cloudflare Workers。详细结构与长期约束见 [`AGENTS.md`](AGENTS.md)。
 
@@ -128,8 +128,8 @@ pnpm run deploy
 ## 需要确认
 
 - Cloudflare Workers Builds 当前连接的 Git 仓库、生产分支、root directory 和 build/deploy commands。
-- 其余业务表的宽松公开写策略何时迁移到可信服务端会话或 Supabase Auth。
-- Supabase Advisor 报告的公开 Storage 列表权限和 `public.rls_auto_enable()` SECURITY DEFINER 执行权限是否仍有必要。
+- health、yearly-summary、audio 和 anonymous-message 域的 Batch 5 权限迁移何时获得单独生产批准。
+- `public.rls_auto_enable()` SECURITY DEFINER 的公开执行权限是否仍有必要；完成全部 Batch 5 域后需重新运行 Supabase Advisor。
 
 ## 文档导航
 
