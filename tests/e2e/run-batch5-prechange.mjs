@@ -13,6 +13,8 @@ const url = process.env.SUPABASE_URL
 const anon = createClient(url, process.env.SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
 const admin = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
 const result = { runId, storage: {}, dataApi: {}, proxies: {}, cleanup: 'pending' }
+const created = { diaryId: null, summaryId: null }
+const summaryYear = String(9000 + (Number.parseInt(runId.slice(0, 8), 16) % 1000))
 const code = (value) => value.error ? (value.status ?? value.error.status ?? 'error') : value.status
 const record = (group, name, value) => { group[name] = code(value); return value }
 const must = (value, label) => { if (value.error) throw new Error(`${label}: ${value.error.message}`); return value.data }
@@ -29,6 +31,7 @@ try {
   const diaryDate = `2099-12-${String((Number.parseInt(runId.slice(0, 2), 16) % 28) + 1).padStart(2, '0')}`
   const diary = record(result.dataApi, 'diaryContent.insert', await anon.from('diaryContent').insert({ date: diaryDate, subtitle: tag, content: tag, image_paths: [] }).select('id').single())
   const diaryId = must(diary, 'anon diary insert').id
+  created.diaryId = diaryId
   record(result.dataApi, 'diaryContent.select', await anon.from('diaryContent').select('id').eq('id', diaryId).limit(1))
   record(result.dataApi, 'diary_AI_analysis.insert', await anon.from('diary_AI_analysis').insert({ diary_id: diaryId, summary: tag, emotion: tag }).select('id').single())
   record(result.dataApi, 'diary_AI_analysis.select', await anon.from('diary_AI_analysis').select('id').eq('diary_id', diaryId).limit(1))
@@ -36,8 +39,9 @@ try {
   const healthId = randomUUID()
   record(result.dataApi, 'health_conditions.insert', await anon.from('health_conditions').insert({ id: healthId, condition: tag, start_date: '2099-12-01', end_date: '2099-12-02', color: '#000000' }).select('id').single())
   record(result.dataApi, 'health_conditions.select', await anon.from('health_conditions').select('id').eq('id', healthId).limit(1))
-  const summary = record(result.dataApi, 'yearly_summaries.insert', await anon.from('yearly_summaries').insert({ year: tag }).select('id').single())
+  const summary = record(result.dataApi, 'yearly_summaries.insert', await anon.from('yearly_summaries').insert({ year: summaryYear }).select('id').single())
   const summaryId = must(summary, 'anon yearly summary insert').id
+  created.summaryId = summaryId
   record(result.dataApi, 'yearly_summaries.select', await anon.from('yearly_summaries').select('id').eq('id', summaryId).limit(1))
   const event = record(result.dataApi, 'important_events.insert', await anon.from('important_events').insert({ yearly_summary_id: summaryId, start_date: '2099-12-01', end_date: '2099-12-02', description: tag }).select('id').single())
   record(result.dataApi, 'important_events.select', await anon.from('important_events').select('id').eq('id', must(event, 'anon event insert').id).limit(1))
@@ -81,13 +85,22 @@ try {
   const audioFixture = must(await admin.from('audio_messages').select('audio_path').limit(1).single(), 'audio proxy fixture')
   result.proxies.audioAdminRange = await proxy(`/api/media/audio?path=${encodeURIComponent(audioFixture.audio_path)}`, { cookie: adminCookie, range: 'bytes=0-0' })
 } finally {
-  const cleanup = await Promise.all([
-    admin.from('diary_AI_analysis').delete().like('summary', `%${tag}%`), admin.from('diaryContent').delete().like('subtitle', `%${tag}%`),
-    admin.from('health_conditions').delete().like('condition', `%${tag}%`), admin.from('ai_analysis_opinions').delete().like('content', `%${tag}%`),
-    admin.from('ai_analysis_sections').delete().like('title', `%${tag}%`), admin.from('important_events').delete().like('description', `%${tag}%`), admin.from('yearly_images').delete().like('alt', `%${tag}%`), admin.from('yearly_summaries').delete().like('year', `%${tag}%`),
-    admin.from('audio_messages').delete().like('title', `%${tag}%`), admin.from('anonymous_messages').delete().like('content', `%${tag}%`),
-    ...['2024To2025_diary_images', '2025_Summary_Images', 'audio_messages'].map((bucket) => admin.storage.from(bucket).remove([`batch5-audit/${runId}/new.txt`]))
-  ])
+  const cleanup = []
+  for (const bucket of ['2024To2025_diary_images', '2025_Summary_Images', 'audio_messages']) {
+    cleanup.push(await admin.storage.from(bucket).remove([`batch5-audit/${runId}/new.txt`]))
+  }
+  cleanup.push(await admin.from('diary_AI_analysis').delete().like('summary', `%${tag}%`))
+  cleanup.push(created.diaryId
+    ? await admin.from('diaryContent').delete().eq('id', created.diaryId)
+    : await admin.from('diaryContent').delete().like('subtitle', `%${tag}%`))
+  cleanup.push(await admin.from('health_conditions').delete().like('condition', `%${tag}%`))
+  cleanup.push(await admin.from('ai_analysis_opinions').delete().like('content', `%${tag}%`))
+  cleanup.push(await admin.from('ai_analysis_sections').delete().like('title', `%${tag}%`))
+  cleanup.push(await admin.from('important_events').delete().like('description', `%${tag}%`))
+  cleanup.push(await admin.from('yearly_images').delete().like('alt', `%${tag}%`))
+  if (created.summaryId) cleanup.push(await admin.from('yearly_summaries').delete().eq('id', created.summaryId))
+  cleanup.push(await admin.from('audio_messages').delete().like('title', `%${tag}%`))
+  cleanup.push(await admin.from('anonymous_messages').delete().like('content', `%${tag}%`))
   result.cleanup = cleanup.every((item) => !item.error) ? 'complete' : 'failed'
   console.log(JSON.stringify(result))
   if (result.cleanup !== 'complete') process.exitCode = 1

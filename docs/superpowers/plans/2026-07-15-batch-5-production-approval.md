@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-**Status:** Blocked in pre-mutation checks on 2026-07-15. Production authorization exists, but phased execution is not approved until the failed local test prerequisite is rerun successfully.
+**Status:** Blocked in pre-mutation checks on 2026-07-15. Production authorization exists, but phased execution is not approved until the corrected direct-access runner completes successfully and receives final approval.
 
 **Goal:** Make the three diary media buckets private and remove direct anon access to sensitive application data, without changing the existing Cookie-authorized API contracts.
 
@@ -57,6 +57,8 @@ All items must be attached to the production change record before implementation
 - The user subsequently confirmed that `pnpm build`, `pnpm cf:build`, and `pnpm exec wrangler deploy --dry-run` passed in a normal WSL terminal. Codex then prepared the direct-access runner, but it stopped before creating any fixture because this environment does not have `SUPABASE_SERVICE_ROLE_KEY`; the key is intentionally unavailable in `.env.local`. Run the operator script only from a controlled environment that injects the service-role key for mandatory cleanup, without exposing it to this repository or chat.
 - DazhiWu accepted the reconstructed direct-access runner hash `e82fe7b416da6c6b4780d25cf627d7653d291a2f8330922af0d845ce096cd38d` for this production preflight; the prior unrecoverable original hash is superseded in the approved checksum manifest.
 - The accepted runner began the direct-access matrix with run ID `fea9c1d8-de10-4010-8eb4-772f5c21337d`, but its first anon Data API request failed at the Codex Node network layer (`fetch failed`) before an access-control assertion. Read-only post-run verification found zero tagged database rows and zero tagged Storage objects. This is a failed direct-access preflight; stop before Storage lockdown or any other Batch 5 mutation.
+- After commit `098e99e`, the full local preflight was restarted: 10 test files/42 tests passed, `pnpm exec tsc --noEmit` passed, and sandbox-exempt `pnpm build`, `pnpm cf:build`, and `pnpm exec wrangler deploy --dry-run` passed. Read-only Supabase and Cloudflare checks reconfirmed the reviewed database/Storage state and Worker version `c41d583a-af78-426e-9808-369424df1531`. Production guest/viewer/admin login and read-role regression passed. Local workerd guest reads passed, while Cookie login returned the expected fail-closed `503` because local preview does not supply the production-only Cloudflare client-IP context required by the rate-limit binding; production Cookie login passed.
+- Pre-change runner ID `4fed039b-5c54-416e-ac2e-f9a220abc5cd` reached production and confirmed the initial anon diary/AI/health operations, then stopped on its invalid `yearly_summaries.year` fixture because production constrains the field to four characters. Its cleanup reported complete, and an independent read-only query confirmed zero run-ID rows across all target tables and zero Storage objects. The runner now uses a four-digit audit year and ordered, ID-based cleanup; rerun and checksum acceptance remain required before any Batch 5 mutation.
 
 ## Verification commands
 

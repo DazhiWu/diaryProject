@@ -18,6 +18,10 @@
 
 **2026-07-15 direct-access preflight result:** runner ID `fea9c1d8-de10-4010-8eb4-772f5c21337d` failed on the first anon `diaryContent` insert with Node `fetch failed`; no access-control assertion was reached. Its finally cleanup also could not reach the API. A subsequent controlled read-only catalog check found zero tagged rows in every target table and zero objects under the run-ID Storage prefix. Per the stop rule, no further matrix row or Batch 5 production mutation was attempted.
 
+**Restarted preflight checkpoint:** after commit `098e99e`, local tests (10 files, 42 tests), strict TypeScript checking, sandbox-exempt Next/OpenNext builds, and Wrangler deploy dry-run passed. Read-only production checks reconfirmed the reviewed database/Storage state and production Worker version. Production guest/viewer/admin login and read-role regression passed. Local workerd served the homepage, guest session, diary reads, and Supabase-backed data; Cookie login remained fail-closed with `503` because local preview lacks the production Cloudflare client-IP context required by the rate-limit binding, while the same login paths passed on the deployed Worker.
+
+**Schema-correctness stop:** runner ID `4fed039b-5c54-416e-ac2e-f9a220abc5cd` reached the production Data API and confirmed the initial anon diary, AI, and health baseline operations. It then stopped because the runner supplied a long audit tag to the four-character `yearly_summaries.year` column. Cleanup reported complete; a separate read-only query returned zero matching rows in all ten target tables and zero matching Storage objects. The runner was corrected to use a four-digit audit year and ordered, ID-based cleanup. No Storage policy, bucket visibility, table policy, grant, migration, or Worker deployment changed.
+
 ## Storage
 
 - `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages` are all `public = true`; all have no configured MIME or size limit.
