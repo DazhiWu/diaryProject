@@ -38,6 +38,8 @@
 
 **Private buckets completed:** after separate approval, the service-role Storage API set `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages` to `public=false`; the private-bucket postflight passed. Behavior run `2dcc7fcf-8b2a-4572-a511-1cb726346231` exited `0`: every direct public object URL returned `400`; anon list/upload/overwrite/delete did not expose or mutate objects; diary/yearly/audio proxies returned `200`/`403`/`200`/`200`/`206`; cleanup completed. Independent verification found zero tagged diary rows and Storage objects, three private buckets, zero Storage policies, two RLS-enabled Storage relations, exact 16-entry `supabase_storage_admin` ACL baselines for anon/authenticated/service_role, and zero unexpected grantor. Application-table RLS/grant migrations remain unapplied and require their own phased approvals.
 
+**Application-table ACL grantor gate:** at 2026-07-15 08:02 UTC, a read-only `aclexplode` audit confirmed that all ten remaining Batch 5 tables are owned by `postgres`, the Supabase SQL execution role is the same non-superuser `postgres`, and every anon/authenticated/service_role table privilege has `postgres` as its sole grantor. Each role has the expected eight table privileges per target relation. The reviewed forward `REVOKE` and rollback `GRANT` statements can therefore operate on the original grant chain; the Storage cross-grantor failure mode does not apply. Both diary/AI tables still have RLS enabled, their exact reviewed permissive policy, and effective CRUD for anon/authenticated/service_role. No application-table mutation has occurred.
+
 ## Storage
 
 The following bullets preserve the pre-change audit baseline. The current production state is recorded above under **Private buckets completed**.
@@ -52,7 +54,7 @@ The following bullets preserve the pre-change audit baseline. The current produc
 
 - All Batch 5 target tables have RLS enabled, RLS not forced, and owner `postgres`.
 - Every target public table has zero direct table-level `PUBLIC` ACL entries. This satisfies the final-approval prerequisite; the reviewed forward migrations therefore remove only the audited `anon`/`authenticated` grants and policies.
-- `anon`, `authenticated`, and `service_role` currently have direct table-level `ALL`-equivalent privileges on the target tables; no column-level ACL (`pg_attribute.attacl`) exists.
+- `anon`, `authenticated`, and `service_role` currently have direct table-level `ALL`-equivalent privileges on the target tables; no column-level ACL (`pg_attribute.attacl`) exists. All audited entries have the sole grantor `postgres`, which is also the table owner and current migration execution role.
 - Sensitive-table policies are permissive `FOR ALL TO public USING (true)`:
   - `Enable read access for all users` on `diaryContent`, `diary_AI_analysis`, `health_conditions`, and `audio_messages`.
   - `Policy with security definer functions` on the yearly-summary tables.
