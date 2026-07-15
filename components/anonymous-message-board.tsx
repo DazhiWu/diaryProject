@@ -120,11 +120,11 @@ function MessageInput({
           />
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">
-              {content.length}/1000 字符
+              {content.length}/2000 字符
             </span>
             <Button
               onClick={handleSubmit}
-              disabled={isSubmitting || content.trim().length < 2}
+              disabled={isSubmitting || content.trim().length < 1 || content.trim().length > 2000}
               className="gap-2"
             >
               {isSubmitting ? (
@@ -163,7 +163,7 @@ function Pagination({
   const pages = []
   const maxVisiblePages = 5
   let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2))
-  let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1)
+  const endPage = Math.min(totalPages, startPage + maxVisiblePages - 1)
 
   if (endPage - startPage + 1 < maxVisiblePages) {
     startPage = Math.max(1, endPage - maxVisiblePages + 1)

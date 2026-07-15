@@ -2,9 +2,9 @@
 
 ## Overview
 
-The application uses Supabase PostgreSQL and Storage through a shared browser-visible anon client. Production metadata, policies, grants, constraints, indexes, and buckets were inspected read-only on 2026-07-12. The repository still lacks a complete migration history, so future schema changes must be exported as authoritative migrations rather than inferred from this document.
+The application uses Supabase PostgreSQL and Storage through same-origin server APIs. Production metadata, policies, grants, constraints, indexes, and buckets were inspected read-only on 2026-07-12 and rechecked during Batch 5 on 2026-07-15. The repository still lacks a complete historical migration chain, so future schema changes must be exported as authoritative migrations rather than inferred from this document.
 
-The application does not create a Supabase Auth session. `/api/auth` authenticates the configured viewer/admin passwords and writes a signed HttpOnly Cookie; `/api/auth/session` exposes only the resolved role to the browser. Cookie-authorized server routes use the server-only service-role client, while `anonymous_messages` remains the deliberate browser anon SELECT/INSERT exception. The Cookie role does not change the Supabase role for the anon client.
+The application does not create a Supabase Auth session. `/api/auth` authenticates the configured viewer/admin passwords and writes a signed HttpOnly Cookie; `/api/auth/session` exposes only the resolved role to the browser. Application data, including anonymous-message reads and writes, uses server routes backed by the server-only service-role client. The repository retains `SUPABASE_ANON_KEY` only for operator direct-access regression, not browser runtime access.
 
 ## Production tables
 
@@ -32,7 +32,7 @@ The application assumes one diary per date and handles PostgreSQL `23505`; produ
 
 `health_conditions` has `TEXT` primary key `id`, required `condition`, `start_date`, `end_date`, and `color`, plus nullable `created_at TIMESTAMPTZ DEFAULT now()`.
 
-`anonymous_messages` has a `BIGINT` primary key, required `content`, required `created_at TIMESTAMPTZ DEFAULT now()`, and nullable `user_agent`/`ip_address`. The 2026-07-12 migration added a database check requiring trimmed content length from 2 through 1000 characters.
+`anonymous_messages` has a `BIGINT` primary key, required `content`, required `created_at TIMESTAMPTZ DEFAULT now()`, nullable `user_agent`/`ip_address`, and a validated 1–2000-character trimmed-content check.
 
 ### Audio
 
@@ -48,29 +48,35 @@ The application assumes one diary per date and handles PostgreSQL `23505`; produ
 
 Production foreign keys from events, sections, and images to `yearly_summaries`, and from opinions to sections, all use `ON DELETE CASCADE`.
 
+Application mutations resolve the URL year to `yearly_summaries.id` and scope every event, section, opinion, and image lookup to that ownership chain. A missing year or wrong-year child ID returns `404` before any database or Storage mutation.
+
 ### Other production tables
 
-The inspected Supabase project also contains `diaryInfo` and `rss_articles`. Current application source does not query them, so they are outside this application's documented data flow. `diaryInfo` has RLS enabled but no policy; `rss_articles` has a public read policy.
+The inspected Supabase project also contains `diaryInfo` and `rss_articles`. Current application source does not query either table. `diaryInfo` is a preserved legacy keepsake: RLS is enabled with no policy and PUBLIC/anon/authenticated have no table or identity-sequence privilege, so only trusted service-role access remains. Because application login uses a custom Cookie rather than Supabase Auth, any future viewer/admin display must use a Cookie-authorized same-origin API. `rss_articles` belongs to another project and is intentionally out of scope for this repository.
 
 ## Row Level Security and grants
 
 Batch 5 completed in production on 2026-07-15. `diaryContent`, `diary_AI_analysis`, `health_conditions`, the five yearly-summary tables, and `audio_messages` have RLS enabled with no policies and no anon/authenticated table grants. Service-role CRUD remains available to the authorized APIs.
 
-`anonymous_messages` is intentionally limited to:
+Production `anonymous_messages` is limited to:
 
-- `SELECT` and `INSERT` table grants for `anon` only.
-- Exact anon-only SELECT and INSERT policies; INSERT remains subject to the trimmed 2–1000 character check.
-- No authenticated grant and no anon UPDATE or DELETE grant/policy.
+- Column-level `SELECT` on `id`, `content`, and `created_at` for `anon` only.
+- One anon SELECT policy; no anon INSERT/UPDATE/DELETE policy or grant.
+- No authenticated grant and no anon access to `user_agent` or `ip_address`.
+
+Migration `20260715122132_harden_anonymous_messages.sql` applied this boundary in production and its independent postflight passed. The same-origin POST API records a User-Agent truncated to 512 characters and uses the Cloudflare `ANONYMOUS_MESSAGE_RATE_LIMITER` at three attempts per client IP per 60 seconds. Production API regression returned only `id/content/created_at`; a temporary write fixture returned `201`, retained its User-Agent, and was then removed.
 
 The final direct-access matrix returned `401` for anon SELECT and INSERT across all nine sensitive tables. `anonymous_messages` returned `201` for INSERT and `200` for SELECT, while UPDATE and DELETE returned `401` and did not persist. The independent ACL check found only the two intended anon privileges, no authenticated privilege, and complete service-role CRUD.
 
 The final Supabase security-advisor review reports:
 
 - informational `rls_enabled_no_policy` findings for locked RLS tables; these are the intended deny-by-default state;
-- an always-true anon INSERT warning on `anonymous_messages`; this is intentional and bounded by the validated length constraint;
-- `public.enforce_diary_image_invariants()` and `public.rls_auto_enable()` SECURITY DEFINER functions executable by anon/authenticated, which remain outside Batch 5 and require separate review.
+- no anonymous INSERT or publicly executable SECURITY DEFINER warnings after the follow-up migrations;
+- informational `rls_enabled_no_policy` findings only for the intentionally locked application tables.
 
-Performance advisors separately report an unindexed `diary_image_paths.diary_id` foreign key and no primary key on `private.diary_image_paths_backup_20260713`. These are not Batch 5 access-control regressions. Advisor remediation: [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter).
+Migration `20260715122200_revoke_trigger_function_execute.sql` revoked EXECUTE on `public.enforce_diary_image_invariants()` and `public.rls_auto_enable()` from PUBLIC, anon, and authenticated. Its rollback-only postflight fired both the diary row trigger and the RLS event trigger successfully.
+
+Migration `20260715144158_finalize_database_cleanup.sql` confirmed that `diary_image_paths.diary_id` already references `diaryContent.id` with `ON DELETE CASCADE`, added the covering `diary_image_paths_diary_id_idx`, revoked all browser-direct `diaryInfo` table/sequence privileges, and dropped `private.diary_image_paths_backup_20260713`. Its postflight passed. Performance advisors now report only the newly created index as unused; that is expected until production query statistics record a qualifying delete or join. Advisor remediation: [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter).
 
 ## Storage
 
@@ -95,14 +101,14 @@ The two former global `storage.objects` policies were removed in Batch 5. Platfo
 
 ### `2025_Summary_Images`
 
-- Yearly images use `yearly/<uuid>_<index>.webp` for insert-only uniqueness.
+- Yearly images use `yearly/<sequence>.webp`, where the server selects an unused numeric sequence.
 - Relative paths are stored in `yearly_images.storage_path`.
 - Replacing an image uploads a new object and updates the database reference through the authorized API.
 - Authorized delete routes perform DB-first deletion and report any object path that still needs cleanup.
 
 ### `audio_messages`
 
-- The client accepts MP3, WAV, OGG, AAC, WebM, M4A, or FLAC and imposes a 50 MB limit.
+- The client and API accept MP3 (`audio/mpeg` with a `.mp3` filename) and impose a 50 MB limit.
 - Object paths use `<timestamp>_<random>.<extension>`.
 - Upload uses `upsert: false`.
 - Authorized APIs compensate failed metadata writes and perform DB-first deletion with residual-path reporting.
@@ -112,20 +118,21 @@ Database-row and Storage-object changes are not transactional. Failed metadata w
 ## Access patterns
 
 - Server APIs: diary reads/CRUD, AI analysis, translation, CSV, and media reads. Diary media has latest-five/viewer/admin authorization; yearly media is readable by every role; audio is admin-only and supports a single HTTP Range.
-- Authorized APIs: media write/replace/delete, health, and yearly-summary metadata require an admin Cookie plus Origin validation. Upload metadata failures trigger storage compensation; DB-first deletes report remaining object paths when cleanup fails. `anonymous_messages` remains the deliberate browser anon `SELECT`/`INSERT` exception.
+- Authorized APIs: media write/replace/delete and yearly-summary metadata require an admin Cookie plus Origin validation. Health reads require viewer or admin; health mutations require admin plus Origin validation. Upload metadata failures trigger storage compensation; DB-first deletes report remaining object paths when cleanup fails. Anonymous-message reads and writes use the same-origin API; POST is public, Origin-checked, and rate-limited.
+- Request validation: server routes stream JSON/multipart bodies through centralized byte limits, then validate field lengths, dates, arrays, file sizes, MIME types, and extensions before Supabase writes.
 - CSV export: `/api/diary-download` is admin-only and queries through the server service-role client.
 - Pagination: diary/messages use exact counts and `.range()`.
 - Search: diary `content`/`subtitle` use OR `ilike`.
-- Cache: diary fallback uses compressed `localStorage`; yearly summaries use a five-minute in-memory cache.
+- Cache: yearly summaries use an in-memory per-year cache until the corresponding mutation invalidates it. Offline diary writes and the compressed `localStorage` backup have been removed.
 
 Never substitute a service-role key for `SUPABASE_ANON_KEY`. The privileged client is `lib/server/supabaseAdmin.ts`, uses the separate server-only `SUPABASE_SERVICE_ROLE_KEY`, and must be called only from authorized routes.
 
 ## Checked-in SQL
 
 - `test_extra/CREATE_HEALTH_CONDITIONS_TABLE.sql`: partial historical health schema/policies.
-- `test_extra/CREATE_ANONYMOUS_MESSAGE_TABLE.sql`: anonymous-message schema with SELECT/INSERT-only policies and the content-length check.
+- `test_extra/CREATE_ANONYMOUS_MESSAGE_TABLE.sql`: current anonymous-message target schema with anon display-column SELECT only and the 1–2000 content-length check.
 
-These files are not a complete migration set. Applied production migrations include `restrict_anonymous_messages_public_access`, the 2026-07-13 `media_invariants` migration, and every approved Batch 5 Storage/table phase through `batch5_anonymous_messages_least_privilege`.
+These files are not a complete migration set. Applied production migrations include `restrict_anonymous_messages_public_access`, the 2026-07-13 `media_invariants` migration, every approved Batch 5 Storage/table phase through `batch5_anonymous_messages_least_privilege`, the two follow-up ACL migrations, and `20260715144158_finalize_database_cleanup.sql`. All corresponding postflights passed.
 
 ## Change checklist
 

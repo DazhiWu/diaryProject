@@ -45,8 +45,8 @@ Run SELECT and one write attempt for every target table. For tables with foreign
 | anon | `ai_analysis_opinions` | GET | INSERT linked opinion fixture | both denied |
 | anon | `yearly_images` | GET | INSERT linked image fixture | both denied |
 | anon | `audio_messages` | GET | INSERT run-ID audio fixture | both denied |
-| anon | `anonymous_messages` | GET | INSERT valid trimmed 2–1000 character run-ID message | both allowed |
-| anon | `anonymous_messages` | — | UPDATE and DELETE the run-ID message | both denied |
+| anon | `anonymous_messages` | GET only `id`, `content`, `created_at` | INSERT valid trimmed 1–2000 character run-ID message | selected public columns allowed; insert denied |
+| anon | `anonymous_messages` | attempt `user_agent`/`ip_address` | UPDATE and DELETE a service-role fixture | all denied |
 | authenticated | `anonymous_messages` | GET | INSERT valid run-ID message | both denied |
 
-This application has no Supabase Auth browser caller. Use the browser anon key only for anon rows; authenticated rows are a negative Data API check, not an application workflow.
+This application has no Supabase Auth browser caller. Anonymous-message writes go through `/api/anonymous-messages`; the browser anon key is used only by operator direct-access regression. Authenticated rows are a negative Data API check, not an application workflow.

@@ -22,6 +22,22 @@
         "limit": 5,
         "period": 60
       }
+    },
+    {
+      "name": "ANONYMOUS_MESSAGE_RATE_LIMITER",
+      "namespace_id": "2026071501",
+      "simple": {
+        "limit": 3,
+        "period": 60
+      }
+    },
+    {
+      "name": "AI_RATE_LIMITER",
+      "namespace_id": "2026071502",
+      "simple": {
+        "limit": 5,
+        "period": 60
+      }
     }
   ]
 }

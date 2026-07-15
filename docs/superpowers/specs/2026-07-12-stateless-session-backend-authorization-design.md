@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved design for a future implementation session. This document is a specification, not an implementation plan. The 2026-07-12 confirmation decisions below are authoritative where they refine an earlier statement. The next conversation must read this file, inspect the current repository and production configuration read-only, then use `superpowers:writing-plans` before changing code.
+Historical approved design, implemented through Batches 3–5 and subsequently refined. It is retained as a decision record, not as the current operational specification. In particular, guest health reads are now denied, anonymous-message reads/writes use a same-origin API, direct anon access is being reduced to three display columns, and the offline diary backup has been removed. Current behavior and pending production work are authoritative in `README.md`, `AGENTS.md`, `docs/DATABASE.md`, and `docs/DEPLOY.md`.
 
 ## Goal
 

@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
-import { XIcon, PlusIcon } from "@/components/icons"
+import { XIcon, PlusIcon, EditIcon } from "@/components/icons"
 import { useHealthConditions } from "@/hooks/useHealthConditions"
 import { toast } from "sonner"
 
@@ -16,13 +16,14 @@ interface HealthConditionDialogProps {
 }
 
 export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDialogProps) {
-  const { conditions, loading, addCondition, deleteCondition } = useHealthConditions()
+  const { conditions, loading, addCondition, updateCondition, deleteCondition } = useHealthConditions()
   
   const [conditionName, setConditionName] = useState("")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [color, setColor] = useState("#FFD700")
   const [isAdding, setIsAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const handleAddCondition = async () => {
@@ -30,23 +31,43 @@ export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDia
     
     setIsAdding(true)
     try {
-      await addCondition({
+      const nextCondition = {
         condition: conditionName,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         color: color
-      })
+      }
+      if (editingId) await updateCondition(editingId, nextCondition)
+      else await addCondition(nextCondition)
       
       setConditionName("")
       setStartDate("")
       setEndDate("")
-      toast.success("病症添加成功")
+      setColor("#FFD700")
+      setEditingId(null)
+      toast.success(editingId ? "病症更新成功" : "病症添加成功")
     } catch (error) {
       console.error("Failed to add condition:", error)
       toast.error("添加病症失败，请重试")
     } finally {
       setIsAdding(false)
     }
+  }
+
+  const handleEditCondition = (condition: typeof conditions[number]) => {
+    setEditingId(condition.id)
+    setConditionName(condition.condition)
+    setStartDate(condition.startDate.toISOString().slice(0, 10))
+    setEndDate(condition.endDate.toISOString().slice(0, 10))
+    setColor(condition.color)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setConditionName("")
+    setStartDate("")
+    setEndDate("")
+    setColor("#FFD700")
   }
 
   const handleDeleteCondition = async (id: string) => {
@@ -76,7 +97,7 @@ export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDia
         
         <div className="space-y-6">
           <div className="space-y-4">
-            <h3 className="font-medium">添加新病症</h3>
+            <h3 className="font-medium">{editingId ? "编辑病症" : "添加新病症"}</h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="condition-name">病症名称</Label>
@@ -124,18 +145,13 @@ export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDia
                 />
               </div>
             </div>
-            <Button 
-              onClick={handleAddCondition} 
-              className="w-full gap-2"
-              disabled={isAdding}
-            >
-              {isAdding ? (
-                <Spinner className="h-4 w-4" />
-              ) : (
-                <PlusIcon className="h-4 w-4" />
-              )}
-              {isAdding ? "添加中..." : "添加"}
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={handleAddCondition} className="flex-1 gap-2" disabled={isAdding}>
+                {isAdding ? <Spinner className="h-4 w-4" /> : editingId ? <EditIcon className="h-4 w-4" /> : <PlusIcon className="h-4 w-4" />}
+                {isAdding ? "保存中..." : editingId ? "保存修改" : "添加"}
+              </Button>
+              {editingId && <Button variant="outline" onClick={cancelEdit} disabled={isAdding}>取消</Button>}
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -165,18 +181,14 @@ export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDia
                         </p>
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteCondition(cond.id)}
-                      disabled={deletingId === cond.id}
-                    >
-                      {deletingId === cond.id ? (
-                        <Spinner className="h-4 w-4" />
-                      ) : (
-                        <XIcon className="h-4 w-4" />
-                      )}
-                    </Button>
+                    <div className="flex items-center">
+                      <Button variant="ghost" size="icon" onClick={() => handleEditCondition(cond)} disabled={isAdding || deletingId === cond.id} aria-label="编辑病症">
+                        <EditIcon className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteCondition(cond.id)} disabled={deletingId === cond.id} aria-label="删除病症">
+                        {deletingId === cond.id ? <Spinner className="h-4 w-4" /> : <XIcon className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </div>
                 ))
               )}

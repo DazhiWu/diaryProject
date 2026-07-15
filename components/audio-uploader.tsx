@@ -52,7 +52,7 @@ export function AudioUploader({ onUploadSuccess, onCancel }: AudioUploaderProps)
       }
       
       toast.success(`音频文件已选择: ${formatFileSize(file.size)}`)
-    } catch (error) {
+    } catch {
       toast.error('无法读取音频文件信息')
     }
 

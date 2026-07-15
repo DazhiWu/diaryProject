@@ -4,6 +4,7 @@ import { createDiaryImage, createSupabaseUploadStore } from '@/lib/server/mediaM
 import { assertAllowedOrigin } from '@/lib/server/origin'
 import { HttpError, readSession, requireAdmin } from '@/lib/server/session'
 import { getSupabaseAdmin } from '@/lib/server/supabaseAdmin'
+import { FIELD_LIMITS, fileField, readFormDataBody, REQUEST_LIMITS } from '@/lib/server/requestLimits'
 
 function responseFor(error: unknown) { return error instanceof HttpError ? NextResponse.json({ error: error.message }, { status: error.status }) : NextResponse.json({ error: 'Media request failed' }, { status: 500 }) }
 function idFrom(value: string) { const id = Number(value); if (!Number.isSafeInteger(id) || id < 1) throw new HttpError(400, 'Invalid diary id'); return id }
@@ -11,11 +12,11 @@ function idFrom(value: string) { const id = Number(value); if (!Number.isSafeInt
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     await assertAllowedOrigin(request); requireAdmin(await readSession(request.headers.get('cookie')))
-    const id = idFrom((await params).id); const form = await request.formData(); const file = form.get('file')
-    if (!(file instanceof File) || file.type !== 'image/webp') throw new HttpError(400, 'A WebP image is required')
+    const id = idFrom((await params).id); const form = await readFormDataBody(request, REQUEST_LIMITS.imageForm); const file = fileField(form.get('file'), { maximumBytes: FIELD_LIMITS.diaryImageBytes, mimeType: 'image/webp' })
     const supabase = await getSupabaseAdmin()
     const { data: diary, error } = await supabase.from('diaryContent').select('date, image_paths').eq('id', id).maybeSingle()
     if (error) throw new Error('Diary query failed'); if (!diary) throw new HttpError(404, 'Diary not found')
+    if ((diary.image_paths ?? []).length >= FIELD_LIMITS.diaryImages) throw new HttpError(400, 'Diary image limit reached')
     const storage = await createSupabaseUploadStore()
     const result = await createDiaryImage({ diaryId: id, diaryDate: diary.date, file }, {
       ...storage,

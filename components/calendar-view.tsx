@@ -1,11 +1,10 @@
 "use client"
 
-import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChevronLeftIcon, ChevronRightIcon, SprayIcon } from "@/components/icons"
-import type { Entry } from "@/app/page"
+import type { Entry } from "@/hooks/useDiaryController"
 import { cn } from "@/lib/utils"
 import { useHealthConditions, type HealthCondition } from "@/hooks/useHealthConditions"
 

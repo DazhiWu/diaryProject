@@ -87,9 +87,9 @@ SELECT EXISTS (
     AND contype = 'c'
     AND pg_get_constraintdef(oid, true) ~* 'btrim'
     AND pg_get_constraintdef(oid, true) ~* '(char_length|length)'
-    AND pg_get_constraintdef(oid, true) ~* '>= *2'
-    AND pg_get_constraintdef(oid, true) ~* '<= *1000'
-) AS has_trimmed_length_2_to_1000_check;
+    AND pg_get_constraintdef(oid, true) ~* '>= *1'
+    AND pg_get_constraintdef(oid, true) ~* '<= *2000'
+) AS has_trimmed_length_1_to_2000_check;
 
 -- public-schema function exposure: owners, SECURITY DEFINER, ACLs, and definitions.
 WITH functions AS (

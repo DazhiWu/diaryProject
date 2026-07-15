@@ -8,7 +8,7 @@ export async function getRuntimeEnvValue(name: string): Promise<string | undefin
     if (typeof value === 'string') {
       return value;
     }
-  } catch (error) {
+  } catch {
     // Local Next.js dev/build does not always have a Cloudflare context.
   }
 

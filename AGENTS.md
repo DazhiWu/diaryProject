@@ -33,18 +33,20 @@ This is a personal diary application built with Next.js and Supabase. It support
 
 ## Architecture summary
 
-- `app/page.tsx` switches among diary list/calendar/create/edit/detail, export, yearly-summary, message, and audio views.
-- Client-reachable modules retain the shared Supabase anon client only for `anonymous_messages` SELECT/INSERT; diary reads/CRUD, AI, translation, CSV, media mutations/reads, health, and yearly summaries use same-origin authorized APIs. Diary data retains a compressed `localStorage` fallback.
-- AI/translation API routes keep the ModelScope token server-side; the download route returns CSV.
+- `app/page.tsx` is a small entry point; `useDiaryController` owns diary behavior and `DiaryAppShell` composes list/calendar/create/edit/detail, export, yearly-summary, message, and audio views.
+- Browser application data access uses same-origin APIs, including anonymous messages. The database is intended to retain direct anon SELECT only for `anonymous_messages.id/content/created_at`; the application no longer ships a shared Supabase browser client or local diary backup.
+- AI/translation API routes keep the ModelScope token server-side, enforce 50,000-character input, a 30-second upstream timeout, and five calls per IP per 60 seconds through `AI_RATE_LIMITER`; the download route returns safely escaped CSV with byte-accurate length.
 - `/api/auth` writes a signed HttpOnly Cookie and `/api/auth/session` is the browser role source. This is not Supabase Auth; sessions use `SESSION_VERSION`, not a database session table.
-- Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
+- Images are compressed to WebP in the browser and referenced by relative paths. New uploads use insert-only semantics; explicit replacement routes use upsert on the existing path.
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
 - Diary and yearly media read through fixed-bucket proxies; diary inherits latest-five/viewer/admin access, yearly is readable by all roles, and audio is admin-only with single-range streaming. All three media buckets are private; browser anon Storage access is denied.
+- Yearly routes scope every nested event, section, opinion, and image mutation to the summary identified by the URL year. Request parsers centrally enforce byte, character, date, array, file-size, MIME, and extension limits before writes.
+- Yearly UI state/mutations live in `useYearlySummaryController`; analysis, event, gallery, and editor views live under `components/yearly-summary/`.
 - Batch 3 completed media invariants on 2026-07-13, Batch 4 completed authorized media/health/yearly APIs, and Batch 5 completed production Storage plus table least-privilege hardening on 2026-07-15. Final Batch 5 regression and cleanup passed.
 
 ## Database and storage
 
-Supabase stores diary, AI, health, message, audio, and yearly-summary records. The three media buckets are private with no anon Storage object policy. Sensitive application tables have no anon/authenticated grants or policies; `anonymous_messages` is the sole browser-direct exception with anon SELECT/INSERT only. Batch 3 introduced and production-applied media invariants; read `docs/DATABASE.md` before altering any database or Storage boundary.
+Supabase stores diary, AI, health, message, audio, and yearly-summary records. The three media buckets are private with no anon Storage object policy. Sensitive application tables have no anon/authenticated grants or policies. Production anon message access is column-level SELECT on `id/content/created_at` only; inserts use the same-origin API and the 1–2000 database constraint. PUBLIC, anon, and authenticated cannot execute `enforce_diary_image_invariants()` or `rls_auto_enable()` directly; both triggers remain operational. Read `docs/DATABASE.md` before altering any database or Storage boundary.
 
 Read [`docs/DATABASE.md`](docs/DATABASE.md) before changing queries, tables, RLS, buckets, paths, or access boundaries.
 
@@ -59,7 +61,7 @@ Read [`docs/DEPLOY.md`](docs/DEPLOY.md) before changing builds, variables, API r
 | Variable | Purpose | Required |
 |---|---|---|
 | `SUPABASE_URL` | Shared Supabase client URL | Yes |
-| `SUPABASE_ANON_KEY` | Browser-visible Supabase anon credential | Yes |
+| `SUPABASE_ANON_KEY` | Operator-only direct-access regression credential | Not required by the application |
 | `MODELSCOPE_TOKEN_API_KEY` | Server-side AI/translation credential | For AI features |
 | `AUTH_PASSWORD_ADMIN` | Admin password | For admin mode |
 | `AUTH_PASSWORD_VIEWER` | Viewer password | For viewer mode |
@@ -89,19 +91,19 @@ pnpm run deploy
 - Use pnpm, Node.js 22+, strict TypeScript, `@/*`, and the App Router structure.
 - Preserve component, hook, and `lib/` boundaries unless the user explicitly requests an architectural change.
 - Preserve table/bucket names unless a coordinated migration is requested.
-- Treat `components/ui/backup/` as intentionally inactive.
+- Keep `pnpm lint` passing with the ESLint flat configuration in `eslint.config.mjs`; legacy experimental files under `test_extra/` are excluded.
 - Do not commit `.env*`, credentials, `.open-next/`, or Wrangler state.
 - Verify `pnpm build` and `pnpm cf:build` for server-route, environment, or deployment changes.
 
 ## Known issues and risks
 
-- TypeScript build errors are ignored by `next.config.mjs`.
-- The deliberate browser anon message path relies on RLS; UI roles are not authorization.
-- Cookie roles are enforced for protected APIs and media reads; anonymous-message insert remains intentionally public within its length constraint.
+- Anonymous-message API writes require deployment of `ANONYMOUS_MESSAGE_RATE_LIMITER`; production fails closed when the binding or trusted Cloudflare IP is unavailable.
+- AI analysis and translation require the `AI_RATE_LIMITER` binding in production and fail closed if the binding or trusted Cloudflare IP is unavailable.
+- The retained direct anon message read relies on column grants plus RLS; UI roles are not authorization.
 - Public unoptimized images can affect bandwidth/performance.
-- Supabase advisors report expected no-policy information for locked RLS tables and an intentional permissive anon INSERT warning for anonymous messages.
-- `enforce_diary_image_invariants()` and `rls_auto_enable()` remain SECURITY DEFINER functions executable by anon/authenticated and require a separate dependency/security review.
-- `pnpm lint` lacks a direct `eslint` dependency and needs clean-install confirmation.
+- Supabase security advisors intentionally report `rls_enabled_no_policy` information for deny-by-default application tables; the former anonymous INSERT and public SECURITY DEFINER execution warnings are resolved.
+- `diaryInfo` is a preserved legacy keepsake with no browser-direct grant or policy; any future viewer/admin display must use a Cookie-authorized service-role API. `rss_articles` belongs to another project and is out of scope.
+- The `diary_image_paths.diary_id` foreign key has a covering index. Its immediate post-creation `unused_index` advisor item is informational until production query statistics record use.
 - Cloudflare Workers Builds Git repository/branch/commands still require Dashboard confirmation because the current OAuth token cannot read the Builds API.
 
 ## Documentation map

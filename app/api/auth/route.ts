@@ -4,6 +4,8 @@ import { validateAuthConfiguration } from '@/lib/server/env';
 import { checkLoginRateLimit } from '@/lib/server/loginRateLimit';
 import { assertAllowedOrigin } from '@/lib/server/origin';
 import { createSession, HttpError, sessionCookie } from '@/lib/server/session';
+import { timingSafeEqualStrings } from '@/lib/server/secretComparison';
+import { readJsonBody, REQUEST_LIMITS, stringField } from '@/lib/server/requestLimits';
 
 const INVALID_CREDENTIAL_DELAY_MS = 250;
 
@@ -15,10 +17,11 @@ export async function POST(request: Request) {
   try {
     await assertAllowedOrigin(request);
 
-    const body = await request.json();
-    if (!body || typeof body.password !== 'string' || body.password.length > 1024) {
+    const body = await readJsonBody(request, REQUEST_LIMITS.authJson) as { password?: unknown } | null;
+    if (!body || typeof body.password !== 'string') {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
+    const password = stringField(body.password, 'password', { min: 1, max: 1024 });
 
     const limit = await checkLoginRateLimit(request);
     if (!limit.allowed) {
@@ -28,12 +31,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const adminPassword = await getRuntimeEnvValue('AUTH_PASSWORD_ADMIN');
-    const viewerPassword = await getRuntimeEnvValue('AUTH_PASSWORD_VIEWER');
-    validateAuthConfiguration({ viewer: viewerPassword, admin: adminPassword });
+    const configuration = {
+      admin: await getRuntimeEnvValue('AUTH_PASSWORD_ADMIN'),
+      viewer: await getRuntimeEnvValue('AUTH_PASSWORD_VIEWER'),
+    };
+    validateAuthConfiguration(configuration);
 
-    const isAdmin = body.password === adminPassword;
-    const isViewer = body.password === viewerPassword;
+    const [isAdmin, isViewer] = await Promise.all([
+      timingSafeEqualStrings(password, configuration.admin),
+      timingSafeEqualStrings(password, configuration.viewer),
+    ]);
     const role = isAdmin ? 'admin' : isViewer ? 'viewer' : null;
 
     if (!role) {

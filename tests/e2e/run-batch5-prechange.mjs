@@ -2,6 +2,9 @@ import dotenv from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
 
+// Historical Batch 5 pre-change harness. Do not use this as a post-20260715122132
+// regression: anonymous-message writes now go through the rate-limited application API.
+
 dotenv.config({ path: '.env.local' })
 
 const required = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'APP_ORIGIN', 'AUTH_PASSWORD_ADMIN', 'AUTH_PASSWORD_VIEWER']

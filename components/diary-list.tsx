@@ -3,7 +3,7 @@
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PlusIcon, Trash2Icon, ChevronRightIcon } from "@/components/icons"
-import type { Entry } from "@/app/page"
+import type { Entry } from "@/hooks/useDiaryController"
 import { useAuth } from "@/hooks/useAuth"
 import { toast } from "sonner"
 import { useState } from "react"
@@ -19,7 +19,7 @@ type DiaryListProps = {
 
 export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNewEntry }: DiaryListProps) {
   const auth = useAuth()
-  const { isAdmin, isViewer, isAuthenticated } = auth
+  const { isAdmin, isViewer } = auth
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [entryToDelete, setEntryToDelete] = useState<Entry | null>(null);
   

@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS anonymous_messages (
   id BIGSERIAL PRIMARY KEY,
-  content TEXT NOT NULL CHECK (char_length(btrim(content)) BETWEEN 2 AND 1000),
+  content TEXT NOT NULL CHECK (char_length(btrim(content)) BETWEEN 1 AND 2000),
   created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
   user_agent TEXT,
   ip_address TEXT
@@ -15,19 +15,14 @@ CREATE INDEX IF NOT EXISTS idx_anonymous_messages_created_at ON anonymous_messag
 -- 启用行级安全性（RLS）
 ALTER TABLE anonymous_messages ENABLE ROW LEVEL SECURITY;
 
--- 创建策略：允许所有人读取留言
-CREATE POLICY "Allow public read access" 
+REVOKE ALL PRIVILEGES ON TABLE anonymous_messages FROM anon, authenticated;
+GRANT SELECT (id, content, created_at) ON TABLE anonymous_messages TO anon;
+
+-- 创建策略：匿名访客只能读取公开展示列
+CREATE POLICY "Allow anon read access"
   ON anonymous_messages 
   FOR SELECT
-  TO anon, authenticated
+  TO anon
   USING (true);
 
--- 创建策略：允许所有人插入留言
-CREATE POLICY "Allow public insert access" 
-  ON anonymous_messages 
-  FOR INSERT
-  TO anon, authenticated
-  WITH CHECK (true);
-
--- 注意：出于隐私和安全考虑，不允许删除或更新留言
--- 只有数据库管理员可以通过Supabase控制台直接管理数据
+-- INSERT 通过应用的同源限流 API 使用 service-role 执行；anon 不可直写。

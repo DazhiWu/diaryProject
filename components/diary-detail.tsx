@@ -5,14 +5,13 @@ import type React from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ArrowLeftIcon, Trash2Icon, XIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon, BookOpenIcon } from "@/components/icons"
-import { SparklesIcon, SmileIcon, FrownIcon, HeartIcon, AlertCircleIcon, HelpCircleIcon, StarIcon, CloudRainIcon, ZapIcon, MoonIcon, SunIcon, FlowerIcon, MusicIcon, CoffeeIcon, CameraIcon, PaletteIcon, AwardIcon, LightbulbIcon, RocketIcon, ActivityIcon } from 'lucide-react'
+import { SparklesIcon, SmileIcon, FrownIcon, HeartIcon, AlertCircleIcon, HelpCircleIcon, StarIcon, CloudRainIcon, ZapIcon, MoonIcon, SunIcon, FlowerIcon, MusicIcon, CoffeeIcon, CameraIcon, PaletteIcon, AwardIcon, LightbulbIcon, RocketIcon } from 'lucide-react'
 import { MehIcon } from './icons'
-import type { Entry } from "@/app/page"
+import type { Entry } from "@/hooks/useDiaryController"
 import { useState, useEffect } from "react"
 
 import { toast } from "sonner"
 import { useAuth } from "@/hooks/useAuth"
-import { AuthDialog } from "@/components/auth-dialog"
 import { DeleteConfirmDialog } from "@/components/delete-confirm-dialog"
 
 type DiaryDetailProps = {
@@ -40,31 +39,25 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
   const [showTranslation, setShowTranslation] = useState(false)
   
   // 直接使用useAuth钩子返回的认证状态
-  const isAuthenticated = auth.isAuthenticated;
   const isAdmin = auth.isAdmin;
-  const isViewer = auth.isViewer;
-  const isGuest = !isAuthenticated;
 
   // 页面加载时获取AI分析结果
   useEffect(() => {
     const fetchAIAnalysis = async () => {
       try {
-        console.log(`正在获取日记ID ${entry.id} 的AI分析结果...`);
         const response = await fetch(`/api/diaries/${entry.id}/analysis`);
         if (!response.ok) return;
         const analysis = await response.json();
         if (analysis) {
-          console.log(`获取到AI分析结果:`, analysis);
           setAiSummary(analysis.summary);
           setAiEmotion(analysis.emotion);
         } else {
-          console.log(`没有找到日记ID ${entry.id} 的AI分析结果`);
           // 当没有分析结果时，清空本地状态
           setAiSummary(null);
           setAiEmotion(null);
         }
-      } catch (error) {
-        console.error("获取AI分析结果失败:", error);
+      } catch {
+        console.error('[diary-detail]', { operation: 'load-analysis', outcome: 'failed' });
         // 错误时清空本地状态
         setAiSummary(null);
         setAiEmotion(null);
@@ -101,14 +94,14 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
           if (errorData.error) {
             errorMessage = `API错误: ${response.status} - ${errorData.error}`;
           }
-        } catch (parseError) {
+        } catch {
           // 如果无法解析JSON，则使用文本响应
           const errorText = responseText;
           if (errorText) {
             errorMessage = `API错误: ${response.status} - ${errorText.substring(0, 100)}...`;
           }
         }
-        console.error("API错误响应:", errorMessage);
+        console.error('[diary-detail]', { operation: 'analyze', outcome: 'http-error', status: response.status });
         throw new Error(errorMessage);
       }
 
@@ -116,13 +109,11 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const errorText = responseText;
-        console.error("非JSON响应:", errorText);
+        console.error('[diary-detail]', { operation: 'analyze', outcome: 'invalid-response', status: response.status });
         throw new Error(`服务器返回非JSON响应: ${errorText.substring(0, 100)}...`);
       }
 
       const data = JSON.parse(responseText);
-      console.log(`API返回的AI分析结果:`, data);
-      
       const savedAnalysis = data.analysis;
       if (onUpdateEntry) {
         onUpdateEntry(entry.id, { subtitle: data.subtitle });
@@ -132,7 +123,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
       
       toast.success("AI分析完成！");
     } catch (error: any) {
-      console.error("AI分析失败:", error);
+      console.error('[diary-detail]', { operation: 'analyze', outcome: 'failed' });
       const errorMessage = error.message || "AI分析失败，请稍后再试";
       setError(errorMessage);
       // 恢复之前的状态
@@ -182,7 +173,7 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
       setShowTranslation(true);
       toast.success("翻译完成！");
     } catch (error: any) {
-      console.error("翻译失败:", error);
+      console.error('[diary-detail]', { operation: 'translate', outcome: 'failed' });
       const errorMessage = error.message || "翻译失败，请稍后再试";
       setError(errorMessage);
       toast.error(errorMessage);

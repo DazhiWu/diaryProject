@@ -4,6 +4,7 @@ import { createDiaryRepository, getDiaryById } from '@/lib/server/diaryAccess'
 import { assertAllowedOrigin } from '@/lib/server/origin'
 import { HttpError, readSession, requireAdmin } from '@/lib/server/session'
 import { getSupabaseAdmin } from '@/lib/server/supabaseAdmin'
+import { exactDateField, FIELD_LIMITS, readJsonBody, REQUEST_LIMITS, stringArrayField, stringField } from '@/lib/server/requestLimits'
 
 function idFrom(params: { id: string }) { const id = Number(params.id); if (!Number.isSafeInteger(id) || id < 1) throw new HttpError(400, 'Invalid diary id'); return id }
 function responseFor(error: unknown) { return error instanceof HttpError ? NextResponse.json({ error: error.message }, { status: error.status }) : NextResponse.json({ error: 'Request failed' }, { status: 500 }) }
@@ -15,9 +16,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const id = idFrom(await params); await assertAllowedOrigin(request); requireAdmin(await readSession(request.headers.get('cookie')))
-    const body = await request.json()
-    if (!body || typeof body.content !== 'string' || typeof body.subtitle !== 'string' || typeof body.date !== 'string' || !Array.isArray(body.image_paths)) throw new HttpError(400, 'Invalid diary')
-    const { data, error } = await (await getSupabaseAdmin()).from('diaryContent').update({ date: body.date, content: body.content, subtitle: body.subtitle, image_paths: body.image_paths, modifiedAt: new Date().toISOString() }).eq('id', id).select('id, date, subtitle, content, image_paths, modifiedAt, created_at').maybeSingle()
+    const body = await readJsonBody(request, REQUEST_LIMITS.diaryJson) as Record<string, unknown> | null
+    if (!body) throw new HttpError(400, 'Invalid diary')
+    const values = {
+      date: exactDateField(body.date, 'diary date'),
+      content: stringField(body.content, 'diary content', { min: 1, max: FIELD_LIMITS.diaryContent }),
+      subtitle: stringField(body.subtitle, 'diary subtitle', { max: FIELD_LIMITS.diarySubtitle }),
+      image_paths: stringArrayField(body.image_paths, 'diary image paths', FIELD_LIMITS.diaryImages),
+      modifiedAt: new Date().toISOString(),
+    }
+    const { data, error } = await (await getSupabaseAdmin()).from('diaryContent').update(values).eq('id', id).select('id, date, subtitle, content, image_paths, modifiedAt, created_at').maybeSingle()
     if (error) { if (error.code === '23505') return NextResponse.json({ error: 'A diary already exists for this date' }, { status: 409 }); throw new Error('Diary write failed') }
     if (!data) throw new HttpError(404, 'Diary not found')
     return NextResponse.json(data)

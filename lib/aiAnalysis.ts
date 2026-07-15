@@ -6,6 +6,18 @@ export type AIAnalysisResult = {
   emotion: string;
 };
 
+const MODELSCOPE_TIMEOUT_MS = 30_000;
+
+function safeErrorMetadata(error: unknown) {
+  if (!error || typeof error !== 'object') return { name: 'UnknownError' };
+  const value = error as { name?: unknown; status?: unknown; code?: unknown; response?: { status?: unknown } };
+  return {
+    name: typeof value.name === 'string' ? value.name : 'Error',
+    status: typeof value.status === 'number' ? value.status : typeof value.response?.status === 'number' ? value.response.status : undefined,
+    code: typeof value.code === 'string' ? value.code : undefined,
+  };
+}
+
 async function createModelScopeClient() {
   const apiKey = await getRuntimeEnvValue('MODELSCOPE_TOKEN_API_KEY');
 
@@ -42,8 +54,6 @@ ${content}
   "emotion": "情绪分析结果"
 }`;
 
-    console.log('发送请求到 ModelScope API...');
-
     const response = await (client.chat.completions.create as any)({
       model: 'deepseek-ai/DeepSeek-V3.2',
       messages: [
@@ -56,22 +66,16 @@ ${content}
       extra_body: {
         enable_thinking: true,
       },
-    });
+    }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
 
     const aiResponse = response.choices[0]?.message?.content;
-    const reasoningContent = response.choices[0]?.message?.reasoning_content;
-
-    if (reasoningContent) {
-      console.log('AI thinking content:', reasoningContent);
-    }
-
     if (!aiResponse) {
       throw new Error('AI分析未返回有效结果');
     }
 
     return parseAIAnalysisResult(aiResponse);
   } catch (error: any) {
-    console.error('AI分析过程中发生错误:', error);
+    console.error('[modelscope]', { operation: 'analyze', outcome: 'failed', ...safeErrorMetadata(error) });
 
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
       throw new Error('网络连接错误，请检查网络连接或稍后重试');
@@ -108,8 +112,6 @@ ${content}
 
 请直接返回英文翻译结果，不要添加任何额外的解释或说明。`;
 
-    console.log('发送翻译请求到 ModelScope API...');
-
     const response = await (client.chat.completions.create as any)({
       model: 'deepseek-ai/DeepSeek-V3.2',
       messages: [
@@ -122,7 +124,7 @@ ${content}
       extra_body: {
         enable_thinking: true,
       },
-    });
+    }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
 
     const aiResponse = response.choices[0]?.message?.content;
 
@@ -132,7 +134,7 @@ ${content}
 
     return aiResponse.trim();
   } catch (error: any) {
-    console.error('翻译过程中发生错误:', error);
+    console.error('[modelscope]', { operation: 'translate', outcome: 'failed', ...safeErrorMetadata(error) });
 
     if ((error.response && error.response.status === 401) || error.status === 401) {
       throw new Error('API认证失败，请检查API密钥是否正确');
@@ -161,8 +163,8 @@ function parseAIAnalysisResult(text: string): AIAnalysisResult {
         emotion: result.emotion,
       };
     }
-  } catch (error) {
-    console.warn('AI响应不是有效JSON格式，尝试从文本中提取信息:', text);
+  } catch {
+    console.warn('[modelscope]', { operation: 'parse-analysis', outcome: 'fallback' });
   }
 
   return extractInfoFromText(text);

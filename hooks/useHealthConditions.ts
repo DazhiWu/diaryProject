@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchHealthConditions, insertHealthCondition, deleteHealthCondition, type HealthCondition } from '@/lib/diaryApi'
+import { fetchHealthConditions, insertHealthCondition, updateHealthCondition, deleteHealthCondition, type HealthCondition } from '@/lib/diaryApi'
 
 export type { HealthCondition }
 
@@ -45,6 +45,16 @@ export const useHealthConditions = () => {
     }
   }, [])
 
+  const updateConditionById = useCallback(async (id: string, condition: Omit<HealthCondition, 'id' | 'created_at'>) => {
+    try {
+      const updated = await updateHealthCondition(id, condition)
+      setConditions(prev => prev.map(item => item.id === id ? updated : item))
+    } catch (error) {
+      console.error('Failed to update health condition:', error)
+      throw error
+    }
+  }, [])
+
   const getConditionForDate = useCallback((date: Date) => {
     return conditions.find(c => {
       const checkDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
@@ -67,6 +77,7 @@ export const useHealthConditions = () => {
     conditions,
     loading,
     addCondition,
+    updateCondition: updateConditionById,
     deleteCondition: deleteConditionById,
     getConditionForDate,
     getAllConditionsForDate,

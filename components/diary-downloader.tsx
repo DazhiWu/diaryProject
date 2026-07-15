@@ -6,7 +6,6 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 import { format } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
 
 
 interface DiaryDownloaderProps {

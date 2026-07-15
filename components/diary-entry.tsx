@@ -8,8 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { ImageIcon, XIcon } from "@/components/icons"
-import type { Entry } from "@/app/page"
-import { toast } from "sonner"
+import type { Entry } from "@/hooks/useDiaryController"
 
 type DiaryEntryProps = {
   entry?: Entry
@@ -26,7 +25,6 @@ export function DiaryEntry({ entry, onSave, onCancel }: DiaryEntryProps) {
   const [images, setImages] = useState<{ file: File | null; url: string }[]>(
     entry?.images ? entry.images.map(url => ({ file: null, url })) : []
   )
-  const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const maxDate = new Date().toISOString().split('T')[0]

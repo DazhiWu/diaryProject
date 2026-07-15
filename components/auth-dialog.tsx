@@ -33,7 +33,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
       } else {
         toast.error('密码错误，请重试。');
       }
-    } catch (error) {
+    } catch {
       toast.error('密码错误，请重试。');
     } finally {
       setIsAuthenticating(false);
