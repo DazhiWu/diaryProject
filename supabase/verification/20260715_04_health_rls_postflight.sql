@@ -1,0 +1,9 @@
+-- Read-only, fail-closed postflight for the health domain.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='health_conditions' AND c.relrowsecurity) THEN RAISE EXCEPTION 'RLS is disabled on health_conditions'; END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='health_conditions') THEN RAISE EXCEPTION 'A policy remains on health_conditions'; END IF;
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) x WHERE n.nspname='public' AND c.relname='health_conditions' AND x.grantee=0) THEN RAISE EXCEPTION 'PUBLIC privilege remains on health_conditions'; END IF;
+  IF has_table_privilege('anon','public.health_conditions','SELECT') OR has_table_privilege('anon','public.health_conditions','INSERT') OR has_table_privilege('anon','public.health_conditions','UPDATE') OR has_table_privilege('anon','public.health_conditions','DELETE') OR has_table_privilege('authenticated','public.health_conditions','SELECT') OR has_table_privilege('authenticated','public.health_conditions','INSERT') OR has_table_privilege('authenticated','public.health_conditions','UPDATE') OR has_table_privilege('authenticated','public.health_conditions','DELETE') THEN RAISE EXCEPTION 'anon/authenticated privilege remains on health_conditions'; END IF;
+  IF NOT has_table_privilege('service_role','public.health_conditions','SELECT') OR NOT has_table_privilege('service_role','public.health_conditions','INSERT') OR NOT has_table_privilege('service_role','public.health_conditions','UPDATE') OR NOT has_table_privilege('service_role','public.health_conditions','DELETE') THEN RAISE EXCEPTION 'service_role CRUD privilege lost on health_conditions'; END IF;
+END $$;

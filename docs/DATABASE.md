@@ -4,7 +4,7 @@
 
 The application uses Supabase PostgreSQL and Storage through a shared browser-visible anon client. Production metadata, policies, grants, constraints, indexes, and buckets were inspected read-only on 2026-07-12. The repository still lacks a complete migration history, so future schema changes must be exported as authoritative migrations rather than inferred from this document.
 
-The current app does not create a Supabase Auth session. `/api/auth` only returns a UI level stored in browser `localStorage`; it does not change the Supabase role. Browser and shared-server-client requests therefore use the anon role. A future approved redesign will add a server-signed Cookie Session and a server-only privileged client; that redesign is not implemented yet.
+The application does not create a Supabase Auth session. `/api/auth` authenticates the configured viewer/admin passwords and writes a signed HttpOnly Cookie; `/api/auth/session` exposes only the resolved role to the browser. Cookie-authorized server routes use the server-only service-role client, while `anonymous_messages` remains the deliberate browser anon SELECT/INSERT exception. The Cookie role does not change the Supabase role for the anon client.
 
 ## Production tables
 

@@ -1,0 +1,9 @@
+-- Read-only, fail-closed postflight for the audio domain.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='audio_messages' AND c.relrowsecurity) THEN RAISE EXCEPTION 'RLS is disabled on audio_messages'; END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='audio_messages') THEN RAISE EXCEPTION 'A policy remains on audio_messages'; END IF;
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) x WHERE n.nspname='public' AND c.relname='audio_messages' AND x.grantee=0) THEN RAISE EXCEPTION 'PUBLIC privilege remains on audio_messages'; END IF;
+  IF has_table_privilege('anon','public.audio_messages','SELECT') OR has_table_privilege('anon','public.audio_messages','INSERT') OR has_table_privilege('anon','public.audio_messages','UPDATE') OR has_table_privilege('anon','public.audio_messages','DELETE') OR has_table_privilege('authenticated','public.audio_messages','SELECT') OR has_table_privilege('authenticated','public.audio_messages','INSERT') OR has_table_privilege('authenticated','public.audio_messages','UPDATE') OR has_table_privilege('authenticated','public.audio_messages','DELETE') THEN RAISE EXCEPTION 'anon/authenticated privilege remains on audio_messages'; END IF;
+  IF NOT has_table_privilege('service_role','public.audio_messages','SELECT') OR NOT has_table_privilege('service_role','public.audio_messages','INSERT') OR NOT has_table_privilege('service_role','public.audio_messages','UPDATE') OR NOT has_table_privilege('service_role','public.audio_messages','DELETE') THEN RAISE EXCEPTION 'service_role CRUD privilege lost on audio_messages'; END IF;
+END $$;
