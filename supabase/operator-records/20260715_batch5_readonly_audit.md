@@ -28,6 +28,8 @@
 
 **Complete-result/process-exit checkpoint:** hardened runner ID `2b3be848-309b-43ea-8ad7-cfc0f59f4eec` passed every direct Data API, Storage-persistence, and proxy assertion and reported cleanup complete. Independent read-only checks found zero tagged rows, zero audit-year summary, and zero matching Storage objects. The Node process retained client keep-alive handles after printing the complete result and was manually terminated; the runner now exits explicitly after cleanup so the final approval rerun can produce a clean exit code. No production policy, grant, bucket, migration, or Worker changed.
 
+**Final pre-approval checkpoint:** runner ID `2ef26a54-0c79-49ff-9a54-e46397dab65b` exited `0` with all Data API, Storage-persistence, and proxy assertions passed and cleanup complete. Independent read-only checks returned zero tagged rows, zero audit-year summary, and zero matching Storage objects. The immediate pre-approval audit still showed three public target buckets, exactly two Storage object policies, no Storage bucket policy, ten target tables with RLS enabled, eleven target policies, and no column ACLs. Worker version `c41d583a-af78-426e-9808-369424df1531` still serves 100% of production. Local workerd Cookie login remains a documented fail-closed environment exception because local preview lacks Cloudflare's production client-IP context; the same deployed guest/viewer/admin login and read-role paths passed. No Batch 5 production mutation has occurred; final phased-execution approval remains pending.
+
 ## Storage
 
 - `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages` are all `public = true`; all have no configured MIME or size limit.

@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-**Status:** Blocked in pre-mutation checks on 2026-07-15. Production authorization exists, but phased execution is not approved until the corrected direct-access runner completes successfully and receives final approval.
+**Status:** Pre-mutation checks completed on 2026-07-15; final phased-execution approval remains pending. The only exception requiring approver acceptance is that local workerd Cookie login fails closed without Cloudflare's production client-IP context, while deployed guest/viewer/admin Cookie regression passed.
 
 **Goal:** Make the three diary media buckets private and remove direct anon access to sensitive application data, without changing the existing Cookie-authorized API contracts.
 
@@ -62,6 +62,7 @@ All items must be attached to the production change record before implementation
 - Corrected runner ID `41e68d22-ab22-4b58-a969-b5062af30738` then confirmed anon baseline access through the yearly-summary child tables before the existing media-invariants trigger rejected its nonconforming yearly-image path. Cleanup reported complete; independent read-only checks found zero run-ID rows, zero matching Storage objects, and no four-digit audit-year summary. The runner now uses the deployed `yearly/<positive-integer>.webp` and root-level `<name>.mp3` path contracts. A new checksum and successful full rerun remain required.
 - Media-correct runner ID `df15eee6-0617-4d41-9b60-a7d3fa9f0b6f` completed the Data API and Storage baseline rows, then stopped because the production latest-five diary window contained no image-bearing row and the runner's own future diary fixture had no image. Cleanup reported complete; independent checks returned zero tagged rows and objects. The runner now provisions a valid, uniquely owned diary image for its latest-five fixture, uses an existing image only for the historical outside-window denial/viewer checks, and verifies persistence after nominally successful RLS/Storage negative operations.
 - Hardened runner ID `2b3be848-309b-43ea-8ad7-cfc0f59f4eec` passed every Data API, Storage-persistence, and proxy assertion and reported cleanup complete. Independent read-only verification found zero tagged rows, zero audit-year summary, and zero matching Storage objects. The Node process remained open only because client keep-alive handles were still active and was manually terminated after recording the complete result; the runner now exits explicitly after successful cleanup. One final exit-zero rerun remains required before mutation approval.
+- Final pre-change runner ID `2ef26a54-0c79-49ff-9a54-e46397dab65b` exited `0` with every assertion passed and cleanup complete. Independent read-only verification found zero tagged rows, zero audit-year summary, and zero matching Storage objects. The immediate pre-approval audit reconfirmed three public target buckets, exactly two Storage object policies, no Storage bucket policy, ten target tables with RLS enabled, eleven target public-table policies, and no column ACLs. Cloudflare still serves Worker version `c41d583a-af78-426e-9808-369424df1531` at 100%. No Batch 5 production mutation has occurred.
 
 ## Verification commands
 
