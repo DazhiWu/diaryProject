@@ -34,6 +34,8 @@
 
 **Revised Storage boundary:** the new forward migration drops only the two audited Storage policies and preserves platform-owned relation ACLs. Both `storage.objects` and `storage.buckets` have RLS enabled, so absence of anon/authenticated policies is the Storage API row-operation boundary. Revised postflights fail closed on any remaining policy, disabled RLS, unexpected ACL grantor/count, lost service-role access, or direct-access regression. The rollback now recreates only the two original policies. Production retry requires new checksum review and explicit approval.
 
+**Revised Storage policy phase completed:** after explicit approval, `batch5_private_media_storage_policies_v2` applied and its fail-closed postflight passed. Behavior run `e11cedab-49d3-4192-9ea3-3d6e185d4d02` exited `0`: anon list/upload/overwrite were denied; nominal delete responses did not remove seeded objects; direct public URLs remained `200` while buckets were public; diary/yearly/audio proxies returned the required `200`/`403`/`200`/`200`/`206`; cleanup completed. Independent verification found zero tagged diary rows and Storage objects, zero Storage policies, two RLS-enabled Storage relations, three public target buckets, 16 `supabase_storage_admin` ACL entries each for anon/authenticated/service_role, and zero unexpected ACL grantors. No bucket, application-table RLS/grant, or Worker change occurred. Private-bucket updates require separate approval.
+
 ## Storage
 
 - `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages` are all `public = true`; all have no configured MIME or size limit.
