@@ -40,11 +40,11 @@ This is a personal diary application built with Next.js and Supabase. It support
 - Images are compressed to WebP in the browser, uploaded with insert-only semantics, and referenced by relative paths. Yearly images use unique object paths.
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
 - Diary and yearly media read through fixed-bucket proxies; diary inherits latest-five/viewer/admin access, yearly is readable by all roles, and audio is admin-only with single-range streaming. All three media buckets are private; browser anon Storage access is denied.
-- Batch 3 completed media invariants on 2026-07-13, and Batch 4 completed authorized media/health/yearly APIs plus production regression on 2026-07-15. Batch 5 is executing by separately approved domains: Storage and diary/AI are complete; health, yearly-summary, audio, and anonymous messages remain pending.
+- Batch 3 completed media invariants on 2026-07-13, Batch 4 completed authorized media/health/yearly APIs, and Batch 5 completed production Storage plus table least-privilege hardening on 2026-07-15. Final Batch 5 regression and cleanup passed.
 
 ## Database and storage
 
-Supabase stores diary, AI, health, message, audio, and yearly-summary records. The three media buckets are private with no anon Storage object policy; diary and AI tables have no anon/authenticated grants or policies; anonymous messages still allow SELECT/INSERT only; the remaining health/yearly/audio tables retain their pre-Batch-5 permissive policies until separately approved. Batch 3 introduced and production-applied media invariants; read `docs/DATABASE.md` before altering any database or Storage boundary.
+Supabase stores diary, AI, health, message, audio, and yearly-summary records. The three media buckets are private with no anon Storage object policy. Sensitive application tables have no anon/authenticated grants or policies; `anonymous_messages` is the sole browser-direct exception with anon SELECT/INSERT only. Batch 3 introduced and production-applied media invariants; read `docs/DATABASE.md` before altering any database or Storage boundary.
 
 Read [`docs/DATABASE.md`](docs/DATABASE.md) before changing queries, tables, RLS, buckets, paths, or access boundaries.
 
@@ -97,10 +97,10 @@ pnpm run deploy
 
 - TypeScript build errors are ignored by `next.config.mjs`.
 - The deliberate browser anon message path relies on RLS; UI roles are not authorization.
-- Cookie roles are enforced for diary APIs and media reads, but remaining direct anon write paths are not yet protected by those Cookies.
+- Cookie roles are enforced for protected APIs and media reads; anonymous-message insert remains intentionally public within its length constraint.
 - Public unoptimized images can affect bandwidth/performance.
-- Health, yearly-summary, and audio tables still have permissive public ALL policies pending their separately approved Batch 5 phases; their replacement APIs are already live.
-- Supabase security advisors must be rerun after all Batch 5 domains; the public SECURITY DEFINER function remains a separate review item.
+- Supabase advisors report expected no-policy information for locked RLS tables and an intentional permissive anon INSERT warning for anonymous messages.
+- `enforce_diary_image_invariants()` and `rls_auto_enable()` remain SECURITY DEFINER functions executable by anon/authenticated and require a separate dependency/security review.
 - `pnpm lint` lacks a direct `eslint` dependency and needs clean-install confirmation.
 - Cloudflare Workers Builds Git repository/branch/commands still require Dashboard confirmation because the current OAuth token cannot read the Builds API.
 

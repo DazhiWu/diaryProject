@@ -171,7 +171,7 @@ Account identity, token scopes, and production approvals need confirmation outsi
 - Guest/viewer/admin API and UI access. Cookie authorization does not replace RLS for the domains still using the anon client.
 - Authorized Supabase read/create/update/delete under production policies.
 - Diary image proxy display, yearly-image proxy display, and admin audio Range streaming. Batch 3 production verification on 2026-07-13 returned `200 image/webp` for a viewer diary image and `206` with `Content-Range`/`Accept-Ranges` for admin audio.
-- Batch 4 media writes, health, and yearly-summary metadata use authorized APIs. Batch 5 production verification on 2026-07-15 confirmed private buckets, denied direct anon Storage access, unchanged diary/yearly/audio proxies, revoked diary/AI anon Data API access, guest/viewer/admin diary behavior, admin-only AI reads, and admin CSV export. Remaining table domains require separate approval.
+- Batch 4 media writes, health, and yearly-summary metadata use authorized APIs. Batch 5 production verification on 2026-07-15 confirmed private buckets, denied direct anon Storage access, unchanged diary/yearly/audio proxies, denied anon access to every sensitive table, health/yearly admin CRUD, guest/viewer/admin role boundaries, admin CSV export, and the anon-only anonymous-message exception. All Batch 5 domains are complete.
 - AI analysis and translation with the runtime token.
 - CSV export from `/api/diary-download`.
 - Browser console/network errors and Cloudflare logs/observability.

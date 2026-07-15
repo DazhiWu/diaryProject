@@ -54,22 +54,23 @@ The inspected Supabase project also contains `diaryInfo` and `rss_articles`. Cur
 
 ## Row Level Security and grants
 
-Batch 5 is being applied to production one approved domain at a time. `diaryContent` and `diary_AI_analysis` now have no anon/authenticated table grants and no RLS policies; RLS remains enabled and service-role CRUD remains available to the authorized APIs. Health, yearly-summary, audio, and anonymous-message grants/policies retain their pre-change state until their own phases are approved.
+Batch 5 completed in production on 2026-07-15. `diaryContent`, `diary_AI_analysis`, `health_conditions`, the five yearly-summary tables, and `audio_messages` have RLS enabled with no policies and no anon/authenticated table grants. Service-role CRUD remains available to the authorized APIs.
 
 `anonymous_messages` is intentionally limited to:
 
-- `SELECT` for `anon` and `authenticated`.
-- `INSERT` for `anon` and `authenticated`, subject to the 2–1000 character check.
-- No UPDATE or DELETE policy, so client updates/deletes are blocked.
+- `SELECT` and `INSERT` table grants for `anon` only.
+- Exact anon-only SELECT and INSERT policies; INSERT remains subject to the trimmed 2–1000 character check.
+- No authenticated grant and no anon UPDATE or DELETE grant/policy.
 
-Health, yearly-summary, and audio tables still have a `PUBLIC FOR ALL USING (true)` policy. This permits direct anon reads and writes despite guest/viewer/admin UI restrictions, although current application clients use the service-role server boundary. `anonymous_messages` remains the deliberate anon SELECT/INSERT exception. Each remaining Batch 5 domain requires its own postflight and deployed role regression before the next domain starts.
+The final direct-access matrix returned `401` for anon SELECT and INSERT across all nine sensitive tables. `anonymous_messages` returned `201` for INSERT and `200` for SELECT, while UPDATE and DELETE returned `401` and did not persist. The independent ACL check found only the two intended anon privileges, no authenticated privilege, and complete service-role CRUD.
 
-The pre-Batch-5 Supabase security-advisor findings still requiring a final rerun include:
+The final Supabase security-advisor review reports:
 
-- broad permissive ALL policies on the not-yet-migrated health/yearly/audio tables;
-- a `public.rls_auto_enable()` SECURITY DEFINER function executable by anon/authenticated;
+- informational `rls_enabled_no_policy` findings for locked RLS tables; these are the intended deny-by-default state;
+- an always-true anon INSERT warning on `anonymous_messages`; this is intentional and bounded by the validated length constraint;
+- `public.enforce_diary_image_invariants()` and `public.rls_auto_enable()` SECURITY DEFINER functions executable by anon/authenticated, which remain outside Batch 5 and require separate review.
 
-These findings are tracked by the approved design in [`superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md`](superpowers/specs/2026-07-12-stateless-session-backend-authorization-design.md). Apply only the reviewed, separately approved domain migrations and rerun advisors after the final phase. Advisor remediation: [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter).
+Performance advisors separately report an unindexed `diary_image_paths.diary_id` foreign key and no primary key on `private.diary_image_paths_backup_20260713`. These are not Batch 5 access-control regressions. Advisor remediation: [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter).
 
 ## Storage
 
@@ -124,7 +125,7 @@ Never substitute a service-role key for `SUPABASE_ANON_KEY`. The privileged clie
 - `test_extra/CREATE_HEALTH_CONDITIONS_TABLE.sql`: partial historical health schema/policies.
 - `test_extra/CREATE_ANONYMOUS_MESSAGE_TABLE.sql`: anonymous-message schema with SELECT/INSERT-only policies and the content-length check.
 
-These files are not a complete migration set. Applied production migrations include `restrict_anonymous_messages_public_access`, the 2026-07-13 `media_invariants` migration, and the approved Batch 5 Storage plus diary/AI phases.
+These files are not a complete migration set. Applied production migrations include `restrict_anonymous_messages_public_access`, the 2026-07-13 `media_invariants` migration, and every approved Batch 5 Storage/table phase through `batch5_anonymous_messages_least_privilege`.
 
 ## Change checklist
 
