@@ -26,6 +26,8 @@
 
 **Proxy-fixture stop:** media-correct runner ID `df15eee6-0617-4d41-9b60-a7d3fa9f0b6f` completed all direct Data API and Storage baseline rows, then stopped before proxy assertions because no production diary in the current latest-five window had an image and the runner's future diary fixture had no image. Cleanup reported complete; an independent query found zero tagged rows and Storage objects. The runner now creates a valid uniquely owned diary image for its latest-five fixture and uses an existing image only for the historical outside-window guest denial and viewer success checks. It also verifies persistence after anonymous-message and Storage negative operations instead of relying on response status alone. No production policy, grant, bucket, migration, or Worker changed.
 
+**Complete-result/process-exit checkpoint:** hardened runner ID `2b3be848-309b-43ea-8ad7-cfc0f59f4eec` passed every direct Data API, Storage-persistence, and proxy assertion and reported cleanup complete. Independent read-only checks found zero tagged rows, zero audit-year summary, and zero matching Storage objects. The Node process retained client keep-alive handles after printing the complete result and was manually terminated; the runner now exits explicitly after cleanup so the final approval rerun can produce a clean exit code. No production policy, grant, bucket, migration, or Worker changed.
+
 ## Storage
 
 - `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages` are all `public = true`; all have no configured MIME or size limit.

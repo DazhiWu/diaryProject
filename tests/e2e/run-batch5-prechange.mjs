@@ -137,3 +137,5 @@ try {
   console.log(JSON.stringify(result))
   if (result.cleanup !== 'complete') process.exitCode = 1
 }
+
+process.exit(process.exitCode ?? 0)
