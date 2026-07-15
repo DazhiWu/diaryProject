@@ -763,13 +763,19 @@ export default function DiaryApp() {
                             setView("detail");
                           } else {
                             // 虽然allEntries显示有日记，但实际查询没找到
-                            setView("list");
-                            toast.info(`未找到${date.toLocaleDateString()}的日记详情`, {
-                              action: {
-                                label: "创建日记",
-                                onClick: () => setView("new")
-                              }
-                            });
+                            if (isAdmin) {
+                              setView("list");
+                              toast.info(`未找到${date.toLocaleDateString()}的日记详情`, {
+                                action: {
+                                  label: "创建日记",
+                                  onClick: () => setView("new")
+                                }
+                              });
+                            } else if (isGuest) {
+                              toast.error('暂无权限查看');
+                            } else {
+                              toast.info('当天没有日记内容');
+                            }
                           }
                         } catch (error) {
                           console.error('Error fetching diary entry by date:', error);
@@ -784,9 +790,19 @@ export default function DiaryApp() {
                     } else {
                       // 访客无权查看该日记
                       setLoading(false);
-                      toast.error('您没有权限查看此日记，请先进行认证');
+                      toast.error('暂无权限查看');
                     }
                   } else {
+                    if (isGuest) {
+                      toast.error('暂无权限查看')
+                      return
+                    }
+
+                    if (!isAdmin) {
+                      toast.info('当天没有日记内容')
+                      return
+                    }
+
                     // 如果该日期确实没有日记
                     setView("list")
                     toast.info(`没有找到${date.toLocaleDateString()}的日记，是否创建新日记？`, {
