@@ -24,6 +24,8 @@
 
 **Media-path correctness stop:** corrected runner ID `41e68d22-ab22-4b58-a969-b5062af30738` reached the yearly-image fixture after successful anon baseline operations through the yearly-summary child tables. The deployed media-invariants trigger rejected the runner's nonconforming yearly path. Cleanup reported complete; independent read-only checks found zero tagged target-table rows, zero matching Storage objects, and no remaining four-digit audit-year summary. The runner was corrected to use the deployed `yearly/<positive-integer>.webp` and root-level `<name>.mp3` contracts. No production policy, grant, bucket, migration, or Worker changed.
 
+**Proxy-fixture stop:** media-correct runner ID `df15eee6-0617-4d41-9b60-a7d3fa9f0b6f` completed all direct Data API and Storage baseline rows, then stopped before proxy assertions because no production diary in the current latest-five window had an image and the runner's future diary fixture had no image. Cleanup reported complete; an independent query found zero tagged rows and Storage objects. The runner now creates a valid uniquely owned diary image for its latest-five fixture and uses an existing image only for the historical outside-window guest denial and viewer success checks. It also verifies persistence after anonymous-message and Storage negative operations instead of relying on response status alone. No production policy, grant, bucket, migration, or Worker changed.
+
 ## Storage
 
 - `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages` are all `public = true`; all have no configured MIME or size limit.

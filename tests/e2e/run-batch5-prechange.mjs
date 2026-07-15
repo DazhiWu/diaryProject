@@ -12,14 +12,15 @@ const tag = `batch5-audit-${runId}`
 const url = process.env.SUPABASE_URL
 const anon = createClient(url, process.env.SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
 const admin = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
-const result = { runId, storage: {}, dataApi: {}, proxies: {}, cleanup: 'pending' }
-const created = { diaryId: null, summaryId: null }
+const result = { runId, storage: {}, dataApi: {}, proxies: {}, assertions: 'pending', cleanup: 'pending' }
+const created = { diaryId: null, diaryImagePath: null, summaryId: null }
 const summaryYear = String(9000 + (Number.parseInt(runId.slice(0, 8), 16) % 1000))
 const yearlyImagePath = `yearly/${Number.parseInt(runId.slice(0, 12), 16)}.webp`
 const audioPath = `batch5-audit-${runId}.mp3`
-const code = (value) => value.error ? (value.status ?? value.error.status ?? 'error') : value.status
+const code = (value) => value.error ? (value.status ?? value.error.status ?? 'error') : (value.status ?? 'ok')
 const record = (group, name, value) => { group[name] = code(value); return value }
 const must = (value, label) => { if (value.error) throw new Error(`${label}: ${value.error.message}`); return value.data }
+const expect = (condition, label) => { if (!condition) throw new Error(`baseline assertion failed: ${label}`) }
 
 async function cookie(password) {
   const response = await fetch(`${process.env.APP_ORIGIN}/api/auth`, { method: 'POST', headers: { origin: process.env.APP_ORIGIN, 'content-type': 'application/json' }, body: JSON.stringify({ password }) })
@@ -31,7 +32,11 @@ async function proxy(urlPath, headers = {}) { const response = await fetch(`${pr
 
 try {
   const diaryDate = `2099-12-${String((Number.parseInt(runId.slice(0, 2), 16) % 28) + 1).padStart(2, '0')}`
-  const diary = record(result.dataApi, 'diaryContent.insert', await anon.from('diaryContent').insert({ date: diaryDate, subtitle: tag, content: tag, image_paths: [] }).select('id').single())
+  const diarySequence = (Number.parseInt(runId.slice(2, 10), 16) % 1_000_000) + 1
+  const diaryImagePath = `${diaryDate.slice(0, 4)}/${diaryDate.replaceAll('-', '')}_${diarySequence}.webp`
+  must(await admin.storage.from('2024To2025_diary_images').upload(diaryImagePath, new Blob(['batch5']), { contentType: 'image/webp', upsert: false }), 'diary proxy image fixture')
+  created.diaryImagePath = diaryImagePath
+  const diary = record(result.dataApi, 'diaryContent.insert', await anon.from('diaryContent').insert({ date: diaryDate, subtitle: tag, content: tag, image_paths: [diaryImagePath] }).select('id').single())
   const diaryId = must(diary, 'anon diary insert').id
   created.diaryId = diaryId
   record(result.dataApi, 'diaryContent.select', await anon.from('diaryContent').select('id').eq('id', diaryId).limit(1))
@@ -61,7 +66,11 @@ try {
   const messageId = must(message, 'anon message insert').id
   record(result.dataApi, 'anonymous_messages.select', await anon.from('anonymous_messages').select('id').eq('id', messageId).limit(1))
   record(result.dataApi, 'anonymous_messages.update', await anon.from('anonymous_messages').update({ content: `changed ${tag}` }).eq('id', messageId))
+  const afterUpdate = must(await admin.from('anonymous_messages').select('content').eq('id', messageId).single(), 'verify anonymous update')
+  result.dataApi['anonymous_messages.updatePersisted'] = afterUpdate.content === `changed ${tag}`
   record(result.dataApi, 'anonymous_messages.delete', await anon.from('anonymous_messages').delete().eq('id', messageId))
+  const afterDelete = must(await admin.from('anonymous_messages').select('id').eq('id', messageId).maybeSingle(), 'verify anonymous delete')
+  result.dataApi['anonymous_messages.existsAfterDelete'] = afterDelete !== null
 
   for (const bucket of ['2024To2025_diary_images', '2025_Summary_Images', 'audio_messages']) {
     const path = `batch5-audit/${runId}/new.txt`
@@ -70,13 +79,17 @@ try {
     group.directPublicObject = (await fetch(anon.storage.from(bucket).getPublicUrl(path).data.publicUrl)).status
     record(group, 'list', await anon.storage.from(bucket).list(`batch5-audit/${runId}`))
     record(group, 'overwrite', await anon.storage.from(bucket).upload(path, new Blob(['batch5-overwrite']), { contentType: 'text/plain', upsert: true }))
+    const afterOverwrite = must(await admin.storage.from(bucket).download(path), `${bucket} overwrite verification`)
+    group.overwritePersisted = await afterOverwrite.text() === 'batch5-overwrite'
     record(group, 'delete', await anon.storage.from(bucket).remove([path]))
+    const afterDeleteList = must(await admin.storage.from(bucket).list(`batch5-audit/${runId}`), `${bucket} delete verification`)
+    group.existsAfterDelete = afterDeleteList.some((item) => item.name === 'new.txt')
   }
 
   const adminCookie = await cookie(process.env.AUTH_PASSWORD_ADMIN)
   const viewerCookie = await cookie(process.env.AUTH_PASSWORD_VIEWER)
-  const diaries = must(await admin.from('diaryContent').select('id,image_paths').order('date', { ascending: false }).limit(20), 'diary proxy fixtures')
-  const current = diaries.slice(0, 5).find((row) => row.image_paths?.[0])
+  const diaries = must(await admin.from('diaryContent').select('id,image_paths').order('date', { ascending: false }).limit(50), 'diary proxy fixtures')
+  const current = diaries.slice(0, 5).find((row) => row.id === created.diaryId && row.image_paths?.[0])
   const old = diaries.slice(5).find((row) => row.image_paths?.[0])
   if (!current || !old) throw new Error('insufficient diary image fixtures')
   result.proxies.diaryGuestNewest = await proxy(`/api/media/diary?path=${encodeURIComponent(current.image_paths[0])}`)
@@ -86,6 +99,22 @@ try {
   result.proxies.yearlyGuest = await proxy(`/api/media/yearly?path=${encodeURIComponent(yearly.storage_path)}`)
   const audioFixture = must(await admin.from('audio_messages').select('audio_path').limit(1).single(), 'audio proxy fixture')
   result.proxies.audioAdminRange = await proxy(`/api/media/audio?path=${encodeURIComponent(audioFixture.audio_path)}`, { cookie: adminCookie, range: 'bytes=0-0' })
+
+  expect(result.dataApi['anonymous_messages.updatePersisted'] === false, 'anonymous message update must not persist')
+  expect(result.dataApi['anonymous_messages.existsAfterDelete'] === true, 'anonymous message delete must not persist')
+  for (const [bucket, group] of Object.entries(result.storage)) {
+    expect(group.upload === 'ok', `${bucket} anon upload baseline`)
+    expect(group.directPublicObject === 200, `${bucket} public object baseline`)
+    expect(group.list === 'ok', `${bucket} anon list baseline`)
+    expect(group.overwritePersisted === false, `${bucket} overwrite must not persist`)
+    expect(group.existsAfterDelete === true, `${bucket} delete must not persist`)
+  }
+  expect(result.proxies.diaryGuestNewest === 200, 'guest current diary image proxy')
+  expect(result.proxies.diaryGuestOld === 403, 'guest historical diary image proxy')
+  expect(result.proxies.diaryViewerOld === 200, 'viewer historical diary image proxy')
+  expect(result.proxies.yearlyGuest === 200, 'guest yearly image proxy')
+  expect(result.proxies.audioAdminRange === 206, 'admin audio range proxy')
+  result.assertions = 'passed'
 } finally {
   const cleanup = []
   for (const bucket of ['2024To2025_diary_images', '2025_Summary_Images', 'audio_messages']) {
@@ -95,6 +124,7 @@ try {
   cleanup.push(created.diaryId
     ? await admin.from('diaryContent').delete().eq('id', created.diaryId)
     : await admin.from('diaryContent').delete().like('subtitle', `%${tag}%`))
+  if (created.diaryImagePath) cleanup.push(await admin.storage.from('2024To2025_diary_images').remove([created.diaryImagePath]))
   cleanup.push(await admin.from('health_conditions').delete().like('condition', `%${tag}%`))
   cleanup.push(await admin.from('ai_analysis_opinions').delete().like('content', `%${tag}%`))
   cleanup.push(await admin.from('ai_analysis_sections').delete().like('title', `%${tag}%`))

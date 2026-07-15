@@ -14,7 +14,7 @@ Run the pre-change rows before approval and after every approved phase. Record o
 | Identity | Bucket or proxy | Request | Before policy lock-down | After policy lock-down | After private buckets |
 |---|---|---|---:|---:|---:|
 | Guest | diary image | newest diary-image proxy | 200 | 200 | 200 |
-| Guest | diary image | sixth diary-image proxy | 403 | 403 | 403 |
+| Guest | diary image | historical diary-image proxy outside the latest-five window | 403 | 403 | 403 |
 | Viewer | diary image | historical diary-image proxy | 200 | 200 | 200 |
 | Guest/viewer/admin | yearly image | yearly-summary image proxy | 200 | 200 | 200 |
 | Admin | audio | audio proxy with one Range | 206 + `Content-Range` | 206 + `Content-Range` | 206 + `Content-Range` |
