@@ -22,6 +22,8 @@
 
 **Schema-correctness stop:** runner ID `4fed039b-5c54-416e-ac2e-f9a220abc5cd` reached the production Data API and confirmed the initial anon diary, AI, and health baseline operations. It then stopped because the runner supplied a long audit tag to the four-character `yearly_summaries.year` column. Cleanup reported complete; a separate read-only query returned zero matching rows in all ten target tables and zero matching Storage objects. The runner was corrected to use a four-digit audit year and ordered, ID-based cleanup. No Storage policy, bucket visibility, table policy, grant, migration, or Worker deployment changed.
 
+**Media-path correctness stop:** corrected runner ID `41e68d22-ab22-4b58-a969-b5062af30738` reached the yearly-image fixture after successful anon baseline operations through the yearly-summary child tables. The deployed media-invariants trigger rejected the runner's nonconforming yearly path. Cleanup reported complete; independent read-only checks found zero tagged target-table rows, zero matching Storage objects, and no remaining four-digit audit-year summary. The runner was corrected to use the deployed `yearly/<positive-integer>.webp` and root-level `<name>.mp3` contracts. No production policy, grant, bucket, migration, or Worker changed.
+
 ## Storage
 
 - `2024To2025_diary_images`, `2025_Summary_Images`, and `audio_messages` are all `public = true`; all have no configured MIME or size limit.

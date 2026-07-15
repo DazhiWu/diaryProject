@@ -15,6 +15,8 @@ const admin = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: {
 const result = { runId, storage: {}, dataApi: {}, proxies: {}, cleanup: 'pending' }
 const created = { diaryId: null, summaryId: null }
 const summaryYear = String(9000 + (Number.parseInt(runId.slice(0, 8), 16) % 1000))
+const yearlyImagePath = `yearly/${Number.parseInt(runId.slice(0, 12), 16)}.webp`
+const audioPath = `batch5-audit-${runId}.mp3`
 const code = (value) => value.error ? (value.status ?? value.error.status ?? 'error') : value.status
 const record = (group, name, value) => { group[name] = code(value); return value }
 const must = (value, label) => { if (value.error) throw new Error(`${label}: ${value.error.message}`); return value.data }
@@ -50,10 +52,10 @@ try {
   record(result.dataApi, 'ai_analysis_sections.select', await anon.from('ai_analysis_sections').select('id').eq('id', sectionId).limit(1))
   const opinion = record(result.dataApi, 'ai_analysis_opinions.insert', await anon.from('ai_analysis_opinions').insert({ ai_analysis_section_id: sectionId, content: tag, analysis: tag }).select('id').single())
   record(result.dataApi, 'ai_analysis_opinions.select', await anon.from('ai_analysis_opinions').select('id').eq('id', must(opinion, 'anon opinion insert').id).limit(1))
-  const image = record(result.dataApi, 'yearly_images.insert', await anon.from('yearly_images').insert({ yearly_summary_id: summaryId, storage_path: `batch5-audit/${runId}/yearly.webp`, alt: tag }).select('id').single())
+  const image = record(result.dataApi, 'yearly_images.insert', await anon.from('yearly_images').insert({ yearly_summary_id: summaryId, storage_path: yearlyImagePath, alt: tag }).select('id').single())
   record(result.dataApi, 'yearly_images.select', await anon.from('yearly_images').select('id').eq('id', must(image, 'anon image insert').id).limit(1))
 
-  const audio = record(result.dataApi, 'audio_messages.insert', await anon.from('audio_messages').insert({ title: tag, author: tag, date: '2099-12-01', duration: 1, audio_path: `batch5-audit/${runId}/audio.mp3` }).select('id').single())
+  const audio = record(result.dataApi, 'audio_messages.insert', await anon.from('audio_messages').insert({ title: tag, author: tag, date: '2099-12-01', duration: 1, audio_path: audioPath }).select('id').single())
   record(result.dataApi, 'audio_messages.select', await anon.from('audio_messages').select('id').eq('id', must(audio, 'anon audio insert').id).limit(1))
   const message = record(result.dataApi, 'anonymous_messages.insert', await anon.from('anonymous_messages').insert({ content: `ok ${tag}` }).select('id').single())
   const messageId = must(message, 'anon message insert').id
