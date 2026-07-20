@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
 import { getRuntimeEnvValue } from '@/lib/runtimeEnv';
+import { reserveModelScopeApiCall } from '@/lib/server/modelScopeQuota';
+import { HttpError } from '@/lib/server/session';
 
 export type AIAnalysisResult = {
   summary: string;
@@ -28,12 +30,14 @@ async function createModelScopeClient() {
   return new OpenAI({
     baseURL: 'https://api-inference.modelscope.cn/v1',
     apiKey,
+    maxRetries: 0,
   });
 }
 
 export async function analyzeDiaryWithAI(content: string): Promise<AIAnalysisResult> {
   try {
     const client = await createModelScopeClient();
+    await reserveModelScopeApiCall();
 
     const prompt = `请仔细分析以下日记内容，先进行深度思考，然后提供两个输出：
 1. 标题：根据内容生成一个30字以内的简洁标题
@@ -75,6 +79,7 @@ ${content}
 
     return parseAIAnalysisResult(aiResponse);
   } catch (error: any) {
+    if (error instanceof HttpError) throw error;
     console.error('[modelscope]', { operation: 'analyze', outcome: 'failed', ...safeErrorMetadata(error) });
 
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
@@ -104,6 +109,7 @@ ${content}
 export async function translateDiaryContent(content: string): Promise<string> {
   try {
     const client = await createModelScopeClient();
+    await reserveModelScopeApiCall();
 
     const prompt = `请将以下中文日记内容准确、流畅地翻译成英文。保持原文的语气和情感，确保翻译质量。
 
@@ -134,6 +140,7 @@ ${content}
 
     return aiResponse.trim();
   } catch (error: any) {
+    if (error instanceof HttpError) throw error;
     console.error('[modelscope]', { operation: 'translate', outcome: 'failed', ...safeErrorMetadata(error) });
 
     if ((error.response && error.response.status === 401) || error.status === 401) {

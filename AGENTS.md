@@ -2,14 +2,14 @@
 
 ## Project overview
 
-This is a personal diary application built with Next.js and Supabase. It supports diary CRUD, image/audio uploads, search/calendar views, health tracking, anonymous messages, CSV export, and yearly summaries. Server API routes call a ModelScope-hosted DeepSeek model for title/emotion analysis and translation. Guest, viewer, and admin UI modes use simple password checks.
+This is a personal diary application built with Next.js and Supabase. It supports diary CRUD, image/audio uploads, search/calendar views, health tracking, anonymous messages, CSV export, yearly summaries, and an admin-only private knowledge index. Server API routes call ModelScope-hosted DeepSeek for title/emotion analysis and translation, and Qwen3-Embedding-0.6B for diary semantic search. Guest, viewer, and admin UI modes use simple password checks.
 
 ## Tech stack
 
 - Next.js 16 App Router, React 18, strict TypeScript, Tailwind CSS 4
 - pnpm 10.20.0 and Node.js 22+
 - Supabase PostgreSQL and Storage
-- ModelScope OpenAI-compatible API with `deepseek-ai/DeepSeek-V3.2`
+- ModelScope OpenAI-compatible API with `deepseek-ai/DeepSeek-V3.2` and `Qwen/Qwen3-Embedding-0.6B`
 - Cloudflare Workers through OpenNext and Wrangler
 
 ## Development environment
@@ -23,7 +23,7 @@ This is a personal diary application built with Next.js and Supabase. It support
 ## Project structure
 
 - `app/`: App Router application, styles, and API routes.
-- `components/`: business and UI components.
+- `components/`: business and UI components, including the administrator knowledge-base view.
 - `hooks/`: authentication state and health-condition hooks.
 - `lib/`: Supabase access, business APIs, media, environment lookup, AI, and utilities.
 - `public/`: static placeholder assets.
@@ -41,12 +41,14 @@ This is a personal diary application built with Next.js and Supabase. It support
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
 - Diary and yearly media read through fixed-bucket proxies; diary inherits latest-five/viewer/admin access, yearly is readable by all roles, and audio is admin-only with single-range streaming. All three media buckets are private; browser anon Storage access is denied.
 - Yearly routes scope every nested event, section, opinion, and image mutation to the summary identified by the URL year. Request parsers centrally enforce byte, character, date, array, file-size, MIME, and extension limits before writes.
+- The admin-only knowledge base uses queued diary indexing, paragraph-aware chunks, SHA-256 idempotency, 1024-dimensional Qwen3 embeddings, exact vector scans plus literal keyword fusion, optional date filters, and source-diary navigation. Diary mutations enqueue work through a database trigger and never wait for ModelScope; index replacement is transactional through a service-role-only RPC.
+- Every ModelScope analysis, translation, embedding-index, and knowledge-search HTTP call must first reserve one slot from the Supabase-backed Beijing-calendar-day budget. The hard safety limit is 180 calls per day across all Worker instances; quota lookup fails closed, SDK automatic retries stay disabled, and knowledge indexing immediately requeues unprocessed claimed jobs when quota stops a batch.
 - Yearly UI state/mutations live in `useYearlySummaryController`; analysis, event, gallery, and editor views live under `components/yearly-summary/`.
-- Batch 3 completed media invariants on 2026-07-13, Batch 4 completed authorized media/health/yearly APIs, and Batch 5 completed production Storage plus table least-privilege hardening on 2026-07-15. Final Batch 5 regression and cleanup passed.
+- Batch 3 completed media invariants on 2026-07-13, Batch 4 completed authorized media/health/yearly APIs, and Batch 5 completed production Storage plus table least-privilege hardening on 2026-07-15. The private knowledge-index migration and first Worker batch deployed on 2026-07-20; one-source indexing, search, and source navigation passed.
 
 ## Database and storage
 
-Supabase stores diary, AI, health, message, audio, and yearly-summary records. The three media buckets are private with no anon Storage object policy. Sensitive application tables have no anon/authenticated grants or policies. Production anon message access is column-level SELECT on `id/content/created_at` only; inserts use the same-origin API and the 1–2000 database constraint. PUBLIC, anon, and authenticated cannot execute `enforce_diary_image_invariants()` or `rls_auto_enable()` directly; both triggers remain operational. Read `docs/DATABASE.md` before altering any database or Storage boundary.
+Supabase stores diary, AI, health, message, audio, yearly-summary, and private knowledge-index records. The three media buckets are private with no anon Storage object policy. Sensitive application tables have no anon/authenticated grants or policies. Production anon message access is column-level SELECT on `id/content/created_at` only; inserts use the same-origin API and the 1–2000 database constraint. PUBLIC, anon, and authenticated cannot execute privileged application functions directly. The knowledge-index migration is applied in production and its least-privilege postflight passed. Read `docs/DATABASE.md` before altering any database or Storage boundary.
 
 Read [`docs/DATABASE.md`](docs/DATABASE.md) before changing queries, tables, RLS, buckets, paths, or access boundaries.
 
@@ -62,7 +64,7 @@ Read [`docs/DEPLOY.md`](docs/DEPLOY.md) before changing builds, variables, API r
 |---|---|---|
 | `SUPABASE_URL` | Shared Supabase client URL | Yes |
 | `SUPABASE_ANON_KEY` | Operator-only direct-access regression credential | Not required by the application |
-| `MODELSCOPE_TOKEN_API_KEY` | Server-side AI/translation credential | For AI features |
+| `MODELSCOPE_TOKEN_API_KEY` | Server-side AI/translation/Embedding credential | For AI and knowledge-search features |
 | `AUTH_PASSWORD_ADMIN` | Admin password | For admin mode |
 | `AUTH_PASSWORD_VIEWER` | Viewer password | For viewer mode |
 | `SESSION_SECRET` | Cookie-session HMAC key | Yes, server-only |
@@ -98,7 +100,10 @@ pnpm run deploy
 ## Known issues and risks
 
 - Anonymous-message API writes require deployment of `ANONYMOUS_MESSAGE_RATE_LIMITER`; production fails closed when the binding or trusted Cloudflare IP is unavailable.
-- AI analysis and translation require the `AI_RATE_LIMITER` binding in production and fail closed if the binding or trusted Cloudflare IP is unavailable.
+- AI analysis, translation, and knowledge search require the `AI_RATE_LIMITER` binding in production and fail closed if the binding or trusted Cloudflare IP is unavailable.
+- Administrator bulk indexing is outside the per-IP interactive limiter but consumes the shared 180-call ModelScope daily budget. Run it in monitored batches; failed sources remain retryable and do not block diary writes.
+- Migration `20260720134848_modelscope_daily_quota.sql` is applied in production as `20260720141701_modelscope_daily_quota`. Any new environment must apply it before deploying source that imports `modelScopeQuota.ts`; otherwise all ModelScope features intentionally return a quota-check-unavailable error without contacting the provider.
+- The 2026-07-20 quota rollout snapshot had 195 completed, 344 pending, 56 failed, and no processing knowledge jobs. A quota-stopped sync returned the claimed source to pending without increasing failed or processing counts. Continue the administrator backfill in monitored batches rather than as an unobserved bulk operation.
 - The retained direct anon message read relies on column grants plus RLS; UI roles are not authorization.
 - Public unoptimized images can affect bandwidth/performance.
 - Supabase security advisors intentionally report `rls_enabled_no_policy` information for deny-by-default application tables; the former anonymous INSERT and public SECURITY DEFINER execution warnings are resolved.

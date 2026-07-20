@@ -10,13 +10,14 @@ import {
   fetchCalendarEntries,
   fetchDiaryEntriesWithPagination,
   fetchDiaryEntryByDate,
+  fetchDiaryEntryById,
   insertDiaryEntry,
   updateDiaryEntry,
   uploadDiaryImages,
   type DiaryEntry,
 } from '@/lib/diaryApi'
 
-export type DiaryView = 'list' | 'calendar' | 'new' | 'detail' | 'edit' | 'download' | 'yearly-summary' | 'message-board' | 'anonymous-message-board'
+export type DiaryView = 'list' | 'calendar' | 'new' | 'detail' | 'edit' | 'download' | 'yearly-summary' | 'message-board' | 'anonymous-message-board' | 'knowledge'
 export type Entry = { id: number; date: Date; subtitle: string; content: string; images: string[]; modifiedAt: Date | null | undefined }
 
 const entriesPerPage = 5
@@ -122,6 +123,19 @@ export function useDiaryController() {
     } catch (error) { console.error('获取日记内容失败:', error); setSelectedEntry(entry); toast.error('获取日记内容失败') }
   }
 
+  async function openEntryById(id: number) {
+    setLoading(true)
+    try {
+      setSelectedEntry(convertToEntry(await fetchDiaryEntryById(id)))
+      setView('detail')
+    } catch (error) {
+      console.error('获取知识库来源日记失败:', error)
+      toast.error('无法打开来源日记')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function selectCalendarDate(date: Date) {
     setSelectedDate(date)
     const exists = allEntries.some((entry) => entry.date.toDateString() === date.toDateString())
@@ -156,6 +170,6 @@ export function useDiaryController() {
     auth, isGuest, entries, allEntries, entriesPerPage, totalEntriesCount, totalPages: Math.ceil(totalEntriesCount / entriesPerPage),
     view, setView, searchQuery, setSearchQuery, selectedDate, setSelectedDate, selectedEntry, setSelectedEntry, loading,
     currentPage, setCurrentPage, currentCalendarDate, setCurrentCalendarDate, addEntry, updateEntry, deleteEntry,
-    loadEntries, navigateToEntry, selectCalendarDate, mergeEntry, navigation,
+    loadEntries, navigateToEntry, openEntryById, selectCalendarDate, mergeEntry, navigation,
   }
 }

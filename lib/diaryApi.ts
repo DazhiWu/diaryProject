@@ -165,6 +165,10 @@ export async function fetchDiaryEntryByDate(date: Date): Promise<DiaryEntry | nu
   try { return convertFromSupabase(await requestDiaryApi<DiaryApiRow>(`/api/diaries?date=${encodeURIComponent(dateKey(date))}`)) } catch { return null }
 }
 
+export async function fetchDiaryEntryById(id: number): Promise<DiaryEntry> {
+  return convertFromSupabase(await requestDiaryApi<DiaryApiRow>(`/api/diaries/${id}`))
+}
+
 /**
  * 分页获取日记条目
  * @param page 页码（从1开始）

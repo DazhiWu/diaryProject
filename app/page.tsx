@@ -8,6 +8,7 @@ import DiaryDownloader from '@/components/diary-downloader'
 import { DiaryEntry as DiaryEntryComponent } from '@/components/diary-entry'
 import { DiaryList } from '@/components/diary-list'
 import { MessageBoard } from '@/components/message-board'
+import { KnowledgeBase } from '@/components/knowledge-base'
 import { Pagination } from '@/components/pagination'
 import { Spinner } from '@/components/ui/spinner'
 import YearlySummary from '@/components/yearly-summary'
@@ -19,7 +20,7 @@ export default function DiaryApp() {
     auth, isGuest, entries, allEntries, entriesPerPage, totalEntriesCount, totalPages,
     view, setView, searchQuery, setSearchQuery, selectedDate, setSelectedDate, selectedEntry, setSelectedEntry,
     loading, currentPage, setCurrentPage, currentCalendarDate, setCurrentCalendarDate,
-    addEntry, updateEntry, deleteEntry, loadEntries, navigateToEntry, selectCalendarDate, mergeEntry, navigation,
+    addEntry, updateEntry, deleteEntry, loadEntries, navigateToEntry, openEntryById, selectCalendarDate, mergeEntry, navigation,
   } = controller
 
   return (
@@ -74,6 +75,8 @@ export default function DiaryApp() {
         <MessageBoard />
       ) : view === 'anonymous-message-board' ? (
         <AnonymousMessageBoard />
+      ) : view === 'knowledge' ? (
+        <KnowledgeBase onOpenDiary={openEntryById} />
       ) : (
         <div className="text-center py-12 text-muted-foreground">未知视图</div>
       )}
