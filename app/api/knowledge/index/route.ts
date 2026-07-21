@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   try {
     await assertAllowedOrigin(request)
     requireAdmin(await readSession(request.headers.get('cookie')))
-    const body = await readJsonBody(request, REQUEST_LIMITS.modelJson) as { action?: unknown; batchSize?: unknown } | null
+    const body = await readJsonBody(request, REQUEST_LIMITS.modelJson) as { action?: unknown; batchSize?: unknown; consecutiveFailures?: unknown } | null
     const action = stringField(body?.action, 'knowledge index action', { min: 1, max: 20, trim: true })
 
     if (action === 'rebuild') return NextResponse.json(await queueKnowledgeRebuild())
@@ -33,7 +33,9 @@ export async function POST(request: Request) {
 
     const batchSize = body?.batchSize === undefined ? 10 : Number(body.batchSize)
     if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 10) throw new HttpError(400, 'Invalid knowledge index batch size')
-    return NextResponse.json(await processKnowledgeIndexBatch(batchSize))
+    const consecutiveFailures = body?.consecutiveFailures === undefined ? 0 : Number(body.consecutiveFailures)
+    if (!Number.isSafeInteger(consecutiveFailures) || consecutiveFailures < 0 || consecutiveFailures > 2) throw new HttpError(400, 'Invalid consecutive failure count')
+    return NextResponse.json(await processKnowledgeIndexBatch(batchSize, consecutiveFailures))
   } catch (error) {
     return responseFor(error)
   }

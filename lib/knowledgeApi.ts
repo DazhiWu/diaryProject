@@ -52,11 +52,19 @@ export function retryKnowledgeIndex(): Promise<KnowledgeIndexStatus> {
   })
 }
 
-export function syncKnowledgeIndex(): Promise<{ processed: number; failed: number; status: KnowledgeIndexStatus }> {
+export type KnowledgeIndexBatchResult = {
+  processed: number
+  failed: number
+  consecutiveFailures: number
+  stoppedForConsecutiveFailures: boolean
+  status: KnowledgeIndexStatus
+}
+
+export function syncKnowledgeIndex(consecutiveFailures = 0): Promise<KnowledgeIndexBatchResult> {
   return knowledgeRequest('/api/knowledge/index', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'sync', batchSize: 10 }),
+    body: JSON.stringify({ action: 'sync', batchSize: 10, consecutiveFailures }),
   })
 }
 

@@ -29,6 +29,13 @@ const EMPTY_STATUS: KnowledgeIndexStatus = {
   lastIndexedAt: null,
 }
 
+const MAX_SYNC_BATCHES_PER_CLICK = 50
+const SYNC_BATCH_INTERVAL_MS = 3_000
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
 export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number) => Promise<void> }) {
   const [status, setStatus] = useState(EMPTY_STATUS)
   const [query, setQuery] = useState('')
@@ -56,15 +63,22 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
     setSyncing(true)
     let processed = 0
     let failed = 0
+    let consecutiveFailures = 0
+    let stoppedForConsecutiveFailures = false
     try {
-      for (let batch = 0; batch < 200; batch += 1) {
-        const result = await syncKnowledgeIndex()
+      for (let batch = 0; batch < MAX_SYNC_BATCHES_PER_CLICK; batch += 1) {
+        if (batch > 0) await wait(SYNC_BATCH_INTERVAL_MS)
+        const result = await syncKnowledgeIndex(consecutiveFailures)
         processed += result.processed
         failed += result.failed
+        consecutiveFailures = result.consecutiveFailures
+        stoppedForConsecutiveFailures = result.stoppedForConsecutiveFailures
         setStatus(result.status)
-        if (result.processed === 0 || result.status.pending === 0) break
+        if (stoppedForConsecutiveFailures) break
+        if ((result.processed === 0 && result.failed === 0) || result.status.pending === 0) break
       }
-      if (failed > 0) toast.error(`已同步 ${processed} 篇，${failed} 篇失败`)
+      if (stoppedForConsecutiveFailures) toast.error(`连续 3 篇索引失败，已停止本次同步；成功 ${processed} 篇，失败 ${failed} 篇`)
+      else if (failed > 0) toast.error(`已同步 ${processed} 篇，${failed} 篇失败`)
       else toast.success(`知识索引同步完成，共处理 ${processed} 篇日记`)
     } catch (error) {
       console.error('Failed to sync knowledge index:', error)
@@ -139,7 +153,7 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
             <Button variant="outline" onClick={() => void retryFailed()} disabled={syncing || status.failed === 0}>重试失败任务</Button>
             <Button variant="ghost" onClick={() => void refreshStatus()} disabled={syncing}>刷新状态</Button>
           </div>
-          <p className="text-xs text-muted-foreground">日记保存不会等待 Embedding；新增或修改后的内容会进入待处理队列。重建只重新排队，不会立即删除现有可搜索片段。</p>
+          <p className="text-xs text-muted-foreground">日记保存不会等待 Embedding；新增或修改后的内容会进入待处理队列。每个任务间隔 3 秒，连续 3 篇失败会停止本次同步；重建只重新排队，不会立即删除现有可搜索片段。</p>
         </CardContent>
       </Card>
 

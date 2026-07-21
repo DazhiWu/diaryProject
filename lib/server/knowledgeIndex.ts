@@ -2,8 +2,13 @@ import 'server-only'
 
 import { chunkDiaryContent, knowledgeSourceText, sha256Hex } from '@/lib/server/knowledgeChunks'
 import { embedKnowledgeTexts, KNOWLEDGE_EMBEDDING_MODEL } from '@/lib/server/knowledgeEmbedding'
+import { KnowledgeIndexStepError, sanitizeKnowledgeIndexFailure } from '@/lib/server/knowledgeIndexFailure'
 import { ModelScopeQuotaStopError } from '@/lib/server/modelScopeQuota'
 import { getSupabaseAdmin } from '@/lib/server/supabaseAdmin'
+
+export const KNOWLEDGE_INDEX_TASK_INTERVAL_MS = 3_000
+export const KNOWLEDGE_INDEX_CONSECUTIVE_FAILURE_LIMIT = 3
+const KNOWLEDGE_INDEX_LAST_ERROR_MAX_CHARS = 8_000
 
 type DiarySource = {
   id: number
@@ -29,6 +34,14 @@ export type KnowledgeIndexStatus = {
   completed: number
   excluded: number
   lastIndexedAt: string | null
+}
+
+export type KnowledgeIndexBatchResult = {
+  processed: number
+  failed: number
+  consecutiveFailures: number
+  stoppedForConsecutiveFailures: boolean
+  status: KnowledgeIndexStatus
 }
 
 async function exactCount(table: string, configure?: (query: any) => any): Promise<number> {
@@ -83,7 +96,7 @@ export async function retryFailedKnowledgeJobs(): Promise<KnowledgeIndexStatus> 
 
 async function failJobs(sourceIds: number[], message: string): Promise<void> {
   if (sourceIds.length === 0) return
-  const { error } = await (await getSupabaseAdmin()).from('knowledge_index_jobs').update({ status: 'failed', last_error: message.slice(0, 500), updated_at: new Date().toISOString() }).in('source_id', sourceIds)
+  const { error } = await (await getSupabaseAdmin()).from('knowledge_index_jobs').update({ status: 'failed', last_error: message.slice(0, KNOWLEDGE_INDEX_LAST_ERROR_MAX_CHARS), updated_at: new Date().toISOString() }).in('source_id', sourceIds)
   if (error) console.error('[knowledge-index]', { operation: 'mark-failed', outcome: 'failed' })
 }
 
@@ -95,19 +108,24 @@ async function requeueJobs(sourceIds: number[], message: string): Promise<void> 
     queued_at: now,
     started_at: null,
     completed_at: null,
-    last_error: message.slice(0, 500),
+    last_error: message.slice(0, KNOWLEDGE_INDEX_LAST_ERROR_MAX_CHARS),
     updated_at: now,
   }).in('source_id', sourceIds)
   if (error) console.error('[knowledge-index]', { operation: 'requeue-quota-stopped', outcome: 'failed' })
 }
 
-export async function processKnowledgeIndexBatch(batchSize = 10): Promise<{ processed: number; failed: number; status: KnowledgeIndexStatus }> {
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+export async function processKnowledgeIndexBatch(batchSize = 10, initialConsecutiveFailures = 0): Promise<KnowledgeIndexBatchResult> {
   const supabase = await getSupabaseAdmin()
   const safeBatchSize = Math.min(10, Math.max(1, batchSize))
+  let consecutiveFailures = Math.min(KNOWLEDGE_INDEX_CONSECUTIVE_FAILURE_LIMIT - 1, Math.max(0, initialConsecutiveFailures))
   const { data: claimed, error: claimError } = await supabase.rpc('claim_knowledge_index_jobs', { p_limit: safeBatchSize })
   if (claimError) throw new Error('Knowledge index claim failed')
   const claimedIds = (claimed ?? []).map((row: { source_id: number | string }) => Number(row.source_id))
-  if (claimedIds.length === 0) return { processed: 0, failed: 0, status: await getKnowledgeIndexStatus() }
+  if (claimedIds.length === 0) return { processed: 0, failed: 0, consecutiveFailures, stoppedForConsecutiveFailures: false, status: await getKnowledgeIndexStatus() }
 
   const [{ data: diaries, error: diaryError }, { data: settings, error: settingError }, { data: existingChunks, error: chunkError }] = await Promise.all([
     supabase.from('diaryContent').select('id, date, subtitle, content').in('id', claimedIds),
@@ -115,7 +133,11 @@ export async function processKnowledgeIndexBatch(batchSize = 10): Promise<{ proc
     supabase.from('knowledge_chunks').select('source_id').in('source_id', claimedIds),
   ])
   if (diaryError || settingError || chunkError) {
-    await failJobs(claimedIds, 'Knowledge source query failed')
+    const failure = sanitizeKnowledgeIndexFailure(new KnowledgeIndexStepError({
+      category: 'source_query_failed',
+      code: diaryError?.code ?? settingError?.code ?? chunkError?.code,
+    }))
+    await failJobs(claimedIds, failure.storedMessage)
     throw new Error('Knowledge source query failed')
   }
 
@@ -124,24 +146,35 @@ export async function processKnowledgeIndexBatch(batchSize = 10): Promise<{ proc
   const sourcesWithChunks = new Set((existingChunks ?? []).map((row) => Number(row.source_id)))
   let processed = 0
   let failed = 0
+  let stoppedForConsecutiveFailures = false
 
   for (const [sourceIndex, sourceId] of claimedIds.entries()) {
+    if (sourceIndex > 0) await wait(KNOWLEDGE_INDEX_TASK_INTERVAL_MS)
     const diary = diaryById.get(sourceId)
     const setting = settingById.get(sourceId)
     if (!diary || !setting) {
-      await failJobs([sourceId], 'Knowledge source was not found')
+      const failure = sanitizeKnowledgeIndexFailure(new KnowledgeIndexStepError({ category: 'source_not_found' }))
+      await failJobs([sourceId], failure.storedMessage)
       failed += 1
+      consecutiveFailures += 1
+      if (consecutiveFailures >= KNOWLEDGE_INDEX_CONSECUTIVE_FAILURE_LIMIT) {
+        const stop = sanitizeKnowledgeIndexFailure(new KnowledgeIndexStepError({ category: 'consecutive_failure_stop' }))
+        await requeueJobs(claimedIds.slice(sourceIndex + 1), stop.storedMessage)
+        stoppedForConsecutiveFailures = true
+        break
+      }
       continue
     }
 
+    const content = diary.content ?? ''
     try {
-      const content = diary.content ?? ''
       const sourceHash = await sha256Hex(knowledgeSourceText(diary.date, diary.subtitle, content))
       const chunks = setting.usage_scope === 'excluded' ? [] : chunkDiaryContent(content)
       if (setting.indexed_content_hash === sourceHash && setting.indexed_model === KNOWLEDGE_EMBEDDING_MODEL && (chunks.length === 0 || sourcesWithChunks.has(sourceId))) {
         const { error } = await supabase.from('knowledge_index_jobs').update({ status: 'completed', completed_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq('source_id', sourceId)
-        if (error) throw new Error('Knowledge job completion failed')
+        if (error) throw new KnowledgeIndexStepError({ category: 'job_completion_failed', code: error.code })
         processed += 1
+        consecutiveFailures = 0
         continue
       }
 
@@ -162,18 +195,28 @@ export async function processKnowledgeIndexBatch(batchSize = 10): Promise<{ proc
         p_embedding_model: KNOWLEDGE_EMBEDDING_MODEL,
         p_chunks: payload,
       })
-      if (error) throw new Error('Knowledge chunk replacement failed')
+      if (error) throw new KnowledgeIndexStepError({ category: 'chunk_replace_failed', code: error.code })
       processed += 1
+      consecutiveFailures = 0
     } catch (error) {
       if (error instanceof ModelScopeQuotaStopError) {
-        await requeueJobs(claimedIds.slice(sourceIndex), error.message)
+        const failure = sanitizeKnowledgeIndexFailure(new KnowledgeIndexStepError({ category: 'modelscope_quota_stop', status: error.status }))
+        await requeueJobs(claimedIds.slice(sourceIndex), failure.storedMessage)
         throw error
       }
-      console.error('[knowledge-index]', { operation: 'index-source', sourceId, outcome: 'failed', name: error instanceof Error ? error.name : 'UnknownError' })
-      await failJobs([sourceId], 'Knowledge indexing failed')
+      const failure = sanitizeKnowledgeIndexFailure(error, content)
+      console.error('[knowledge-index]', { operation: 'index-source', sourceId, outcome: 'failed', category: failure.category, status: failure.status, code: failure.code })
+      await failJobs([sourceId], failure.storedMessage)
       failed += 1
+      consecutiveFailures += 1
+      if (consecutiveFailures >= KNOWLEDGE_INDEX_CONSECUTIVE_FAILURE_LIMIT) {
+        const stop = sanitizeKnowledgeIndexFailure(new KnowledgeIndexStepError({ category: 'consecutive_failure_stop' }))
+        await requeueJobs(claimedIds.slice(sourceIndex + 1), stop.storedMessage)
+        stoppedForConsecutiveFailures = true
+        break
+      }
     }
   }
 
-  return { processed, failed, status: await getKnowledgeIndexStatus() }
+  return { processed, failed, consecutiveFailures, stoppedForConsecutiveFailures, status: await getKnowledgeIndexStatus() }
 }

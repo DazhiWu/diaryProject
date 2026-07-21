@@ -36,6 +36,7 @@ describe('knowledge base roles and request validation', () => {
     const cookie = `diary_session=${admin.token}`
 
     expect((await indexAction(request('/api/knowledge/index', { action: 'unknown' }, cookie))).status).toBe(400)
+    expect((await indexAction(request('/api/knowledge/index', { action: 'sync', consecutiveFailures: 3 }, cookie))).status).toBe(400)
     expect((await knowledgeSearch(request('/api/knowledge/search', { query: '目标', startDate: '2026-07-20', endDate: '2026-07-19' }, cookie))).status).toBe(400)
   })
 })
