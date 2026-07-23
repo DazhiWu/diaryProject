@@ -134,11 +134,11 @@ pnpm run deploy
 
 `SUPABASE_URL`、service-role、认证和 ModelScope 配置均由服务端运行时读取，不再通过 `next.config.mjs` 注入浏览器构建。Worker 部署配置声明了 Workers AI `AI` binding，并保留登录、匿名留言和交互式 AI 三个 Rate Limit binding；`AI_RATE_LIMITER` 将分析、翻译和知识搜索限制为每客户端 IP 每 60 秒 5 次，ModelScope 请求另有 30 秒超时。当前本地 Embedding 回环地址仅服务管理员文档索引，线上查询使用 Workers AI。Workers AI 免费计划每天提供 10,000 Neurons 免费额度，超过额度的请求会失败并进入既定错误/降级路径；本项目不要求新增模型密钥、Account ID 或 API Token。
 
-已确认生产 Worker 为 `diaryproject`，自定义域名为 `diary.wuzhizhii.com`，未配置单独的 zone route，并存在可回滚的历史版本。Workers Builds 的 Git 仓库、生产分支和命令因当前 OAuth 无 Builds API 权限仍需在 Dashboard 确认。完整流程见 [`docs/DEPLOY.md`](docs/DEPLOY.md)。
+已确认生产 Worker 为 `diaryproject`，自定义域名为 `diary.wuzhizhii.com`，未配置单独的 zone route，并存在可回滚的历史版本。Workers Builds 当前连接 GitHub `DazhiWu/diaryProject` 的 `main` 分支，root directory 为 `/`，build command 为 `pnpm run cf:build`。Deploy command 必须设为 `pnpm run deploy`，不能使用 `opennextjs-cloudflare deploy`。完整流程见 [`docs/DEPLOY.md`](docs/DEPLOY.md)。
 
 ## 需要确认
 
-- Cloudflare Workers Builds 当前连接的 Git 仓库、生产分支、root directory 和 build/deploy commands。
+- Cloudflare Dashboard 的 production Deploy command 需要从旧的 `pnpm exec opennextjs-cloudflare deploy` 改为 `pnpm run deploy`；当前 API 连接可以读取但没有修改 Builds 设置的权限。
 
 ## 文档导航
 

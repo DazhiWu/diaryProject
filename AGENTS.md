@@ -109,13 +109,14 @@ pnpm run deploy
 - Workers AI uses Cloudflare's daily free allocation unless the account is on a paid plan. Keep interactive knowledge search behind `AI_RATE_LIMITER`, monitor Neuron usage, and do not add REST credentials or provider keys.
 - `initOpenNextCloudflareForDev()` must remain gated to Next.js `PHASE_DEVELOPMENT_SERVER`. An unconditional call starts the remote Workers AI proxy during `next build` and breaks non-interactive Cloudflare Builds when the account's `workers.dev` domain is protected by Cloudflare Access.
 - `cloudflare-env.d.ts` is generated and ignored. The `prebuild` lifecycle runs `pnpm cf-typegen` so clean clones derive `CloudflareEnv`, including the Workers AI binding, from `wrangler.jsonc` before any Next.js type check.
+- Deployment uses `scripts/deploy-worker.mjs`, which sets Wrangler's `OPEN_NEXT_DEPLOY` guard and deploys the already-built OpenNext artifact directly. Do not restore `opennextjs-cloudflare deploy`: its environment-loading platform proxy connects to the remote AI binding and fails in non-interactive builds when `workers.dev` is protected by Cloudflare Access. The project has no OpenNext remote cache binding that requires its cache-population step.
 - The 2026-07-20 quota rollout snapshot had 195 completed, 344 pending, 56 failed, and no processing knowledge jobs. A quota-stopped sync returned the claimed source to pending without increasing failed or processing counts. Continue the administrator backfill in monitored batches rather than as an unobserved bulk operation.
 - The retained direct anon message read relies on column grants plus RLS; UI roles are not authorization.
 - Public unoptimized images can affect bandwidth/performance.
 - Supabase security advisors intentionally report `rls_enabled_no_policy` information for deny-by-default application tables; the former anonymous INSERT and public SECURITY DEFINER execution warnings are resolved.
 - `diaryInfo` is a preserved legacy keepsake with no browser-direct grant or policy; any future viewer/admin display must use a Cookie-authorized service-role API. `rss_articles` belongs to another project and is out of scope.
 - The `diary_image_paths.diary_id` foreign key has a covering index. Its immediate post-creation `unused_index` advisor item is informational until production query statistics record use.
-- Cloudflare Workers Builds Git repository/branch/commands still require Dashboard confirmation because the current OAuth token cannot read the Builds API.
+- Cloudflare Workers Builds API reads confirm GitHub `DazhiWu/diaryProject`, branch `main`, root `/`, and build command `pnpm run cf:build`. Its production deploy command must be `pnpm run deploy`; the available API connection cannot modify Builds settings, so a stale Dashboard value must be corrected there.
 
 ## Documentation map
 

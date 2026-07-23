@@ -15,17 +15,17 @@ Next.js source
 → Cloudflare Workers
 ```
 
-Historically documented automated path (Dashboard confirmation still required):
+Required automated path:
 
 ```text
 GitHub `main`
 → Cloudflare Workers Builds (Linux, Node.js 22+)
 → `pnpm run cf:build`
-→ `pnpm exec opennextjs-cloudflare deploy`
+→ `pnpm run deploy`
 → Worker `diaryproject`
 ```
 
-Cloudflare was inspected read-only on 2026-07-12 and directly deployed on 2026-07-20. Worker identity, runtime bindings, custom domain, routes, versions, OAuth Workers write scope, and rollback capability are confirmed below. The current OAuth token cannot read the Workers Builds API, so the Git repository connection, production branch, root directory, and build/deploy commands still need Dashboard confirmation.
+Cloudflare was inspected read-only on 2026-07-12 and directly deployed again on 2026-07-23. Worker identity, runtime bindings, custom domain, routes, versions, OAuth Workers write scope, and rollback capability are confirmed below. Workers Builds API reads on 2026-07-23 confirmed GitHub repository `DazhiWu/diaryProject`, branch `main`, root `/`, and build command `pnpm run cf:build`. The production deploy command was still the incompatible `pnpm exec opennextjs-cloudflare deploy`; the available API connection cannot modify Builds settings, so it must be changed in Dashboard to `pnpm run deploy`.
 
 ## Prerequisites
 
@@ -46,6 +46,7 @@ Cloudflare was inspected read-only on 2026-07-12 and directly deployed on 2026-0
 | `next.config.mjs` | Unoptimized-image configuration; TypeScript build errors are enforced |
 | `open-next.config.ts` | Default OpenNext Cloudflare adapter configuration |
 | `wrangler.jsonc` | Worker name/entry, compatibility, assets, variable preservation, observability |
+| `scripts/deploy-worker.mjs` | Cross-platform Wrangler deploy wrapper that bypasses OpenNext's remote platform proxy |
 | `lib/runtimeEnv.ts` | Cloudflare runtime binding lookup with `process.env` fallback |
 | `app/api/auth/route.ts` | Runtime password lookup and signed Cookie Session entry point |
 | `lib/aiAnalysis.ts` | Runtime ModelScope token lookup |
@@ -77,7 +78,7 @@ pnpm exec wrangler deploy --dry-run
 - `pnpm build`: `next build`; validates Next.js but does not create a deployable Worker bundle.
 - `pnpm cf:build`: produces `.open-next/` through `opennextjs-cloudflare build`.
 - `pnpm preview`: builds and starts the OpenNext Cloudflare preview.
-- `pnpm run deploy`: OpenNext build followed by deploy. Use `pnpm run` explicitly because `pnpm deploy` invokes pnpm's built-in command instead of this package script.
+- `pnpm run deploy`: its `predeploy` lifecycle builds the OpenNext artifact, then the repository wrapper runs Wrangler with `OPEN_NEXT_DEPLOY=true`. Use `pnpm run` explicitly because `pnpm deploy` invokes pnpm's built-in command instead of this package script.
 - `pnpm cf-typegen`: generates ignored `cloudflare-env.d.ts`.
 - `pnpm lint`: runs ESLint 9 with the Next.js Core Web Vitals and TypeScript flat configuration.
 
@@ -104,6 +105,7 @@ Rules:
 - Configure the Workers AI `AI` binding from `wrangler.jsonc`; OpenNext server code accesses it through `getCloudflareContext({ async: true })`. No Account ID, API Token, or model key belongs in source or runtime variables.
 - `next.config.mjs` calls `initOpenNextCloudflareForDev()` only for Next.js `PHASE_DEVELOPMENT_SERVER`. Keep this phase guard: Workers AI development bindings are remote, while production builds only need to bundle the runtime binding. Removing the guard makes `next build` open a remote proxy and causes non-interactive Workers Builds to fail when `workers.dev` is protected by Cloudflare Access.
 - `cloudflare-env.d.ts` remains generated and ignored rather than hand-maintained. The package `prebuild` lifecycle runs the existing `pnpm cf-typegen` command before `next build`, so local builds, OpenNext, and clean Workers Builds all derive `CloudflareEnv` from the checked-in Wrangler configuration before TypeScript runs.
+- Actual deployment uses `scripts/deploy-worker.mjs` rather than `opennextjs-cloudflare deploy`. OpenNext 1.20.1 loads the entire Wrangler environment through `getPlatformProxy()` before its cache-population step, which connects the Workers AI binding to the Access-protected `workers.dev` hostname and fails in non-interactive builds. This project uses the default OpenNext configuration and has no remote R2/KV/DO cache binding, so the wrapper safely deploys the generated Worker/assets with Wrangler while setting `OPEN_NEXT_DEPLOY=true` to prevent Wrangler from delegating back to OpenNext.
 - Use ignored `.dev.vars` for local workerd preview runtime values; `.env.local` supplies local Next.js runtime values but is not a substitute for Worker runtime bindings.
 - Configure ModelScope and password credentials in deployed Worker runtime **Variables and Secrets**, preferably encrypted secrets.
 - ModelScope analysis and translation share a Supabase-backed limit of 180 upstream HTTP attempts per Beijing calendar day. Local document Embedding and Workers AI knowledge search do not consume this counter.
@@ -167,7 +169,7 @@ Cloudflare variables are plain configuration values; secrets are encrypted runti
    ```
 
 7. Push the intended commit to the connected branch.
-8. Confirm build command `pnpm run cf:build` and deploy command `pnpm exec opennextjs-cloudflare deploy`.
+8. Confirm build command `pnpm run cf:build` and deploy command `pnpm run deploy`. Do not configure `opennextjs-cloudflare deploy` for this project.
 9. Inspect build/deploy logs; plain Next.js success is not Worker verification.
 10. Complete the checks below on the Worker URL and any custom domain.
 
@@ -177,10 +179,10 @@ Cloudflare variables are plain configuration values; secrets are encrypted runti
 2. Authenticate Wrangler with the intended account.
 3. Supply required local/build values without committing `.env.local`.
 4. Run `pnpm cf:build` and optionally the Wrangler dry-run.
-5. Run `pnpm run deploy`, or deploy an already-built bundle with `pnpm exec opennextjs-cloudflare deploy`.
+5. Run `pnpm run deploy`. For an already-built bundle, run `node scripts/deploy-worker.mjs`; do not use `opennextjs-cloudflare deploy`.
 6. Verify Worker behavior, variables, logs, routes, and domain.
 
-The direct-deployment identity and Workers write scope were confirmed on 2026-07-20. Workers Builds repository/branch/command settings still require Dashboard confirmation.
+The direct-deployment identity and Workers write scope were confirmed again on 2026-07-23. The repository/branch/root/build command are API-confirmed; only the required Dashboard correction of the production deploy command remains.
 
 ## Post-deployment verification
 
