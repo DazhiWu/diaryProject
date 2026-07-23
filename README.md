@@ -1,14 +1,14 @@
 # AI 日记分析应用
 
-这是一个基于 Next.js、React 和 Supabase 的个人日记应用。它支持日记 CRUD、搜索与日历浏览、图片和音频、健康记录、匿名留言、CSV 导出、年度总结与管理员个人知识库。日记分析和翻译由服务端调用 ModelScope，知识库 Embedding 在本地调用 Qwen3-Embedding-0.6B FastAPI 服务。
+这是一个基于 Next.js、React 和 Supabase 的个人日记应用。它支持日记 CRUD、搜索与日历浏览、图片和音频、健康记录、匿名留言、CSV 导出、年度总结与管理员个人知识库。日记分析和翻译由服务端调用 ModelScope；知识库文档 Embedding 在本地调用 Qwen3-Embedding-0.6B FastAPI 服务，线上查询 Embedding 与候选重排使用 Cloudflare Workers AI。
 
 ## 功能
 
 - 创建、编辑、删除和分页浏览日记，支持内容/副标题搜索与日历视图。
 - 每篇日记最多选择 18 张图片；浏览器会把图片压缩为 WebP 后上传到 Supabase Storage。
 - AI 分析生成短标题和情绪标签；翻译同样通过服务端接口完成，ModelScope 密钥不进入浏览器代码。
-- 管理员个人知识库使用 `Qwen/Qwen3-Embedding-0.6B` 将日记按原文位置分段并生成 1024 维向量。单换行和连续空行同为最高优先级切分边界，相邻短段合并到约 400–700 字且不超过 800 字；长自然行按完整句子切分并使用完整句重叠。搜索支持语义、原文精确匹配和日期范围过滤，会合并同一日记的相邻命中，并限制单篇日记最多占两个独立结果。
-- ModelScope 分析和翻译共享北京时间自然日 180 次的服务端安全上限；本地知识索引和知识搜索不消耗此额度。
+- 管理员个人知识库使用本地 `Qwen/Qwen3-Embedding-0.6B` 将日记按原文位置分段并生成 1024 维向量。线上搜索由 Cloudflare `@cf/qwen/qwen3-embedding-0.6b` 生成归一化查询向量，经 Supabase 现有 pgvector/原文融合 RPC 召回 20 个候选，再由 `@cf/baai/bge-reranker-base` 返回前 5 个结果。Embedding 失败返回 503；Reranker 失败时按原始向量相似度降级，并在管理员界面标明未应用重排。可选“诊断模式”会依次展示 RPC 召回候选、Reranker 原始前五和合并/多样化后的最终结果，用于直接检查真实日记语料的召回质量。
+- ModelScope 分析和翻译共享北京时间自然日 180 次的服务端安全上限；本地知识索引和 Workers AI 知识搜索不消耗此额度。
 - 年度总结包含重要事件、AI 读后感、意见和年度照片。
 - 匿名留言支持 1–2000 字内容、HTML 转义和每页 10 条分页；写入通过同源 API 按客户端 IP 限制为每 60 秒 3 条。
 - 健康状况可按日期范围记录并显示在日历中。
@@ -41,8 +41,8 @@
 - Tailwind CSS 4、Radix UI、Lucide React
 - Supabase PostgreSQL 和 Storage
 - ModelScope OpenAI-compatible API 与 `deepseek-ai/DeepSeek-V3.2`
-- 本地 Qwen3-Embedding-0.6B FastAPI 服务（`http://127.0.0.1:8000/embeddings`）
-- OpenNext、Cloudflare Workers、Wrangler
+- 本地 Qwen3-Embedding-0.6B FastAPI 服务（`http://127.0.0.1:8000/embeddings`，仅文档索引）
+- OpenNext、Cloudflare Workers、Workers AI、Wrangler
 - Node.js 22+、pnpm 10.20.0
 
 ## 本地开发
@@ -109,7 +109,7 @@ Storage bucket 为 `2024To2025_diary_images`、`2025_Summary_Images` 和 `audio_
 
 Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postflight 与重复 preflight。Batch 4、Batch 5 和后续匿名留言/函数 ACL 加固均已于 2026-07-15 在生产完成并通过回归。个人知识库迁移及首批 Worker 已于 2026-07-20 上线并通过单篇索引、搜索和来源日记回归。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
 
-`supabase/migrations/20260719155837_knowledge_base_index.sql` 已在生产应用。迁移为现有日记创建待索引任务；本地 FastAPI 服务启动后，管理员进入“个人知识库”并点击“同步待处理日记”，应用才会调用本机服务生成向量。索引请求使用 `input_type: "document"`，搜索请求使用 `input_type: "query"`，每批最多 16 条文本。日记保存本身不会等待 Embedding。切分规则更新后，已有向量不会自动重建；需要先点击“重建全部索引”，再同步待处理日记。
+`supabase/migrations/20260719155837_knowledge_base_index.sql` 已在生产应用。迁移为现有日记创建待索引任务；本地 FastAPI 服务启动后，管理员进入“个人知识库”并点击“同步待处理日记”，应用才会调用本机服务生成文档向量。索引请求使用 `input_type: "document"`，每批最多 16 条文本。线上查询不调用本地回环服务，也不重新生成现有文档向量。日记保存本身不会等待 Embedding。切分规则更新后，已有向量不会自动重建；需要先点击“重建全部索引”，再同步待处理日记。
 
 每次点击“同步待处理日记”会连续运行每批最多 10 篇的 API 批次，直到队列为空、连续 3 篇失败或请求异常；不再设置 50 批或约 500 篇的单次上限。相邻索引任务及批次之间至少间隔 2 秒。同步期间状态卡片每 2 秒绕过缓存读取数据库计数，所有退出路径都会执行最终刷新。“日记来源”显示当前 `completed` 任务数而不是历史 `last_indexed_at` 数量。单篇失败不会自动重试而是继续下一篇，连续 3 篇失败会停止本次同步并提示管理员，尚未处理的已领取任务会返回待处理队列。失败任务手动重新入队后仍按现有队列顺序排在后面。
 
@@ -132,7 +132,7 @@ pnpm exec wrangler deploy --dry-run
 pnpm run deploy
 ```
 
-`SUPABASE_URL`、service-role、认证和 ModelScope 配置均由服务端运行时读取，不再通过 `next.config.mjs` 注入浏览器构建。生产 Worker 已配置登录、匿名留言和 AI 三个 Rate Limit binding；`AI_RATE_LIMITER` 将分析、翻译和知识搜索限制为每客户端 IP 每 60 秒 5 次，ModelScope 请求另有 30 秒超时。当前知识库 Embedding 地址固定为本机回环地址，仅用于本地测试；管理员批量索引不占用交互式 AI 限流额度。
+`SUPABASE_URL`、service-role、认证和 ModelScope 配置均由服务端运行时读取，不再通过 `next.config.mjs` 注入浏览器构建。Worker 部署配置声明了 Workers AI `AI` binding，并保留登录、匿名留言和交互式 AI 三个 Rate Limit binding；`AI_RATE_LIMITER` 将分析、翻译和知识搜索限制为每客户端 IP 每 60 秒 5 次，ModelScope 请求另有 30 秒超时。当前本地 Embedding 回环地址仅服务管理员文档索引，线上查询使用 Workers AI。Workers AI 免费计划每天提供 10,000 Neurons 免费额度，超过额度的请求会失败并进入既定错误/降级路径；本项目不要求新增模型密钥、Account ID 或 API Token。
 
 已确认生产 Worker 为 `diaryproject`，自定义域名为 `diary.wuzhizhii.com`，未配置单独的 zone route，并存在可回滚的历史版本。Workers Builds 的 Git 仓库、生产分支和命令因当前 OAuth 无 Builds API 权限仍需在 Dashboard 确认。完整流程见 [`docs/DEPLOY.md`](docs/DEPLOY.md)。
 

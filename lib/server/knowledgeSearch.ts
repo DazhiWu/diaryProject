@@ -1,7 +1,13 @@
 import 'server-only'
 
-import { embedKnowledgeTexts } from '@/lib/server/knowledgeEmbedding'
 import { getSupabaseAdmin } from '@/lib/server/supabaseAdmin'
+import {
+  embedKnowledgeQuery,
+  QUERY_EMBEDDING_MODEL,
+  rerankKnowledgeCandidates,
+  RERANKER_MODEL,
+  type KnowledgeCandidate,
+} from '@/lib/server/workersAi'
 
 export type KnowledgeSearchResult = {
   chunkId: number
@@ -15,10 +21,46 @@ export type KnowledgeSearchResult = {
   charEnd: number
   similarity: number | null
   score: number
+  vectorSimilarity: number | null
+  rerankScore: number | null
+}
+
+export type KnowledgeCandidateDiagnostic = {
+  fusionRank: number
+  sourceId: number
+  sourceDate: string
+  sourceTitle: string | null
+  chunkIndex: number
+  content: string
+  vectorSimilarity: number | null
+  rpcScore: number
+}
+
+export type KnowledgeRerankerDiagnostic = {
+  rerankRank: number
+  candidateRank: number
+  sourceId: number
+  sourceDate: string
+  sourceTitle: string | null
+  chunkIndex: number
+  content: string
+  rerankScore: number
+}
+
+export type KnowledgeSearchDiagnostics = {
+  candidates: KnowledgeCandidateDiagnostic[]
+  reranked: KnowledgeRerankerDiagnostic[]
+}
+
+export type KnowledgeSearchResponse = {
+  results: KnowledgeSearchResult[]
+  rerankApplied: boolean
+  diagnostics?: KnowledgeSearchDiagnostics
 }
 
 const MAX_RESULTS_PER_SOURCE = 2
-const MAX_SEARCH_CANDIDATES = 20
+export const VECTOR_CANDIDATE_COUNT = 20
+export const RERANK_RESULT_COUNT = 5
 
 type RankedKnowledgeSearchResult = KnowledgeSearchResult & { rank: number }
 
@@ -35,6 +77,8 @@ function withoutRank(result: RankedKnowledgeSearchResult): KnowledgeSearchResult
     charEnd: result.charEnd,
     similarity: result.similarity,
     score: result.score,
+    vectorSimilarity: result.vectorSimilarity,
+    rerankScore: result.rerankScore,
   }
 }
 
@@ -63,6 +107,12 @@ export function mergeAndDiversifyKnowledgeResults(results: KnowledgeSearchResult
       previous.charEnd = Math.max(previous.charEnd, result.charEnd)
       previous.similarity = previous.similarity === null ? result.similarity : result.similarity === null ? previous.similarity : Math.max(previous.similarity, result.similarity)
       previous.score = Math.max(previous.score, result.score)
+      previous.vectorSimilarity = previous.vectorSimilarity === null
+        ? result.vectorSimilarity
+        : result.vectorSimilarity === null
+          ? previous.vectorSimilarity
+          : Math.max(previous.vectorSimilarity, result.vectorSimilarity)
+      previous.rerankScore = bestRanked.rerankScore
       previous.rank = Math.min(previous.rank, result.rank)
     } else {
       merged.push({ ...result })
@@ -82,29 +132,150 @@ export function mergeAndDiversifyKnowledgeResults(results: KnowledgeSearchResult
   return selected
 }
 
-export async function searchPrivateKnowledge(input: { query: string; limit: number; startDate?: string; endDate?: string }): Promise<KnowledgeSearchResult[]> {
-  const [embedding] = await embedKnowledgeTexts([input.query], 'query')
-  const candidateLimit = Math.min(MAX_SEARCH_CANDIDATES, Math.max(input.limit, input.limit * 4))
-  const { data, error } = await (await getSupabaseAdmin()).rpc('search_private_knowledge', {
-    p_query_embedding: embedding,
-    p_query_text: input.query,
-    p_match_count: candidateLimit,
-    p_start_date: input.startDate ?? null,
-    p_end_date: input.endDate ?? null,
+export class KnowledgeEmbeddingUnavailableError extends Error {
+  constructor() {
+    super('Knowledge embedding unavailable')
+    this.name = 'KnowledgeEmbeddingUnavailableError'
+  }
+}
+
+type KnowledgeSearchDependencies = {
+  embedQuery: typeof embedKnowledgeQuery
+  searchCandidates(input: {
+    candidateCount: number
+    queryEmbedding: number[]
+    queryText: string
+    startDate?: string
+    endDate?: string
+  }): Promise<{ data: unknown[] | null; error: unknown }>
+  rerank: typeof rerankKnowledgeCandidates
+}
+
+const DEFAULT_DEPENDENCIES: KnowledgeSearchDependencies = {
+  embedQuery: embedKnowledgeQuery,
+  async searchCandidates(input) {
+    return (await getSupabaseAdmin()).rpc('search_private_knowledge', {
+      p_query_embedding: input.queryEmbedding,
+      p_query_text: input.queryText,
+      p_match_count: input.candidateCount,
+      p_start_date: input.startDate ?? null,
+      p_end_date: input.endDate ?? null,
+    })
+  },
+  rerank: rerankKnowledgeCandidates,
+}
+
+function vectorFallback(candidates: KnowledgeCandidate[]): KnowledgeSearchResult[] {
+  return candidates
+    .map((candidate, rank) => ({ candidate, rank }))
+    .sort((left, right) => {
+      const leftSimilarity = left.candidate.similarity ?? Number.NEGATIVE_INFINITY
+      const rightSimilarity = right.candidate.similarity ?? Number.NEGATIVE_INFINITY
+      return rightSimilarity - leftSimilarity || left.rank - right.rank
+    })
+    .slice(0, RERANK_RESULT_COUNT)
+    .map(({ candidate }) => ({
+      ...candidate,
+      vectorSimilarity: candidate.similarity,
+      rerankScore: null,
+    }))
+}
+
+export async function searchPrivateKnowledge(
+  input: { query: string; startDate?: string; endDate?: string; diagnostics?: boolean },
+  dependencies: KnowledgeSearchDependencies = DEFAULT_DEPENDENCIES,
+): Promise<KnowledgeSearchResponse> {
+  let embedding: number[]
+  try {
+    embedding = await dependencies.embedQuery(input.query)
+  } catch (error) {
+    console.error('[knowledge-search]', {
+      operation: 'embedding',
+      outcome: 'failed',
+      model: QUERY_EMBEDDING_MODEL,
+      name: error instanceof Error ? error.name : 'UnknownError',
+    })
+    throw new KnowledgeEmbeddingUnavailableError()
+  }
+
+  const { data, error } = await dependencies.searchCandidates({
+    candidateCount: VECTOR_CANDIDATE_COUNT,
+    queryEmbedding: embedding,
+    queryText: input.query,
+    startDate: input.startDate,
+    endDate: input.endDate,
   })
   if (error) throw new Error('Knowledge search failed')
-  const results = (data ?? []).map((row: Record<string, unknown>) => ({
-    chunkId: Number(row.chunk_id),
-    sourceId: Number(row.source_id),
-    chunkIndex: Number(row.chunk_index),
-    chunkEndIndex: Number(row.chunk_index),
-    sourceDate: String(row.source_date),
-    sourceTitle: typeof row.source_title === 'string' ? row.source_title : null,
-    content: String(row.content),
-    charStart: Number(row.char_start),
-    charEnd: Number(row.char_end),
-    similarity: typeof row.similarity === 'number' ? row.similarity : null,
-    score: Number(row.score),
-  }))
-  return mergeAndDiversifyKnowledgeResults(results, input.limit)
+  const candidates: KnowledgeCandidate[] = (data ?? []).map((row) => {
+    const candidate = typeof row === 'object' && row !== null ? Object.fromEntries(Object.entries(row)) : {}
+    return {
+      chunkId: Number(candidate.chunk_id),
+      sourceId: Number(candidate.source_id),
+      chunkIndex: Number(candidate.chunk_index),
+      chunkEndIndex: Number(candidate.chunk_index),
+      sourceDate: String(candidate.source_date),
+      sourceTitle: typeof candidate.source_title === 'string' ? candidate.source_title : null,
+      content: String(candidate.content),
+      charStart: Number(candidate.char_start),
+      charEnd: Number(candidate.char_end),
+      similarity: typeof candidate.similarity === 'number' ? candidate.similarity : null,
+      score: Number(candidate.score),
+    }
+  })
+  const candidateDiagnostics = input.diagnostics
+    ? candidates.map((candidate, index) => ({
+        fusionRank: index + 1,
+        sourceId: candidate.sourceId,
+        sourceDate: candidate.sourceDate,
+        sourceTitle: candidate.sourceTitle,
+        chunkIndex: candidate.chunkIndex,
+        content: candidate.content,
+        vectorSimilarity: candidate.similarity,
+        rpcScore: candidate.score,
+      }))
+    : undefined
+  if (candidates.length === 0) {
+    return {
+      results: [],
+      rerankApplied: false,
+      ...(candidateDiagnostics ? { diagnostics: { candidates: candidateDiagnostics, reranked: [] } } : {}),
+    }
+  }
+
+  try {
+    const reranked = await dependencies.rerank(input.query, candidates, RERANK_RESULT_COUNT)
+    return {
+      results: mergeAndDiversifyKnowledgeResults(reranked, RERANK_RESULT_COUNT),
+      rerankApplied: true,
+      ...(candidateDiagnostics
+        ? {
+            diagnostics: {
+              candidates: candidateDiagnostics,
+              reranked: reranked.map((candidate, index) => ({
+                rerankRank: index + 1,
+                candidateRank: candidate.candidateIndex + 1,
+                sourceId: candidate.sourceId,
+                sourceDate: candidate.sourceDate,
+                sourceTitle: candidate.sourceTitle,
+                chunkIndex: candidate.chunkIndex,
+                content: candidate.content,
+                rerankScore: candidate.rerankScore,
+              })),
+            },
+          }
+        : {}),
+    }
+  } catch (error) {
+    console.error('[knowledge-search]', {
+      operation: 'reranker',
+      outcome: 'fallback',
+      model: RERANKER_MODEL,
+      name: error instanceof Error ? error.name : 'UnknownError',
+    })
+    return {
+      results: mergeAndDiversifyKnowledgeResults(vectorFallback(candidates), RERANK_RESULT_COUNT),
+      rerankApplied: false,
+      ...(candidateDiagnostics ? { diagnostics: { candidates: candidateDiagnostics, reranked: [] } } : {}),
+    }
+  }
 }

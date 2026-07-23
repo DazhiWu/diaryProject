@@ -47,10 +47,10 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
       try {
         const response = await fetch(`/api/diaries/${entry.id}/analysis`);
         if (!response.ok) return;
-        const analysis = await response.json();
+        const analysis = await response.json() as { summary?: unknown; emotion?: unknown } | null;
         if (analysis) {
-          setAiSummary(analysis.summary);
-          setAiEmotion(analysis.emotion);
+          setAiSummary(typeof analysis.summary === 'string' ? analysis.summary : null);
+          setAiEmotion(typeof analysis.emotion === 'string' ? analysis.emotion : null);
         } else {
           // 当没有分析结果时，清空本地状态
           setAiSummary(null);
@@ -163,13 +163,13 @@ export function DiaryDetail({ entry, onBack, onDelete, onEdit, onUpdateEntry, pr
 
       // 检查响应状态
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json() as { error?: string };
         throw new Error(errorData.error || `翻译失败，状态码: ${response.status}`);
       }
 
       // 获取翻译结果
-      const data = await response.json();
-      setTranslatedContent(data.translation);
+      const data = await response.json() as { translation?: string };
+      setTranslatedContent(data.translation ?? null);
       setShowTranslation(true);
       toast.success("翻译完成！");
     } catch (error: any) {

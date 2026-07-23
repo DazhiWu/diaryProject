@@ -3,7 +3,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 export async function getRuntimeEnvValue(name: string): Promise<string | undefined> {
   try {
     const { env } = await getCloudflareContext({ async: true });
-    const value = (env as Record<string, unknown>)[name];
+    const value = Reflect.get(env, name);
 
     if (typeof value === 'string') {
       return value;

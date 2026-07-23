@@ -33,7 +33,7 @@ Cloudflare was inspected read-only on 2026-07-12 and directly deployed on 2026-0
 - A Cloudflare account authorized to build/deploy Workers.
 - A configured Supabase project and server runtime credentials.
 - ModelScope/auth runtime credentials for enabled analysis and translation features.
-- A Qwen3-Embedding-0.6B FastAPI service on `http://127.0.0.1:8000` for local knowledge indexing/search tests.
+- A Qwen3-Embedding-0.6B FastAPI service on `http://127.0.0.1:8000` for local knowledge document indexing.
 - Project-local `@opennextjs/cloudflare` and `wrangler`, installed with `pnpm install`.
 - WSL Ubuntu or another Linux environment is recommended for local deployment work; README records Windows-generated OpenNext bundle issues.
 
@@ -50,6 +50,7 @@ Cloudflare was inspected read-only on 2026-07-12 and directly deployed on 2026-0
 | `app/api/auth/route.ts` | Runtime password lookup and signed Cookie Session entry point |
 | `lib/aiAnalysis.ts` | Runtime ModelScope token lookup |
 | `lib/server/knowledgeEmbedding.ts` | Local Qwen3 FastAPI Embedding client |
+| `lib/server/workersAi.ts` | Workers AI query Embedding, vector normalization, and candidate reranking |
 | `supabase/migrations/20260719155837_knowledge_base_index.sql` | Applied private knowledge-index schema and RPCs |
 | `supabase/migrations/20260720134848_modelscope_daily_quota.sql` | Required shared daily ModelScope call-budget table and reservation RPC |
 | `.gitignore` | Excludes `.env*`, `.open-next/`, `.wrangler/`, generated types, logs, build output |
@@ -100,9 +101,10 @@ Rules:
 - Configure the `LOGIN_RATE_LIMITER` Worker binding from `wrangler.jsonc`; it enforces five login attempts per 60 seconds by client IP. Do not rename or reuse namespace `2026071201` for an unrelated binding.
 - Configure `ANONYMOUS_MESSAGE_RATE_LIMITER` from `wrangler.jsonc`; it enforces three anonymous-message writes per 60 seconds by client IP. Production message writes fail closed if the binding or trusted Cloudflare client IP is unavailable. Do not reuse namespace `2026071501`.
 - Configure `AI_RATE_LIMITER` from `wrangler.jsonc`; it enforces five interactive AI analysis/translation/knowledge-search calls per 60 seconds by client IP. Production interactive AI calls fail closed if the binding or trusted Cloudflare client IP is unavailable. Administrator bulk indexing is an explicit maintenance action outside this interactive limiter. Do not reuse namespace `2026071502`.
+- Configure the Workers AI `AI` binding from `wrangler.jsonc`; OpenNext server code accesses it through `getCloudflareContext({ async: true })`. No Account ID, API Token, or model key belongs in source or runtime variables.
 - Use ignored `.dev.vars` for local workerd preview runtime values; `.env.local` supplies local Next.js runtime values but is not a substitute for Worker runtime bindings.
 - Configure ModelScope and password credentials in deployed Worker runtime **Variables and Secrets**, preferably encrypted secrets.
-- ModelScope analysis and translation share a Supabase-backed limit of 180 upstream HTTP attempts per Beijing calendar day. Local Embedding requests do not consume this counter.
+- ModelScope analysis and translation share a Supabase-backed limit of 180 upstream HTTP attempts per Beijing calendar day. Local document Embedding and Workers AI knowledge search do not consume this counter.
 - Workers Builds variables and deployed runtime variables are separate scopes. Current application environment lookup is runtime-only; configure deployed Worker bindings for live requests.
 - `keep_vars: true` asks Wrangler to preserve dashboard-managed values during deployment; confirm behavior before changing it.
 - Never use a Supabase service-role key as `SUPABASE_ANON_KEY`.
@@ -121,7 +123,8 @@ Rules:
 - Rate-limit bindings: `LOGIN_RATE_LIMITER` for five login calls, `ANONYMOUS_MESSAGE_RATE_LIMITER` for three message writes, and `AI_RATE_LIMITER` for five interactive AI/translation/knowledge-search calls per 60 seconds.
 - Custom domain: `diary.wuzhizhii.com`, production environment.
 - Zone routes: none target `diaryproject`; the custom domain targets the Worker directly.
-- Runtime bindings declared by the repository: `ASSETS`, `LOGIN_RATE_LIMITER`, `ANONYMOUS_MESSAGE_RATE_LIMITER`, and `AI_RATE_LIMITER`. Configure the named runtime variables/secrets before enabling the corresponding features.
+- Runtime bindings declared by the repository: `ASSETS`, `AI`, `LOGIN_RATE_LIMITER`, `ANONYMOUS_MESSAGE_RATE_LIMITER`, and `AI_RATE_LIMITER`. Configure the named runtime variables/secrets before enabling the corresponding features.
+- Workers AI query models are `@cf/qwen/qwen3-embedding-0.6b` and `@cf/baai/bge-reranker-base`. The Free Workers plan includes 10,000 Neurons per day; requests above that allocation fail. A paid Workers plan can charge usage above the allocation, so keep the current limiter and monitor account usage when the no-paid-service boundary is required.
 - Historical Worker versions and rollback capability are available.
 - Production quota-protection version deployed on 2026-07-20: `6fb8845e-63f8-4488-961a-aa75b6c53af7`; immediate pre-deployment rollback version: `7acb2010-2b58-490e-9a6b-721e18772a79`.
 
@@ -134,9 +137,9 @@ Cloudflare variables are plain configuration values; secrets are encrypted runti
 - Browser code uses same-origin APIs and does not require Supabase credentials in the build output.
 - `/api/diary-download` is admin-only and uses `lib/server/supabaseAdmin.ts`; the service-role factory is not a browser import path.
 - `/api/knowledge/index` and `/api/knowledge/search` are admin-only, use the same service-role boundary, and require the applied knowledge migration. Browser code never receives ModelScope or Supabase credentials.
-- Analysis and translation require `reserve_modelscope_api_call()` before contacting ModelScope. Local indexing and knowledge search instead call `http://127.0.0.1:8000/embeddings` directly and do not reserve ModelScope quota.
+- Analysis and translation require `reserve_modelscope_api_call()` before contacting ModelScope. Local document indexing calls `http://127.0.0.1:8000/embeddings`; online knowledge search uses Workers AI query Embedding and reranking. Neither reserves ModelScope quota.
 - Administrator indexing remains request-bound. One click issues sequential API batches of up to ten sources without a batch/source cap; the server and client enforce at least two seconds between tasks/batches. It stops only when the queue is empty, a request fails, or three consecutive source failures preserve the failed rows and requeue unprocessed claimed rows. There is no automatic per-source retry.
-- The fixed loopback Embedding address is intentionally local-test-only. Do not deploy this source expecting knowledge indexing/search to work in Cloudflare until the endpoint becomes explicit runtime configuration and is reachable from that runtime.
+- The fixed loopback Embedding address is intentionally local-only and remains required for administrator document indexing. Deployed knowledge search no longer depends on Worker access to that address; it requires the `AI` binding instead.
 - Index failures are logged with structured category/status/code metadata. The service-role-only job row also stores bounded upstream and diary-content diagnostic excerpts; credential-like values are redacted. Treat `knowledge_index_jobs.last_error` as private diary data and never include it in public/admin status responses.
 - RLS, grants, and Storage policies remain defense-in-depth and the boundary for operator direct-access tests; application requests use authorized server routes.
 - Media reads use same-origin authorized proxy routes with the runtime service-role credential: diary and yearly images are versioned by their record timestamps, and admin audio supports HTTP Range streaming. All three media buckets are private and direct browser anon Storage access is denied.
@@ -188,8 +191,9 @@ The direct-deployment identity and Workers write scope were confirmed on 2026-07
 - Diary image proxy display, yearly-image proxy display, and admin audio Range streaming. Batch 3 production verification on 2026-07-13 returned `200 image/webp` for a viewer diary image and `206` with `Content-Range`/`Accept-Ranges` for admin audio.
 - Batch 4 media writes, health, and yearly-summary metadata use authorized APIs. Batch 5 production verification on 2026-07-15 confirmed private buckets, denied direct anon Storage access, unchanged diary/yearly/audio proxies, denied anon access to every sensitive table, health/yearly admin CRUD, guest/viewer/admin role boundaries, and admin CSV export. The follow-up Worker and anonymous-message/function-ACL migrations were deployed the same day; public message GET/POST, User-Agent capture, wrong-year 404s, 413 handling, role boundaries, bindings, and both trigger postflights passed.
 - AI analysis and translation with the runtime token.
-- ModelScope shared quota: confirm reservation 180 succeeds, reservation 181 returns a clear `429` without an upstream call, counter/RPC errors return `503` without an upstream call, and the date rolls over at Beijing midnight. Verify analysis and translation share the counter; local indexing/search must not change it.
+- ModelScope shared quota: confirm reservation 180 succeeds, reservation 181 returns a clear `429` without an upstream call, counter/RPC errors return `503` without an upstream call, and the date rolls over at Beijing midnight. Verify analysis and translation share the counter; local indexing and Workers AI knowledge search must not change it.
 - Administrator knowledge status, initial pending count, batched backfill, retry behavior, semantic/date-filtered search, and source-diary navigation. Confirm guest/viewer requests are denied, direct anon/authenticated access to all three knowledge tables/functions is denied, and diary writes remain successful when later indexing fails.
+- Workers AI knowledge search: as an administrator, enable “诊断模式” and confirm stage 1 shows the RPC-ordered candidates with fusion rank, date, title, chunk number, content, vector similarity, and RPC score; stage 2 maps each finite BGE result to the correct original candidate number; and stage 3 shows the merged/diversified final results. Confirm the query vector has 1,024 dimensions and unit norm through internal tests rather than returning it. Successful responses set `rerankApplied: true`; forced reranker failure keeps stage 1, leaves stage 2 empty, and preserves up to five vector-ordered final results with `rerankApplied: false`. Do not log the full vector or diary context during this check.
 - Verify uncapped continuation until the queue is empty, two-second pacing across task and batch boundaries, no automatic retry after a failed source, carry-over of consecutive-failure state between API batches, and stop/requeue behavior at the third consecutive failure.
 - Verify new failure rows contain bounded diagnostic JSON without runtime credentials, and that the status API does not return `last_error` content.
 - The initial 2026-07-20 knowledge rollout verified the default Worker hostname and custom domain, guest `401`, viewer `403`, admin status access, one-source Qwen3 indexing, hybrid search, and admin source-diary access.

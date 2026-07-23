@@ -34,6 +34,12 @@ export type RateLimitBinding = {
   limit(input: { key: string }): Promise<{ success: boolean }>
 }
 
+function isRateLimitBinding(value: unknown): value is RateLimitBinding {
+  return typeof value === 'object'
+    && value !== null
+    && typeof Reflect.get(value, 'limit') === 'function'
+}
+
 type RateLimitOptions = {
   binding?: RateLimitBinding
   production?: boolean
@@ -59,8 +65,8 @@ export function createRequestRateLimiter(configuration: {
     if (!binding) {
       try {
         const { env } = await getCloudflareContext({ async: true })
-        const candidate = (env as Record<string, unknown>)[configuration.bindingName]
-        if (candidate && typeof (candidate as RateLimitBinding).limit === 'function') binding = candidate as RateLimitBinding
+        const candidate = Reflect.get(env, configuration.bindingName)
+        if (isRateLimitBinding(candidate)) binding = candidate
       } catch {
         binding = undefined
       }

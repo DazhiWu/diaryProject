@@ -53,7 +53,7 @@ const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json() as { error?: string };
         throw new Error(errorData.error || '下载失败');
       }
 

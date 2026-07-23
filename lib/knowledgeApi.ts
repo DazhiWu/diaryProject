@@ -22,6 +22,41 @@ export type KnowledgeSearchResult = {
   charEnd: number
   similarity: number | null
   score: number
+  vectorSimilarity: number | null
+  rerankScore: number | null
+}
+
+export type KnowledgeCandidateDiagnostic = {
+  fusionRank: number
+  sourceId: number
+  sourceDate: string
+  sourceTitle: string | null
+  chunkIndex: number
+  content: string
+  vectorSimilarity: number | null
+  rpcScore: number
+}
+
+export type KnowledgeRerankerDiagnostic = {
+  rerankRank: number
+  candidateRank: number
+  sourceId: number
+  sourceDate: string
+  sourceTitle: string | null
+  chunkIndex: number
+  content: string
+  rerankScore: number
+}
+
+export type KnowledgeSearchDiagnostics = {
+  candidates: KnowledgeCandidateDiagnostic[]
+  reranked: KnowledgeRerankerDiagnostic[]
+}
+
+export type KnowledgeSearchResponse = {
+  results: KnowledgeSearchResult[]
+  rerankApplied: boolean
+  diagnostics?: KnowledgeSearchDiagnostics
 }
 
 async function knowledgeRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -69,10 +104,15 @@ export function syncKnowledgeIndex(consecutiveFailures = 0): Promise<KnowledgeIn
   })
 }
 
-export function searchKnowledge(input: { query: string; startDate?: string; endDate?: string; limit?: number }): Promise<{ results: KnowledgeSearchResult[] }> {
+export function searchKnowledge(input: {
+  query: string
+  startDate?: string
+  endDate?: string
+  diagnostics?: boolean
+}): Promise<KnowledgeSearchResponse> {
   return knowledgeRequest('/api/knowledge/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...input, limit: input.limit ?? 10 }),
+    body: JSON.stringify(input),
   })
 }

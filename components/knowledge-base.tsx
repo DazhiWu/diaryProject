@@ -14,6 +14,7 @@ import {
   retryKnowledgeIndex,
   searchKnowledge,
   type KnowledgeIndexStatus,
+  type KnowledgeSearchDiagnostics,
   type KnowledgeSearchResult,
 } from '@/lib/knowledgeApi'
 import { runKnowledgeSync, SYNC_BATCH_INTERVAL_MS } from '@/lib/knowledgeSync'
@@ -30,12 +31,53 @@ const EMPTY_STATUS: KnowledgeIndexStatus = {
   lastIndexedAt: null,
 }
 
+function scoreLabel(score: number | null): string {
+  return score === null ? '—' : score.toFixed(6)
+}
+
+function KnowledgeResultCards({
+  results,
+  onOpenDiary,
+  showRank = false,
+}: {
+  results: KnowledgeSearchResult[]
+  onOpenDiary: (sourceId: number) => Promise<void>
+  showRank?: boolean
+}) {
+  if (results.length === 0) return <p className="text-sm text-muted-foreground">没有最终结果。</p>
+
+  return results.map((result, index) => {
+    const similarity = result.similarity === null ? null : Math.max(0, Math.min(100, result.similarity * 100))
+    return <Card key={`${result.chunkId}-${index}`} className="gap-4 py-4">
+      <CardHeader className="px-4 sm:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="leading-snug">
+              {showRank ? `最终排名 #${index + 1} · ` : ''}{result.sourceTitle || `日记 ${result.sourceDate}`}
+            </CardTitle>
+            <CardDescription className="mt-1">
+              {result.sourceDate} · 第 {result.chunkIndex + 1}{result.chunkEndIndex === result.chunkIndex ? '' : `–${result.chunkEndIndex + 1}`} 个片段
+              {similarity === null ? '' : ` · 语义相似度 ${similarity.toFixed(1)}%`}
+              {result.rerankScore === null ? '' : ` · rerankScore ${scoreLabel(result.rerankScore)}`}
+            </CardDescription>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => void onOpenDiary(result.sourceId)}>打开原日记</Button>
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 sm:px-6"><p className="whitespace-pre-wrap text-sm leading-7">{result.content}</p></CardContent>
+    </Card>
+  })
+}
+
 export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number) => Promise<void> }) {
   const [status, setStatus] = useState(EMPTY_STATUS)
   const [query, setQuery] = useState('')
   const [startDate, setStartDate] = useState(KNOWLEDGE_SEARCH_DEFAULT_START_DATE)
   const [endDate, setEndDate] = useState('')
   const [results, setResults] = useState<KnowledgeSearchResult[]>([])
+  const [rerankApplied, setRerankApplied] = useState<boolean | null>(null)
+  const [diagnosticMode, setDiagnosticMode] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<KnowledgeSearchDiagnostics | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [searching, setSearching] = useState(false)
@@ -122,8 +164,15 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
     if (!query.trim()) return
     setSearching(true)
     try {
-      const response = await searchKnowledge({ query: query.trim(), startDate: startDate || undefined, endDate: endDate || undefined })
+      const response = await searchKnowledge({
+        query: query.trim(),
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        diagnostics: diagnosticMode,
+      })
       setResults(response.results)
+      setRerankApplied(response.rerankApplied)
+      setDiagnostics(response.diagnostics ?? null)
       if (response.results.length === 0) toast.info('没有找到相关日记片段')
     } catch (error) {
       console.error('Failed to search knowledge:', error)
@@ -171,25 +220,84 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
               <label className="space-y-1 text-sm"><span className="text-muted-foreground">开始日期（可选）</span><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
               <label className="space-y-1 text-sm"><span className="text-muted-foreground">结束日期（可选）</span><Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
             </div>
+            <label className="flex items-start gap-3 rounded-md border p-3 text-sm">
+              <input
+                type="checkbox"
+                checked={diagnosticMode}
+                onChange={(event) => setDiagnosticMode(event.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-primary"
+              />
+              <span>
+                <span className="font-medium">诊断模式</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">展示 RPC 召回候选、Reranker 原始结果，以及合并和多样化后的最终结果。</span>
+              </span>
+            </label>
             <Button type="submit" disabled={searching || !query.trim()}>{searching ? <Spinner className="h-4 w-4" /> : null}搜索</Button>
           </form>
         </CardContent>
       </Card>
 
-      {results.length > 0 && <div className="space-y-3">
-        <h2 className="text-lg font-semibold">搜索结果</h2>
-        {results.map((result) => {
-          const similarity = result.similarity === null ? null : Math.max(0, Math.min(100, result.similarity * 100))
-          return <Card key={result.chunkId} className="gap-4 py-4">
-            <CardHeader className="px-4 sm:px-6">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div><CardTitle className="leading-snug">{result.sourceTitle || `日记 ${result.sourceDate}`}</CardTitle><CardDescription className="mt-1">{result.sourceDate} · 第 {result.chunkIndex + 1}{result.chunkEndIndex === result.chunkIndex ? '' : `–${result.chunkEndIndex + 1}`} 个片段{similarity === null ? '' : ` · 语义相似度 ${similarity.toFixed(1)}%`}</CardDescription></div>
-                <Button size="sm" variant="outline" onClick={() => void onOpenDiary(result.sourceId)}>打开原日记</Button>
-              </div>
-            </CardHeader>
-            <CardContent className="px-4 sm:px-6"><p className="whitespace-pre-wrap text-sm leading-7">{result.content}</p></CardContent>
-          </Card>
-        })}
+      {diagnosticMode && diagnostics ? <div className="space-y-8">
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold">1. 召回候选（{diagnostics.candidates.length}/20 条）</h2>
+            <p className="mt-1 text-xs text-muted-foreground">融合排名为现有 Supabase RPC 的返回顺序；RPC score 是语义与字面匹配融合后的分数。</p>
+          </div>
+          {diagnostics.candidates.length === 0 ? <p className="text-sm text-muted-foreground">没有召回候选，因此未调用 Reranker。</p> : diagnostics.candidates.map((candidate) => (
+            <Card key={`candidate-${candidate.fusionRank}`} className="gap-3 py-4">
+              <CardHeader className="px-4 sm:px-6">
+                <CardTitle className="text-base">融合排名 #{candidate.fusionRank}</CardTitle>
+                <CardDescription>
+                  日期 {candidate.sourceDate} · 标题 {candidate.sourceTitle || '（无标题）'} · 片段 #{candidate.chunkIndex + 1}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 px-4 sm:px-6">
+                <p className="whitespace-pre-wrap text-sm leading-7">{candidate.content}</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">
+                  <span>vectorSimilarity {scoreLabel(candidate.vectorSimilarity)}</span>
+                  <span>RPC score {scoreLabel(candidate.rpcScore)}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
+
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold">2. Reranker 原始前 5（{diagnostics.reranked.length} 条）</h2>
+            {rerankApplied === false && diagnostics.candidates.length > 0
+              ? <p className="mt-1 text-xs text-muted-foreground">Workers AI 重排失败，本阶段没有结果；最终阶段已按向量相似度降级。</p>
+              : <p className="mt-1 text-xs text-muted-foreground">按 Workers AI 原始返回顺序展示，尚未合并相邻片段或执行来源多样化。</p>}
+          </div>
+          {diagnostics.reranked.length === 0 ? <p className="text-sm text-muted-foreground">没有 Reranker 原始结果。</p> : diagnostics.reranked.map((candidate) => (
+            <Card key={`reranked-${candidate.rerankRank}`} className="gap-3 py-4">
+              <CardHeader className="px-4 sm:px-6">
+                <CardTitle className="text-base">Reranker 排名 #{candidate.rerankRank} · 原候选 #{candidate.candidateRank}</CardTitle>
+                <CardDescription>
+                  {candidate.sourceDate} · {candidate.sourceTitle || '无标题'} · 片段 #{candidate.chunkIndex + 1}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 px-4 sm:px-6">
+                <p className="whitespace-pre-wrap text-sm leading-7">{candidate.content}</p>
+                <p className="font-mono text-xs text-muted-foreground">rerankScore {scoreLabel(candidate.rerankScore)}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
+
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold">3. 合并/多样化后的最终结果（{results.length} 条）</h2>
+            <p className="mt-1 text-xs text-muted-foreground">相邻片段会合并，每篇日记最多保留两个独立结果。</p>
+          </div>
+          <KnowledgeResultCards results={results} onOpenDiary={onOpenDiary} showRank />
+        </section>
+      </div> : results.length > 0 && <div className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">搜索结果</h2>
+          {rerankApplied === false && <p className="mt-1 text-xs text-muted-foreground">Workers AI 重排暂时不可用，当前结果按向量相似度排序。</p>}
+        </div>
+        <KnowledgeResultCards results={results} onOpenDiary={onOpenDiary} />
       </div>}
     </div>
   )

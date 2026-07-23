@@ -21,8 +21,10 @@ export const useAuth = (): AuthHook => {
     localStorage.removeItem('diaryAppAuthStatus');
 
     void fetch('/api/auth/session')
-      .then(async (response) => response.ok ? response.json() : { role: 'guest' })
-      .then((data: { role?: AuthLevel }) => {
+      .then(async (response): Promise<{ role?: AuthLevel }> => response.ok
+        ? response.json() as Promise<{ role?: AuthLevel }>
+        : { role: 'guest' })
+      .then((data) => {
         if (active) setAuthLevel(data.role === 'viewer' || data.role === 'admin' ? data.role : 'guest');
       })
       .catch(() => {
@@ -48,7 +50,7 @@ export const useAuth = (): AuthHook => {
       return false;
     }
 
-    const data = await response.json();
+    const data = await response.json() as { role?: AuthLevel };
 
     if (data.role === 'admin' || data.role === 'viewer') {
       setAuthLevel(data.role);
