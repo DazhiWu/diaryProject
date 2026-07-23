@@ -108,6 +108,7 @@ pnpm run deploy
 - The fixed `127.0.0.1` Embedding endpoint remains a local-only document-indexing dependency and is deliberately unreachable from the deployed Worker. Online search requires the configured Workers AI `AI` binding; document indexing still requires running the local FastAPI service.
 - Workers AI uses Cloudflare's daily free allocation unless the account is on a paid plan. Keep interactive knowledge search behind `AI_RATE_LIMITER`, monitor Neuron usage, and do not add REST credentials or provider keys.
 - `initOpenNextCloudflareForDev()` must remain gated to Next.js `PHASE_DEVELOPMENT_SERVER`. An unconditional call starts the remote Workers AI proxy during `next build` and breaks non-interactive Cloudflare Builds when the account's `workers.dev` domain is protected by Cloudflare Access.
+- `cloudflare-env.d.ts` is generated and ignored. The `prebuild` lifecycle runs `pnpm cf-typegen` so clean clones derive `CloudflareEnv`, including the Workers AI binding, from `wrangler.jsonc` before any Next.js type check.
 - The 2026-07-20 quota rollout snapshot had 195 completed, 344 pending, 56 failed, and no processing knowledge jobs. A quota-stopped sync returned the claimed source to pending without increasing failed or processing counts. Continue the administrator backfill in monitored batches rather than as an unobserved bulk operation.
 - The retained direct anon message read relies on column grants plus RLS; UI roles are not authorization.
 - Public unoptimized images can affect bandwidth/performance.
