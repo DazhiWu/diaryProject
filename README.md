@@ -1,14 +1,14 @@
 # AI 日记分析应用
 
-这是一个基于 Next.js、React 和 Supabase 的个人日记应用。它支持日记 CRUD、搜索与日历浏览、图片和音频、健康记录、匿名留言、CSV 导出、年度总结与管理员个人知识库，并通过服务端 API 调用 ModelScope 上的模型完成日记分析、翻译和语义索引。
+这是一个基于 Next.js、React 和 Supabase 的个人日记应用。它支持日记 CRUD、搜索与日历浏览、图片和音频、健康记录、匿名留言、CSV 导出、年度总结与管理员个人知识库。日记分析和翻译由服务端调用 ModelScope，知识库 Embedding 在本地调用 Qwen3-Embedding-0.6B FastAPI 服务。
 
 ## 功能
 
 - 创建、编辑、删除和分页浏览日记，支持内容/副标题搜索与日历视图。
 - 每篇日记最多选择 18 张图片；浏览器会把图片压缩为 WebP 后上传到 Supabase Storage。
 - AI 分析生成短标题和情绪标签；翻译同样通过服务端接口完成，ModelScope 密钥不进入浏览器代码。
-- 管理员个人知识库使用 `Qwen/Qwen3-Embedding-0.6B` 将日记按原文位置分段并生成 1024 维向量，支持语义、原文精确匹配和日期范围搜索，结果可跳转到来源日记。
-- 所有 ModelScope 分析、翻译、知识索引和知识搜索共享北京时间自然日 180 次的服务端安全上限；达到上限后返回明确提示并停止继续调用。
+- 管理员个人知识库使用 `Qwen/Qwen3-Embedding-0.6B` 将日记按原文位置分段并生成 1024 维向量。单换行和连续空行同为最高优先级切分边界，相邻短段合并到约 400–700 字且不超过 800 字；长自然行按完整句子切分并使用完整句重叠。搜索支持语义、原文精确匹配和日期范围过滤，会合并同一日记的相邻命中，并限制单篇日记最多占两个独立结果。
+- ModelScope 分析和翻译共享北京时间自然日 180 次的服务端安全上限；本地知识索引和知识搜索不消耗此额度。
 - 年度总结包含重要事件、AI 读后感、意见和年度照片。
 - 匿名留言支持 1–2000 字内容、HTML 转义和每页 10 条分页；写入通过同源 API 按客户端 IP 限制为每 60 秒 3 条。
 - 健康状况可按日期范围记录并显示在日历中。
@@ -40,7 +40,8 @@
 - Next.js 16 App Router、React 18、严格 TypeScript
 - Tailwind CSS 4、Radix UI、Lucide React
 - Supabase PostgreSQL 和 Storage
-- ModelScope OpenAI-compatible API、`deepseek-ai/DeepSeek-V3.2`、`Qwen/Qwen3-Embedding-0.6B`
+- ModelScope OpenAI-compatible API 与 `deepseek-ai/DeepSeek-V3.2`
+- 本地 Qwen3-Embedding-0.6B FastAPI 服务（`http://127.0.0.1:8000/embeddings`）
 - OpenNext、Cloudflare Workers、Wrangler
 - Node.js 22+、pnpm 10.20.0
 
@@ -63,7 +64,7 @@ APP_ORIGIN=
 |---|---|---|
 | `SUPABASE_URL` | Supabase 项目 URL | 服务端 API 必需；不再注入浏览器构建 |
 | `SUPABASE_ANON_KEY` | Supabase anon 凭据 | 应用运行不需要；仅旧的操作审计脚本/直接访问回归需要 |
-| `MODELSCOPE_TOKEN_API_KEY` | AI 分析、翻译和知识库 Embedding | 启用相关 AI 功能时必需；仅服务端运行时 |
+| `MODELSCOPE_TOKEN_API_KEY` | AI 分析和翻译 | 启用分析/翻译时必需；仅服务端运行时 |
 | `AUTH_PASSWORD_ADMIN` | 管理员密码 | 启用管理员模式时必需；仅服务端运行时 |
 | `AUTH_PASSWORD_VIEWER` | 浏览者密码 | 启用浏览者模式时必需；仅服务端运行时 |
 | `SESSION_SECRET` | Cookie 会话 HMAC 密钥 | 必需；仅服务端运行时，至少 32 字节 |
@@ -102,15 +103,17 @@ pnpm cf:build
 - 音频：`audio_messages`
 - 年度总结：`yearly_summaries`、`important_events`、`ai_analysis_sections`、`ai_analysis_opinions`、`yearly_images`
 - 个人知识库：`knowledge_source_settings`、`knowledge_chunks`、`knowledge_index_jobs`（由迁移 `20260719155837_knowledge_base_index.sql` 创建）
-- ModelScope 调用预算：`modelscope_daily_usage`（由迁移 `20260720134848_modelscope_daily_quota.sql` 创建）
+- ModelScope 分析/翻译调用预算：`modelscope_daily_usage`（由迁移 `20260720134848_modelscope_daily_quota.sql` 创建）
 
 Storage bucket 为 `2024To2025_diary_images`、`2025_Summary_Images` 和 `audio_messages`。
 
 Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postflight 与重复 preflight。Batch 4、Batch 5 和后续匿名留言/函数 ACL 加固均已于 2026-07-15 在生产完成并通过回归。个人知识库迁移及首批 Worker 已于 2026-07-20 上线并通过单篇索引、搜索和来源日记回归。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
 
-`supabase/migrations/20260719155837_knowledge_base_index.sql` 已在生产应用。迁移为现有日记创建待索引任务；管理员登录后进入“个人知识库”，点击“同步待处理日记”才会调用 ModelScope 生成向量。日记保存本身不会等待 Embedding，待处理任务应继续按受监控的小批次同步。
+`supabase/migrations/20260719155837_knowledge_base_index.sql` 已在生产应用。迁移为现有日记创建待索引任务；本地 FastAPI 服务启动后，管理员进入“个人知识库”并点击“同步待处理日记”，应用才会调用本机服务生成向量。索引请求使用 `input_type: "document"`，搜索请求使用 `input_type: "query"`，每批最多 16 条文本。日记保存本身不会等待 Embedding。切分规则更新后，已有向量不会自动重建；需要先点击“重建全部索引”，再同步待处理日记。
 
-每次点击“同步待处理日记”最多运行 50 个 API 批次，每批最多 10 篇；相邻索引任务及批次之间至少间隔 3 秒。单篇失败不会自动重试而是继续下一篇，连续 3 篇失败会停止本次同步并提示管理员，尚未处理的已领取任务会返回待处理队列。失败任务手动重新入队后仍按现有队列顺序排在后面。
+每次点击“同步待处理日记”会连续运行每批最多 10 篇的 API 批次，直到队列为空、连续 3 篇失败或请求异常；不再设置 50 批或约 500 篇的单次上限。相邻索引任务及批次之间至少间隔 2 秒。同步期间状态卡片每 2 秒绕过缓存读取数据库计数，所有退出路径都会执行最终刷新。“日记来源”显示当前 `completed` 任务数而不是历史 `last_indexed_at` 数量。单篇失败不会自动重试而是继续下一篇，连续 3 篇失败会停止本次同步并提示管理员，尚未处理的已领取任务会返回待处理队列。失败任务手动重新入队后仍按现有队列顺序排在后面。
+
+知识搜索的开始日期默认是 `2024-11-04`，结束日期在页面访问时按浏览器本地日期初始化为当天；两者仍可手动修改或清空。
 
 `supabase/migrations/20260720134848_modelscope_daily_quota.sql` 已于 2026-07-20 在生产应用。它使用 Supabase 原子计数协调所有 Worker 实例；计数不可用时调用失败关闭，OpenAI SDK 自动重试被禁用，确保一次数据库预留最多对应一次上游 HTTP 调用。由于无法可靠回溯迁移前的当日调用，迁移当天已保守初始化为 180 次并暂停到北京时间次日零点。
 
@@ -129,7 +132,7 @@ pnpm exec wrangler deploy --dry-run
 pnpm run deploy
 ```
 
-`SUPABASE_URL`、service-role、认证和 ModelScope 配置均由服务端运行时读取，不再通过 `next.config.mjs` 注入浏览器构建。生产 Worker 已配置登录、匿名留言和 AI 三个 Rate Limit binding；`AI_RATE_LIMITER` 将分析、翻译和知识搜索限制为每客户端 IP 每 60 秒 5 次，ModelScope 请求另有 30 秒超时。管理员批量索引是显式维护操作，不占用交互式 AI 限流额度。
+`SUPABASE_URL`、service-role、认证和 ModelScope 配置均由服务端运行时读取，不再通过 `next.config.mjs` 注入浏览器构建。生产 Worker 已配置登录、匿名留言和 AI 三个 Rate Limit binding；`AI_RATE_LIMITER` 将分析、翻译和知识搜索限制为每客户端 IP 每 60 秒 5 次，ModelScope 请求另有 30 秒超时。当前知识库 Embedding 地址固定为本机回环地址，仅用于本地测试；管理员批量索引不占用交互式 AI 限流额度。
 
 已确认生产 Worker 为 `diaryproject`，自定义域名为 `diary.wuzhizhii.com`，未配置单独的 zone route，并存在可回滚的历史版本。Workers Builds 的 Git 仓库、生产分支和命令因当前 OAuth 无 Builds API 权限仍需在 Dashboard 确认。完整流程见 [`docs/DEPLOY.md`](docs/DEPLOY.md)。
 

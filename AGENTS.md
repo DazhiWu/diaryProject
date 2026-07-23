@@ -2,14 +2,14 @@
 
 ## Project overview
 
-This is a personal diary application built with Next.js and Supabase. It supports diary CRUD, image/audio uploads, search/calendar views, health tracking, anonymous messages, CSV export, yearly summaries, and an admin-only private knowledge index. Server API routes call ModelScope-hosted DeepSeek for title/emotion analysis and translation, and Qwen3-Embedding-0.6B for diary semantic search. Guest, viewer, and admin UI modes use simple password checks.
+This is a personal diary application built with Next.js and Supabase. It supports diary CRUD, image/audio uploads, search/calendar views, health tracking, anonymous messages, CSV export, yearly summaries, and an admin-only private knowledge index. Server API routes call ModelScope-hosted DeepSeek for title/emotion analysis and translation, while local knowledge indexing/search calls a Qwen3-Embedding-0.6B FastAPI service. Guest, viewer, and admin UI modes use simple password checks.
 
 ## Tech stack
 
 - Next.js 16 App Router, React 18, strict TypeScript, Tailwind CSS 4
 - pnpm 10.20.0 and Node.js 22+
 - Supabase PostgreSQL and Storage
-- ModelScope OpenAI-compatible API with `deepseek-ai/DeepSeek-V3.2` and `Qwen/Qwen3-Embedding-0.6B`
+- ModelScope OpenAI-compatible API with `deepseek-ai/DeepSeek-V3.2`; local Qwen3-Embedding-0.6B FastAPI service
 - Cloudflare Workers through OpenNext and Wrangler
 
 ## Development environment
@@ -41,10 +41,10 @@ This is a personal diary application built with Next.js and Supabase. It support
 - Diary detail timestamps intentionally apply the product-required `+16` hour adjustment.
 - Diary and yearly media read through fixed-bucket proxies; diary inherits latest-five/viewer/admin access, yearly is readable by all roles, and audio is admin-only with single-range streaming. All three media buckets are private; browser anon Storage access is denied.
 - Yearly routes scope every nested event, section, opinion, and image mutation to the summary identified by the URL year. Request parsers centrally enforce byte, character, date, array, file-size, MIME, and extension limits before writes.
-- The admin-only knowledge base uses queued diary indexing, paragraph-aware chunks, SHA-256 idempotency, 1024-dimensional Qwen3 embeddings, exact vector scans plus literal keyword fusion, optional date filters, and source-diary navigation. Diary mutations enqueue work through a database trigger and never wait for ModelScope; index replacement is transactional through a service-role-only RPC.
-- One administrator sync click runs at most 50 API batches of up to ten sources, with at least three seconds between individual tasks and between batches. A failed source is not automatically retried; processing continues until three consecutive failures stop the click and requeue the remaining claimed sources. Manual failed-job retry retains the existing tail-of-queue behavior.
+- The admin-only knowledge base uses queued diary indexing, newline-first chunks, SHA-256 idempotency, 1024-dimensional Qwen3 embeddings, exact vector scans plus literal keyword fusion, optional date filters, and source-diary navigation. Single and consecutive newlines are equal highest-priority boundaries; adjacent short segments target 400–700 characters with an 800-character hard maximum, while long lines fall back to complete-sentence boundaries and sentence overlap. Search merges adjacent hits and keeps at most two independent results per diary. Local requests target `http://127.0.0.1:8000/embeddings`, use `document` input for indexing and `query` input for search, and send at most 16 texts per request. Diary mutations enqueue work through a database trigger and never wait for Embedding; index replacement is transactional through a service-role-only RPC.
+- One administrator sync click runs sequential API batches of up to ten sources without a batch/source cap, stopping only when the queue is empty, three consecutive source failures occur, or a request fails. Individual tasks and batches remain at least two seconds apart. While syncing, the status card bypasses caches and polls every two seconds; every exit path performs a final refresh. Indexed-source progress is the current completed-job count, not the historical non-null `last_indexed_at` count. A failed source is not automatically retried; processing continues until three consecutive failures stop the click and requeue the remaining claimed sources. Manual failed-job retry retains the existing tail-of-queue behavior. Knowledge search defaults to `2024-11-04` through the browser's local current date, while keeping both fields editable.
 - New `knowledge_index_jobs.last_error` values are bounded structured JSON with category, safe status/code, an upstream-error excerpt, and a diary-content excerpt for diagnosis. Credential-like values are redacted, while legacy rows may still contain the generic `Knowledge indexing failed` text.
-- Every ModelScope analysis, translation, embedding-index, and knowledge-search HTTP call must first reserve one slot from the Supabase-backed Beijing-calendar-day budget. The hard safety limit is 180 calls per day across all Worker instances; quota lookup fails closed, SDK automatic retries stay disabled, and knowledge indexing immediately requeues unprocessed claimed jobs when quota stops a batch.
+- Every ModelScope analysis and translation HTTP call must first reserve one slot from the Supabase-backed Beijing-calendar-day budget. The hard safety limit is 180 calls per day across all Worker instances; local Embedding calls do not reserve ModelScope quota.
 - Yearly UI state/mutations live in `useYearlySummaryController`; analysis, event, gallery, and editor views live under `components/yearly-summary/`.
 - Batch 3 completed media invariants on 2026-07-13, Batch 4 completed authorized media/health/yearly APIs, and Batch 5 completed production Storage plus table least-privilege hardening on 2026-07-15. The private knowledge-index migration and first Worker batch deployed on 2026-07-20; one-source indexing, search, and source navigation passed.
 
@@ -66,7 +66,7 @@ Read [`docs/DEPLOY.md`](docs/DEPLOY.md) before changing builds, variables, API r
 |---|---|---|
 | `SUPABASE_URL` | Shared Supabase client URL | Yes |
 | `SUPABASE_ANON_KEY` | Operator-only direct-access regression credential | Not required by the application |
-| `MODELSCOPE_TOKEN_API_KEY` | Server-side AI/translation/Embedding credential | For AI and knowledge-search features |
+| `MODELSCOPE_TOKEN_API_KEY` | Server-side AI/translation credential | For AI analysis and translation |
 | `AUTH_PASSWORD_ADMIN` | Admin password | For admin mode |
 | `AUTH_PASSWORD_VIEWER` | Viewer password | For viewer mode |
 | `SESSION_SECRET` | Cookie-session HMAC key | Yes, server-only |
@@ -103,8 +103,9 @@ pnpm run deploy
 
 - Anonymous-message API writes require deployment of `ANONYMOUS_MESSAGE_RATE_LIMITER`; production fails closed when the binding or trusted Cloudflare IP is unavailable.
 - AI analysis, translation, and knowledge search require the `AI_RATE_LIMITER` binding in production and fail closed if the binding or trusted Cloudflare IP is unavailable.
-- Administrator bulk indexing is outside the per-IP interactive limiter but consumes the shared 180-call ModelScope daily budget. It is deliberately paced and circuit-broken but still runs on the request path; monitor long runs. Failed sources remain manually retryable and do not block diary writes.
-- Migration `20260720134848_modelscope_daily_quota.sql` is applied in production as `20260720141701_modelscope_daily_quota`. Any new environment must apply it before deploying source that imports `modelScopeQuota.ts`; otherwise all ModelScope features intentionally return a quota-check-unavailable error without contacting the provider.
+- Administrator bulk indexing is outside the per-IP interactive limiter and uses the local FastAPI Embedding service. It is deliberately paced and circuit-broken but still runs on the request path; monitor long runs. Failed sources remain manually retryable and do not block diary writes.
+- Migration `20260720134848_modelscope_daily_quota.sql` is applied in production as `20260720141701_modelscope_daily_quota`. Any environment using ModelScope analysis/translation must apply it before deploying source that imports `modelScopeQuota.ts`; otherwise those features intentionally return a quota-check-unavailable error without contacting the provider.
+- The fixed `127.0.0.1` Embedding endpoint is a local-test configuration. Do not treat knowledge indexing/search as production-ready until the server runtime can reach an explicitly configured Embedding endpoint.
 - The 2026-07-20 quota rollout snapshot had 195 completed, 344 pending, 56 failed, and no processing knowledge jobs. A quota-stopped sync returned the claimed source to pending without increasing failed or processing counts. Continue the administrator backfill in monitored batches rather than as an unobserved bulk operation.
 - The retained direct anon message read relies on column grants plus RLS; UI roles are not authorization.
 - Public unoptimized images can affect bandwidth/performance.

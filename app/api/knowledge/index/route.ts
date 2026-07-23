@@ -14,7 +14,7 @@ function responseFor(error: unknown) {
 export async function GET(request: Request) {
   try {
     requireAdmin(await readSession(request.headers.get('cookie')))
-    return NextResponse.json(await getKnowledgeIndexStatus())
+    return NextResponse.json(await getKnowledgeIndexStatus(), { headers: { 'Cache-Control': 'no-store, max-age=0' } })
   } catch (error) {
     return responseFor(error)
   }

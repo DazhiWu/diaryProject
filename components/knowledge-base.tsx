@@ -1,21 +1,22 @@
 "use client"
 
-import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
+import { KNOWLEDGE_SEARCH_DEFAULT_START_DATE, localDateInputValue } from '@/lib/dateInput'
 import {
   fetchKnowledgeIndexStatus,
   queueKnowledgeRebuild,
   retryKnowledgeIndex,
   searchKnowledge,
-  syncKnowledgeIndex,
   type KnowledgeIndexStatus,
   type KnowledgeSearchResult,
 } from '@/lib/knowledgeApi'
+import { runKnowledgeSync, SYNC_BATCH_INTERVAL_MS } from '@/lib/knowledgeSync'
 
 const EMPTY_STATUS: KnowledgeIndexStatus = {
   totalSources: 0,
@@ -29,62 +30,63 @@ const EMPTY_STATUS: KnowledgeIndexStatus = {
   lastIndexedAt: null,
 }
 
-const MAX_SYNC_BATCHES_PER_CLICK = 50
-const SYNC_BATCH_INTERVAL_MS = 3_000
-
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
-}
-
 export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number) => Promise<void> }) {
   const [status, setStatus] = useState(EMPTY_STATUS)
   const [query, setQuery] = useState('')
-  const [startDate, setStartDate] = useState('')
+  const [startDate, setStartDate] = useState(KNOWLEDGE_SEARCH_DEFAULT_START_DATE)
   const [endDate, setEndDate] = useState('')
   const [results, setResults] = useState<KnowledgeSearchResult[]>([])
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [searching, setSearching] = useState(false)
+  const statusRequestVersion = useRef(0)
 
-  const refreshStatus = useCallback(async () => {
+  const applyStatus = useCallback((nextStatus: KnowledgeIndexStatus) => {
+    statusRequestVersion.current += 1
+    setStatus(nextStatus)
+  }, [])
+
+  const loadLatestStatus = useCallback(async () => {
+    const requestVersion = statusRequestVersion.current + 1
+    statusRequestVersion.current = requestVersion
+    const nextStatus = await fetchKnowledgeIndexStatus()
+    if (statusRequestVersion.current === requestVersion) setStatus(nextStatus)
+    return nextStatus
+  }, [])
+
+  const refreshStatus = useCallback(async (silent = false) => {
     try {
-      setStatus(await fetchKnowledgeIndexStatus())
+      await loadLatestStatus()
     } catch (error) {
       console.error('Failed to load knowledge index status:', error)
-      toast.error('无法加载知识索引状态')
+      if (!silent) toast.error('无法加载知识索引状态')
     } finally {
       setLoadingStatus(false)
     }
-  }, [])
+  }, [loadLatestStatus])
 
   useEffect(() => { void refreshStatus() }, [refreshStatus])
 
+  useEffect(() => { setEndDate(localDateInputValue(new Date())) }, [])
+
+  useEffect(() => {
+    if (!syncing) return
+    const interval = window.setInterval(() => { void refreshStatus(true) }, SYNC_BATCH_INTERVAL_MS)
+    return () => window.clearInterval(interval)
+  }, [refreshStatus, syncing])
+
   async function syncAllPending() {
     setSyncing(true)
-    let processed = 0
-    let failed = 0
-    let consecutiveFailures = 0
-    let stoppedForConsecutiveFailures = false
     try {
-      for (let batch = 0; batch < MAX_SYNC_BATCHES_PER_CLICK; batch += 1) {
-        if (batch > 0) await wait(SYNC_BATCH_INTERVAL_MS)
-        const result = await syncKnowledgeIndex(consecutiveFailures)
-        processed += result.processed
-        failed += result.failed
-        consecutiveFailures = result.consecutiveFailures
-        stoppedForConsecutiveFailures = result.stoppedForConsecutiveFailures
-        setStatus(result.status)
-        if (stoppedForConsecutiveFailures) break
-        if ((result.processed === 0 && result.failed === 0) || result.status.pending === 0) break
-      }
-      if (stoppedForConsecutiveFailures) toast.error(`连续 3 篇索引失败，已停止本次同步；成功 ${processed} 篇，失败 ${failed} 篇`)
-      else if (failed > 0) toast.error(`已同步 ${processed} 篇，${failed} 篇失败`)
-      else toast.success(`知识索引同步完成，共处理 ${processed} 篇日记`)
+      const summary = await runKnowledgeSync({ onStatus: applyStatus, refreshStatus: loadLatestStatus })
+      if (summary.stoppedForConsecutiveFailures) toast.error(`连续 3 篇索引失败，已停止本次同步；成功 ${summary.processed} 篇，失败 ${summary.failed} 篇`)
+      else if (summary.failed > 0) toast.error(`已同步 ${summary.processed} 篇，${summary.failed} 篇失败`)
+      else toast.success(`知识索引同步完成，共处理 ${summary.processed} 篇日记`)
     } catch (error) {
       console.error('Failed to sync knowledge index:', error)
       toast.error(error instanceof Error ? error.message : '知识索引同步失败')
-      await refreshStatus()
     } finally {
+      await refreshStatus(true)
       setSyncing(false)
     }
   }
@@ -92,7 +94,7 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
   async function rebuild() {
     setSyncing(true)
     try {
-      setStatus(await queueKnowledgeRebuild())
+      applyStatus(await queueKnowledgeRebuild())
       toast.success('已将全部日记加入重建队列')
     } catch (error) {
       console.error('Failed to queue knowledge rebuild:', error)
@@ -105,7 +107,7 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
   async function retryFailed() {
     setSyncing(true)
     try {
-      setStatus(await retryKnowledgeIndex())
+      applyStatus(await retryKnowledgeIndex())
       toast.success('失败任务已重新加入队列')
     } catch (error) {
       console.error('Failed to retry knowledge jobs:', error)
@@ -153,7 +155,7 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
             <Button variant="outline" onClick={() => void retryFailed()} disabled={syncing || status.failed === 0}>重试失败任务</Button>
             <Button variant="ghost" onClick={() => void refreshStatus()} disabled={syncing}>刷新状态</Button>
           </div>
-          <p className="text-xs text-muted-foreground">日记保存不会等待 Embedding；新增或修改后的内容会进入待处理队列。每个任务间隔 3 秒，连续 3 篇失败会停止本次同步；重建只重新排队，不会立即删除现有可搜索片段。</p>
+          <p className="text-xs text-muted-foreground">日记保存不会等待 Embedding；新增或修改后的内容会进入待处理队列。每个任务间隔 2 秒，连续 3 篇失败会停止本次同步；重建只重新排队，不会立即删除现有可搜索片段。</p>
         </CardContent>
       </Card>
 
@@ -181,7 +183,7 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
           return <Card key={result.chunkId} className="gap-4 py-4">
             <CardHeader className="px-4 sm:px-6">
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <div><CardTitle className="leading-snug">{result.sourceTitle || `日记 ${result.sourceDate}`}</CardTitle><CardDescription className="mt-1">{result.sourceDate} · 第 {result.chunkIndex + 1} 个片段{similarity === null ? '' : ` · 语义相似度 ${similarity.toFixed(1)}%`}</CardDescription></div>
+                <div><CardTitle className="leading-snug">{result.sourceTitle || `日记 ${result.sourceDate}`}</CardTitle><CardDescription className="mt-1">{result.sourceDate} · 第 {result.chunkIndex + 1}{result.chunkEndIndex === result.chunkIndex ? '' : `–${result.chunkEndIndex + 1}`} 个片段{similarity === null ? '' : ` · 语义相似度 ${similarity.toFixed(1)}%`}</CardDescription></div>
                 <Button size="sm" variant="outline" onClick={() => void onOpenDiary(result.sourceId)}>打开原日记</Button>
               </div>
             </CardHeader>

@@ -14,6 +14,7 @@ export type KnowledgeSearchResult = {
   chunkId: number
   sourceId: number
   chunkIndex: number
+  chunkEndIndex: number
   sourceDate: string
   sourceTitle: string | null
   content: string
@@ -33,7 +34,7 @@ async function knowledgeRequest<T>(path: string, init?: RequestInit): Promise<T>
 }
 
 export function fetchKnowledgeIndexStatus(): Promise<KnowledgeIndexStatus> {
-  return knowledgeRequest('/api/knowledge/index')
+  return knowledgeRequest('/api/knowledge/index', { cache: 'no-store' })
 }
 
 export function queueKnowledgeRebuild(): Promise<KnowledgeIndexStatus> {

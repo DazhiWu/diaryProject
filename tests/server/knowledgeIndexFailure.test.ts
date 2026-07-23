@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { KnowledgeIndexStepError, sanitizeKnowledgeIndexFailure } from '@/lib/server/knowledgeIndexFailure'
 
 describe('knowledge index failure sanitization', () => {
-  it('stores ModelScope status, code, upstream detail, and diary content', () => {
+  it('stores embedding-service status, code, upstream detail, and diary content', () => {
     const failure = sanitizeKnowledgeIndexFailure({
       name: 'RateLimitError',
       status: 429,
@@ -12,11 +12,11 @@ describe('knowledge index failure sanitization', () => {
       error: { reason: 'capacity' },
     }, 'private diary content')
 
-    expect(failure.category).toBe('modelscope_rate_limit')
+    expect(failure.category).toBe('embedding_rate_limit')
     expect(failure.status).toBe(429)
     expect(failure.code).toBe('rate_limit_exceeded')
     expect(JSON.parse(failure.storedMessage)).toMatchObject({
-      category: 'modelscope_rate_limit',
+      category: 'embedding_rate_limit',
       status: 429,
       code: 'rate_limit_exceeded',
       upstream: { text: 'upstream response body\n{"reason":"capacity"}', truncated: false },
@@ -25,7 +25,8 @@ describe('knowledge index failure sanitization', () => {
   })
 
   it('classifies timeouts and invalid embedding responses', () => {
-    expect(JSON.parse(sanitizeKnowledgeIndexFailure(new DOMException('The operation timed out', 'TimeoutError')).storedMessage).category).toBe('modelscope_timeout')
+    expect(JSON.parse(sanitizeKnowledgeIndexFailure(new DOMException('The operation timed out', 'TimeoutError')).storedMessage).category).toBe('embedding_timeout')
+    expect(JSON.parse(sanitizeKnowledgeIndexFailure(new TypeError('fetch failed')).storedMessage).category).toBe('embedding_network')
     expect(JSON.parse(sanitizeKnowledgeIndexFailure(new Error('Embedding response has an unexpected shape')).storedMessage).category).toBe('embedding_response_shape')
   })
 

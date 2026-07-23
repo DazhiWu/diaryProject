@@ -3,10 +3,9 @@ import 'server-only'
 import { chunkDiaryContent, knowledgeSourceText, sha256Hex } from '@/lib/server/knowledgeChunks'
 import { embedKnowledgeTexts, KNOWLEDGE_EMBEDDING_MODEL } from '@/lib/server/knowledgeEmbedding'
 import { KnowledgeIndexStepError, sanitizeKnowledgeIndexFailure } from '@/lib/server/knowledgeIndexFailure'
-import { ModelScopeQuotaStopError } from '@/lib/server/modelScopeQuota'
 import { getSupabaseAdmin } from '@/lib/server/supabaseAdmin'
 
-export const KNOWLEDGE_INDEX_TASK_INTERVAL_MS = 3_000
+export const KNOWLEDGE_INDEX_TASK_INTERVAL_MS = 2_000
 export const KNOWLEDGE_INDEX_CONSECUTIVE_FAILURE_LIMIT = 3
 const KNOWLEDGE_INDEX_LAST_ERROR_MAX_CHARS = 8_000
 
@@ -54,9 +53,8 @@ async function exactCount(table: string, configure?: (query: any) => any): Promi
 
 export async function getKnowledgeIndexStatus(): Promise<KnowledgeIndexStatus> {
   const supabase = await getSupabaseAdmin()
-  const [totalSources, indexedSources, totalChunks, pending, processing, failed, completed, excluded, latest] = await Promise.all([
+  const [totalSources, totalChunks, pending, processing, failed, completed, excluded, latest] = await Promise.all([
     exactCount('knowledge_source_settings'),
-    exactCount('knowledge_source_settings', (query) => query.not('last_indexed_at', 'is', null)),
     exactCount('knowledge_chunks'),
     exactCount('knowledge_index_jobs', (query) => query.eq('status', 'pending')),
     exactCount('knowledge_index_jobs', (query) => query.eq('status', 'processing')),
@@ -66,7 +64,7 @@ export async function getKnowledgeIndexStatus(): Promise<KnowledgeIndexStatus> {
     supabase.from('knowledge_source_settings').select('last_indexed_at').not('last_indexed_at', 'is', null).order('last_indexed_at', { ascending: false }).limit(1).maybeSingle(),
   ])
   if (latest.error) throw new Error('Knowledge index status query failed')
-  return { totalSources, indexedSources, totalChunks, pending, processing, failed, completed, excluded, lastIndexedAt: latest.data?.last_indexed_at ?? null }
+  return { totalSources, indexedSources: completed, totalChunks, pending, processing, failed, completed, excluded, lastIndexedAt: latest.data?.last_indexed_at ?? null }
 }
 
 export async function queueKnowledgeRebuild(): Promise<KnowledgeIndexStatus> {
@@ -178,7 +176,7 @@ export async function processKnowledgeIndexBatch(batchSize = 10, initialConsecut
         continue
       }
 
-      const embeddings = await embedKnowledgeTexts(chunks.map((chunk) => diary.subtitle ? `${diary.subtitle}\n${chunk.content}` : chunk.content))
+      const embeddings = await embedKnowledgeTexts(chunks.map((chunk) => diary.subtitle ? `${diary.subtitle}\n${chunk.content}` : chunk.content), 'document')
       const payload = await Promise.all(chunks.map(async (chunk, index) => ({
         chunk_index: chunk.chunkIndex,
         content: chunk.content,
@@ -199,11 +197,6 @@ export async function processKnowledgeIndexBatch(batchSize = 10, initialConsecut
       processed += 1
       consecutiveFailures = 0
     } catch (error) {
-      if (error instanceof ModelScopeQuotaStopError) {
-        const failure = sanitizeKnowledgeIndexFailure(new KnowledgeIndexStepError({ category: 'modelscope_quota_stop', status: error.status }))
-        await requeueJobs(claimedIds.slice(sourceIndex), failure.storedMessage)
-        throw error
-      }
       const failure = sanitizeKnowledgeIndexFailure(error, content)
       console.error('[knowledge-index]', { operation: 'index-source', sourceId, outcome: 'failed', category: failure.category, status: failure.status, code: failure.code })
       await failJobs([sourceId], failure.storedMessage)
