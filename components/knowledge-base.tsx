@@ -1,8 +1,9 @@
 "use client"
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { toast } from 'sonner'
 
+import { ChevronRightIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -31,8 +32,48 @@ const EMPTY_STATUS: KnowledgeIndexStatus = {
   lastIndexedAt: null,
 }
 
+const COLLAPSED_DIAGNOSTIC_SECTIONS = {
+  candidates: false,
+  reranked: false,
+  final: false,
+}
+
 function scoreLabel(score: number | null): string {
   return score === null ? '—' : score.toFixed(6)
+}
+
+function DiagnosticSection({
+  contentId,
+  title,
+  expanded,
+  onToggle,
+  children,
+}: {
+  contentId: string
+  title: ReactNode
+  expanded: boolean
+  onToggle: () => void
+  children: ReactNode
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          aria-controls={contentId}
+          aria-expanded={expanded}
+          onClick={onToggle}
+        >
+          <ChevronRightIcon className={`h-4 w-4 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          {expanded ? '收起' : '展开'}
+        </Button>
+      </div>
+      <div id={contentId} className="space-y-3" hidden={!expanded}>{children}</div>
+    </section>
+  )
 }
 
 function KnowledgeResultCards({
@@ -78,6 +119,7 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
   const [rerankApplied, setRerankApplied] = useState<boolean | null>(null)
   const [diagnosticMode, setDiagnosticMode] = useState(false)
   const [diagnostics, setDiagnostics] = useState<KnowledgeSearchDiagnostics | null>(null)
+  const [expandedDiagnosticSections, setExpandedDiagnosticSections] = useState(COLLAPSED_DIAGNOSTIC_SECTIONS)
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [searching, setSearching] = useState(false)
@@ -173,6 +215,7 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
       setResults(response.results)
       setRerankApplied(response.rerankApplied)
       setDiagnostics(response.diagnostics ?? null)
+      setExpandedDiagnosticSections(COLLAPSED_DIAGNOSTIC_SECTIONS)
       if (response.results.length === 0) toast.info('没有找到相关日记片段')
     } catch (error) {
       console.error('Failed to search knowledge:', error)
@@ -224,7 +267,10 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
               <input
                 type="checkbox"
                 checked={diagnosticMode}
-                onChange={(event) => setDiagnosticMode(event.target.checked)}
+                onChange={(event) => {
+                  setDiagnosticMode(event.target.checked)
+                  setExpandedDiagnosticSections(COLLAPSED_DIAGNOSTIC_SECTIONS)
+                }}
                 className="mt-0.5 h-4 w-4 accent-primary"
               />
               <span>
@@ -238,9 +284,13 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
       </Card>
 
       {diagnosticMode && diagnostics ? <div className="space-y-8">
-        <section className="space-y-3">
+        <DiagnosticSection
+          contentId="knowledge-diagnostics-candidates"
+          title={`1. 召回候选（${diagnostics.candidates.length}/20 条）`}
+          expanded={expandedDiagnosticSections.candidates}
+          onToggle={() => setExpandedDiagnosticSections((current) => ({ ...current, candidates: !current.candidates }))}
+        >
           <div>
-            <h2 className="text-lg font-semibold">1. 召回候选（{diagnostics.candidates.length}/20 条）</h2>
             <p className="mt-1 text-xs text-muted-foreground">融合排名为现有 Supabase RPC 的返回顺序；RPC score 是语义与字面匹配融合后的分数。</p>
           </div>
           {diagnostics.candidates.length === 0 ? <p className="text-sm text-muted-foreground">没有召回候选，因此未调用 Reranker。</p> : diagnostics.candidates.map((candidate) => (
@@ -260,11 +310,15 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
               </CardContent>
             </Card>
           ))}
-        </section>
+        </DiagnosticSection>
 
-        <section className="space-y-3">
+        <DiagnosticSection
+          contentId="knowledge-diagnostics-reranked"
+          title={`2. Reranker 原始前 5（${diagnostics.reranked.length} 条）`}
+          expanded={expandedDiagnosticSections.reranked}
+          onToggle={() => setExpandedDiagnosticSections((current) => ({ ...current, reranked: !current.reranked }))}
+        >
           <div>
-            <h2 className="text-lg font-semibold">2. Reranker 原始前 5（{diagnostics.reranked.length} 条）</h2>
             {rerankApplied === false && diagnostics.candidates.length > 0
               ? <p className="mt-1 text-xs text-muted-foreground">Workers AI 重排失败，本阶段没有结果；最终阶段已按向量相似度降级。</p>
               : <p className="mt-1 text-xs text-muted-foreground">按 Workers AI 原始返回顺序展示，尚未合并相邻片段或执行来源多样化。</p>}
@@ -283,15 +337,19 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
               </CardContent>
             </Card>
           ))}
-        </section>
+        </DiagnosticSection>
 
-        <section className="space-y-3">
+        <DiagnosticSection
+          contentId="knowledge-diagnostics-final"
+          title={`3. 合并/多样化后的最终结果（${results.length} 条）`}
+          expanded={expandedDiagnosticSections.final}
+          onToggle={() => setExpandedDiagnosticSections((current) => ({ ...current, final: !current.final }))}
+        >
           <div>
-            <h2 className="text-lg font-semibold">3. 合并/多样化后的最终结果（{results.length} 条）</h2>
             <p className="mt-1 text-xs text-muted-foreground">相邻片段会合并，每篇日记最多保留两个独立结果。</p>
           </div>
           <KnowledgeResultCards results={results} onOpenDiary={onOpenDiary} showRank />
-        </section>
+        </DiagnosticSection>
       </div> : results.length > 0 && <div className="space-y-3">
         <div>
           <h2 className="text-lg font-semibold">搜索结果</h2>
