@@ -21,6 +21,7 @@ import {
 import { runKnowledgeSync, SYNC_BATCH_INTERVAL_MS } from '@/lib/knowledgeSync'
 
 const EMPTY_STATUS: KnowledgeIndexStatus = {
+  executionMode: 'status-only',
   totalSources: 0,
   indexedSources: 0,
   totalChunks: 0,
@@ -124,6 +125,7 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
   const [syncing, setSyncing] = useState(false)
   const [searching, setSearching] = useState(false)
   const statusRequestVersion = useRef(0)
+  const localIndexingEnabled = status.executionMode === 'local'
 
   const applyStatus = useCallback((nextStatus: KnowledgeIndexStatus) => {
     statusRequestVersion.current += 1
@@ -241,13 +243,20 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
               <div className="rounded-md border p-3"><div className="text-muted-foreground">失败</div><div className="mt-1 text-xl font-semibold">{status.failed}</div></div>
             </div>
           )}
+          {!loadingStatus && (
+            <div className={`rounded-md border px-3 py-2 text-sm ${localIndexingEnabled ? 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-amber-500/40 bg-amber-500/5 text-amber-800 dark:text-amber-300'}`}>
+              {localIndexingEnabled
+                ? '本地索引执行已启用：请确认本机 FastAPI Embedding 服务正在 127.0.0.1:8000 运行。'
+                : '生产环境仅提供索引状态与知识搜索。索引同步、重建和失败任务重试必须在本地启动项目后执行。'}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => void syncAllPending()} disabled={syncing || status.pending + status.processing === 0}>{syncing ? <Spinner className="h-4 w-4" /> : null}同步待处理日记</Button>
-            <Button variant="outline" onClick={() => void rebuild()} disabled={syncing}>重建全部索引</Button>
-            <Button variant="outline" onClick={() => void retryFailed()} disabled={syncing || status.failed === 0}>重试失败任务</Button>
+            <Button onClick={() => void syncAllPending()} disabled={!localIndexingEnabled || syncing || status.pending + status.processing === 0}>{syncing ? <Spinner className="h-4 w-4" /> : null}同步待处理日记</Button>
+            <Button variant="outline" onClick={() => void rebuild()} disabled={!localIndexingEnabled || syncing}>重建全部索引</Button>
+            <Button variant="outline" onClick={() => void retryFailed()} disabled={!localIndexingEnabled || syncing || status.failed === 0}>重试失败任务</Button>
             <Button variant="ghost" onClick={() => void refreshStatus()} disabled={syncing}>刷新状态</Button>
           </div>
-          <p className="text-xs text-muted-foreground">日记保存不会等待 Embedding；新增或修改后的内容会进入待处理队列。每个任务间隔 2 秒，连续 3 篇失败会停止本次同步；重建只重新排队，不会立即删除现有可搜索片段。</p>
+          <p className="text-xs text-muted-foreground">日记保存不会等待 Embedding；新增或修改后的内容会进入待处理队列。本地同步时每个任务间隔 2 秒，连续 3 篇失败会停止本次同步；重建只重新排队，不会立即删除现有可搜索片段。</p>
         </CardContent>
       </Card>
 

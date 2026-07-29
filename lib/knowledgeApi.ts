@@ -1,4 +1,5 @@
 export type KnowledgeIndexStatus = {
+  executionMode: 'local' | 'status-only'
   totalSources: number
   indexedSources: number
   totalChunks: number

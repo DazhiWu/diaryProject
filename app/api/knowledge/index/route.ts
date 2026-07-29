@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
 
-import { getKnowledgeIndexStatus, processKnowledgeIndexBatch, queueKnowledgeRebuild, retryFailedKnowledgeJobs } from '@/lib/server/knowledgeIndex'
+import {
+  getKnowledgeIndexExecutionMode,
+  getKnowledgeIndexStatus,
+  processKnowledgeIndexBatch,
+  queueKnowledgeRebuild,
+  retryFailedKnowledgeJobs,
+} from '@/lib/server/knowledgeIndex'
 import { assertAllowedOrigin } from '@/lib/server/origin'
 import { readJsonBody, REQUEST_LIMITS, stringField } from '@/lib/server/requestLimits'
 import { HttpError, readSession, requireAdmin } from '@/lib/server/session'
@@ -24,6 +30,9 @@ export async function POST(request: Request) {
   try {
     await assertAllowedOrigin(request)
     requireAdmin(await readSession(request.headers.get('cookie')))
+    if (getKnowledgeIndexExecutionMode() !== 'local') {
+      throw new HttpError(409, 'Knowledge index maintenance is only available from the local development server')
+    }
     const body = await readJsonBody(request, REQUEST_LIMITS.modelJson) as { action?: unknown; batchSize?: unknown; consecutiveFailures?: unknown } | null
     const action = stringField(body?.action, 'knowledge index action', { min: 1, max: 20, trim: true })
 

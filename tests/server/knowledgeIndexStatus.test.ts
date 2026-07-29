@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ getSupabaseAdmin: vi.fn() }))
 
 vi.mock('@/lib/server/supabaseAdmin', () => ({ getSupabaseAdmin: mocks.getSupabaseAdmin }))
 
-import { getKnowledgeIndexStatus } from '@/lib/server/knowledgeIndex'
+import { getKnowledgeIndexExecutionMode, getKnowledgeIndexStatus } from '@/lib/server/knowledgeIndex'
 
 function queryFor(table: string) {
   let statusFilter: string | undefined
@@ -33,8 +33,13 @@ describe('knowledge index status', () => {
     mocks.getSupabaseAdmin.mockResolvedValue({ from: (table: string) => queryFor(table) })
   })
 
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('uses currently completed jobs for indexed source progress', async () => {
     await expect(getKnowledgeIndexStatus()).resolves.toMatchObject({
+      executionMode: 'local',
       totalSources: 598,
       indexedSources: 40,
       totalChunks: 559,
@@ -43,5 +48,10 @@ describe('knowledge index status', () => {
       failed: 0,
       completed: 40,
     })
+  })
+
+  it('reports status-only mode in production', () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    expect(getKnowledgeIndexExecutionMode()).toBe('status-only')
   })
 })

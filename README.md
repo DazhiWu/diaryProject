@@ -109,9 +109,9 @@ Storage bucket 为 `2024To2025_diary_images`、`2025_Summary_Images` 和 `audio_
 
 Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postflight 与重复 preflight。Batch 4、Batch 5 和后续匿名留言/函数 ACL 加固均已于 2026-07-15 在生产完成并通过回归。个人知识库迁移及首批 Worker 已于 2026-07-20 上线并通过单篇索引、搜索和来源日记回归。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
 
-`supabase/migrations/20260719155837_knowledge_base_index.sql` 已在生产应用。迁移为现有日记创建待索引任务；本地 FastAPI 服务启动后，管理员进入“个人知识库”并点击“同步待处理日记”，应用才会调用本机服务生成文档向量。索引请求使用 `input_type: "document"`，每批最多 16 条文本。线上查询不调用本地回环服务，也不重新生成现有文档向量。日记保存本身不会等待 Embedding。切分规则更新后，已有向量不会自动重建；需要先点击“重建全部索引”，再同步待处理日记。
+`supabase/migrations/20260719155837_knowledge_base_index.sql` 已在生产应用。迁移为现有日记创建待索引任务；管理员需要同时启动本地 FastAPI 服务和 `pnpm dev`，再从本地页面执行同步，应用才会调用本机服务生成文档向量。该 FastAPI 服务当前由管理员在仓库外单独维护。生产页面只显示索引状态并提供知识搜索，索引同步、重建和失败任务重试按钮均禁用，对生产 `/api/knowledge/index` 的维护请求也会返回 `409`。索引请求使用 `input_type: "document"`，每批最多 16 条文本。线上查询不调用本地回环服务，也不重新生成现有文档向量。日记保存本身不会等待 Embedding。切分规则更新后，已有向量不会自动重建；需要在本地先点击“重建全部索引”，再同步待处理日记。
 
-每次点击“同步待处理日记”会连续运行每批最多 10 篇的 API 批次，直到队列为空、连续 3 篇失败或请求异常；不再设置 50 批或约 500 篇的单次上限。相邻索引任务及批次之间至少间隔 2 秒。同步期间状态卡片每 2 秒绕过缓存读取数据库计数，所有退出路径都会执行最终刷新。“日记来源”显示当前 `completed` 任务数而不是历史 `last_indexed_at` 数量。单篇失败不会自动重试而是继续下一篇，连续 3 篇失败会停止本次同步并提示管理员，尚未处理的已领取任务会返回待处理队列。失败任务手动重新入队后仍按现有队列顺序排在后面。
+本地每次点击“同步待处理日记”会连续运行每批最多 10 篇的 API 批次，直到队列为空、连续 3 篇失败或请求异常；不再设置 50 批或约 500 篇的单次上限。相邻索引任务及批次之间至少间隔 2 秒。同步期间状态卡片每 2 秒绕过缓存读取数据库计数，所有退出路径都会执行最终刷新。“日记来源”显示当前 `completed` 任务数而不是历史 `last_indexed_at` 数量。单篇失败不会自动重试而是继续下一篇，连续 3 篇失败会停止本次同步并提示管理员，尚未处理的已领取任务会返回待处理队列。失败任务手动重新入队后仍按现有队列顺序排在后面。当前维护流程按单一管理员操作设计：同步期间不新增或修改日记；全量重建请求若因网络中断失败，联网后从本地重新执行完整重建。
 
 知识搜索的开始日期默认是 `2024-11-04`，结束日期在页面访问时按浏览器本地日期初始化为当天；两者仍可手动修改或清空。
 
@@ -136,15 +136,13 @@ pnpm run deploy
 
 已确认生产 Worker 为 `diaryproject`，自定义域名为 `diary.wuzhizhii.com`，未配置单独的 zone route，并存在可回滚的历史版本。Workers Builds 当前连接 GitHub `DazhiWu/diaryProject` 的 `main` 分支，root directory 为 `/`，build command 为 `pnpm run cf:build`。Deploy command 必须设为 `pnpm run deploy`，不能使用 `opennextjs-cloudflare deploy`。完整流程见 [`docs/DEPLOY.md`](docs/DEPLOY.md)。
 
-## 需要确认
-
-- Cloudflare Dashboard 的 production Deploy command 需要从旧的 `pnpm exec opennextjs-cloudflare deploy` 改为 `pnpm run deploy`；当前 API 连接可以读取但没有修改 Builds 设置的权限。
-
 ## 文档导航
 
 - [`AGENTS.md`](AGENTS.md)：架构摘要、开发约束和文档维护规则。
 - [`docs/DATABASE.md`](docs/DATABASE.md)：数据库、RLS、Storage 与访问模式。
 - [`docs/DEPLOY.md`](docs/DEPLOY.md)：OpenNext、Wrangler、环境变量与部署流程。
+- [`docs/FACT_LAYER_PLAN.md`](docs/FACT_LAYER_PLAN.md)：第二阶段事实问答的范围、接口建议、测试要求与当前交接状态。
+- [`docs/DIGITAL_TWIN_ROADMAP.md`](docs/DIGITAL_TWIN_ROADMAP.md)：事实层之后的可审核理解、私人分身、成长分析、公开分身与长期维护路线图。
 
 ## 许可证
 

@@ -5,6 +5,7 @@ import type { KnowledgeIndexBatchResult, KnowledgeIndexStatus } from '@/lib/know
 
 function status(overrides: Partial<KnowledgeIndexStatus> = {}): KnowledgeIndexStatus {
   return {
+    executionMode: 'local',
     totalSources: 10,
     indexedSources: 0,
     totalChunks: 0,
