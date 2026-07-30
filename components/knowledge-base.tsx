@@ -10,10 +10,13 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { KNOWLEDGE_SEARCH_DEFAULT_START_DATE, localDateInputValue } from '@/lib/dateInput'
 import {
+  answerKnowledgeQuestion,
   fetchKnowledgeIndexStatus,
+  openKnowledgeCitation,
   queueKnowledgeRebuild,
   retryKnowledgeIndex,
   searchKnowledge,
+  type KnowledgeAnswerResponse,
   type KnowledgeIndexStatus,
   type KnowledgeSearchDiagnostics,
   type KnowledgeSearchResult,
@@ -111,8 +114,67 @@ function KnowledgeResultCards({
   })
 }
 
+function KnowledgeAnswerResult({
+  result,
+  onOpenDiary,
+}: {
+  result: KnowledgeAnswerResponse
+  onOpenDiary: (sourceId: number) => Promise<void>
+}) {
+  const supported = result.evidenceStatus === 'supported'
+  return (
+    <div className="space-y-4 border-t pt-5">
+      <div className={`rounded-md border px-3 py-2 text-sm ${supported ? 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-amber-500/40 bg-amber-500/5 text-amber-800 dark:text-amber-300'}`}>
+        {supported ? '已有日记证据支持此回答。' : '当前日记证据不足，系统未作推测。'}
+      </div>
+      <div className="space-y-2">
+        <h3 className="font-semibold">回答</h3>
+        <p className="whitespace-pre-wrap text-sm leading-7">{result.answer}</p>
+        {!result.rerankApplied && supported && (
+          <p className="text-xs text-muted-foreground">Workers AI 重排暂时不可用，本次证据按向量相似度降级排序。</p>
+        )}
+      </div>
+      {result.citations.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="font-semibold">来源引用</h3>
+          {result.citations.map((citation) => (
+            <Card key={citation.citationId} className="gap-3 py-4">
+              <CardHeader className="px-4 sm:px-6">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-base">
+                      [{citation.citationId}] {citation.sourceTitle || `日记 ${citation.sourceDate}`}
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      {citation.sourceDate} · 第 {citation.chunkIndex + 1}{citation.chunkEndIndex === citation.chunkIndex ? '' : `–${citation.chunkEndIndex + 1}`} 个片段
+                    </CardDescription>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void openKnowledgeCitation(citation, onOpenDiary)}
+                  >
+                    打开原日记
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="px-4 sm:px-6">
+                <p className="whitespace-pre-wrap text-sm leading-7">{citation.excerpt}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number) => Promise<void> }) {
   const [status, setStatus] = useState(EMPTY_STATUS)
+  const [question, setQuestion] = useState('')
+  const [answerStartDate, setAnswerStartDate] = useState(KNOWLEDGE_SEARCH_DEFAULT_START_DATE)
+  const [answerEndDate, setAnswerEndDate] = useState('')
+  const [answerResult, setAnswerResult] = useState<KnowledgeAnswerResponse | null>(null)
   const [query, setQuery] = useState('')
   const [startDate, setStartDate] = useState(KNOWLEDGE_SEARCH_DEFAULT_START_DATE)
   const [endDate, setEndDate] = useState('')
@@ -123,6 +185,7 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
   const [expandedDiagnosticSections, setExpandedDiagnosticSections] = useState(COLLAPSED_DIAGNOSTIC_SECTIONS)
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [answering, setAnswering] = useState(false)
   const [searching, setSearching] = useState(false)
   const statusRequestVersion = useRef(0)
   const localIndexingEnabled = status.executionMode === 'local'
@@ -153,7 +216,11 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
 
   useEffect(() => { void refreshStatus() }, [refreshStatus])
 
-  useEffect(() => { setEndDate(localDateInputValue(new Date())) }, [])
+  useEffect(() => {
+    const today = localDateInputValue(new Date())
+    setAnswerEndDate(today)
+    setEndDate(today)
+  }, [])
 
   useEffect(() => {
     if (!syncing) return
@@ -227,6 +294,27 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
     }
   }
 
+  async function submitAnswer(event: FormEvent) {
+    event.preventDefault()
+    if (!question.trim() || answering) return
+    setAnswering(true)
+    setAnswerResult(null)
+    try {
+      const response = await answerKnowledgeQuestion({
+        question: question.trim(),
+        startDate: answerStartDate || undefined,
+        endDate: answerEndDate || undefined,
+      })
+      setAnswerResult(response)
+      if (response.evidenceStatus === 'insufficient') toast.info('当前日记语料中没有足够证据')
+    } catch (error) {
+      console.error('Failed to answer knowledge question:', error)
+      toast.error(error instanceof Error ? error.message : '日记事实问答失败')
+    } finally {
+      setAnswering(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -257,6 +345,38 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
             <Button variant="ghost" onClick={() => void refreshStatus()} disabled={syncing}>刷新状态</Button>
           </div>
           <p className="text-xs text-muted-foreground">日记保存不会等待 Embedding；新增或修改后的内容会进入待处理队列。本地同步时每个任务间隔 2 秒，连续 3 篇失败会停止本次同步；重建只重新排队，不会立即删除现有可搜索片段。</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>日记事实问答</CardTitle>
+          <CardDescription>只依据检索到的日记原文回答，并为事实陈述附上可打开的来源引用。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <form onSubmit={submitAnswer} className="space-y-3">
+            <Input
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              maxLength={500}
+              placeholder="例如：我什么时候开始认真考虑个人知识库？当时记录了哪些原因？"
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">开始日期（可选）</span>
+                <Input type="date" value={answerStartDate} onChange={(event) => setAnswerStartDate(event.target.value)} />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">结束日期（可选）</span>
+                <Input type="date" value={answerEndDate} onChange={(event) => setAnswerEndDate(event.target.value)} />
+              </label>
+            </div>
+            <Button type="submit" disabled={answering || !question.trim()}>
+              {answering ? <Spinner className="h-4 w-4" /> : null}
+              获取有引用的回答
+            </Button>
+          </form>
+          {answerResult && <KnowledgeAnswerResult result={answerResult} onOpenDiary={onOpenDiary} />}
         </CardContent>
       </Card>
 

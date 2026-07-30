@@ -32,7 +32,7 @@ Cloudflare was inspected read-only on 2026-07-12 and directly deployed again on 
 - Node.js `>=22` and pnpm `10.20.0`, from `package.json`.
 - A Cloudflare account authorized to build/deploy Workers.
 - A configured Supabase project and server runtime credentials.
-- ModelScope/auth runtime credentials for enabled analysis and translation features.
+- ModelScope/auth runtime credentials for enabled analysis, translation, and factual-answer features.
 - A Qwen3-Embedding-0.6B FastAPI service on `http://127.0.0.1:8000` for local knowledge document indexing.
 - Project-local `@opennextjs/cloudflare` and `wrangler`, installed with `pnpm install`.
 - WSL Ubuntu or another Linux environment is recommended for local deployment work; README records Windows-generated OpenNext bundle issues.
@@ -49,7 +49,9 @@ Cloudflare was inspected read-only on 2026-07-12 and directly deployed again on 
 | `scripts/deploy-worker.mjs` | Cross-platform Wrangler deploy wrapper that bypasses OpenNext's remote platform proxy |
 | `lib/runtimeEnv.ts` | Cloudflare runtime binding lookup with `process.env` fallback |
 | `app/api/auth/route.ts` | Runtime password lookup and signed Cookie Session entry point |
-| `lib/aiAnalysis.ts` | Runtime ModelScope token lookup |
+| `lib/server/modelScopeClient.ts` | Shared ModelScope client, model, timeout, and safe error metadata |
+| `lib/aiAnalysis.ts` | Diary analysis and translation orchestration |
+| `lib/server/knowledgeAnswer.ts` | Fact Layer retrieval-to-generation orchestration and citation validation |
 | `lib/server/knowledgeEmbedding.ts` | Local Qwen3 FastAPI Embedding client |
 | `lib/server/workersAi.ts` | Workers AI query Embedding, vector normalization, and candidate reranking |
 | `supabase/migrations/20260719155837_knowledge_base_index.sql` | Applied private knowledge-index schema and RPCs |
@@ -88,7 +90,7 @@ pnpm exec wrangler deploy --dry-run
 |---|---|---|---|---|
 | `SUPABASE_URL` | `lib/server/supabaseAdmin.ts` | Yes | No; still do not hard-code | Server runtime connection target |
 | `SUPABASE_ANON_KEY` | Operator regression scripts only | Not required by the application | Public anon credential, not a server secret | Operator environment for direct-access verification |
-| `MODELSCOPE_TOKEN_API_KEY` | `lib/aiAnalysis.ts` | For AI analysis and translation | Yes | Server runtime secret via Cloudflare binding or local `process.env` |
+| `MODELSCOPE_TOKEN_API_KEY` | `lib/server/modelScopeClient.ts` | For AI analysis, translation, and factual answers | Yes | Server runtime secret via Cloudflare binding or local `process.env` |
 | `AUTH_PASSWORD_ADMIN` | `app/api/auth/route.ts` | For admin mode | Yes | Server runtime secret |
 | `AUTH_PASSWORD_VIEWER` | `app/api/auth/route.ts` | For viewer mode | Yes | Server runtime secret |
 | `SESSION_SECRET` | `lib/server/session.ts` | Yes | Yes | Server runtime secret; at least 32 bytes, used for HMAC Cookie signatures |
@@ -101,14 +103,14 @@ Rules:
 - Configure `SUPABASE_URL`, auth/session, Origin, service-role, and enabled AI variables in Worker runtime. Do not place credentials in `next.config.mjs`, browser code, logs, or source control.
 - Configure the `LOGIN_RATE_LIMITER` Worker binding from `wrangler.jsonc`; it enforces five login attempts per 60 seconds by client IP. Do not rename or reuse namespace `2026071201` for an unrelated binding.
 - Configure `ANONYMOUS_MESSAGE_RATE_LIMITER` from `wrangler.jsonc`; it enforces three anonymous-message writes per 60 seconds by client IP. Production message writes fail closed if the binding or trusted Cloudflare client IP is unavailable. Do not reuse namespace `2026071501`.
-- Configure `AI_RATE_LIMITER` from `wrangler.jsonc`; it enforces five interactive AI analysis/translation/knowledge-search calls per 60 seconds by client IP. Production interactive AI calls fail closed if the binding or trusted Cloudflare client IP is unavailable. Administrator bulk indexing is an explicit maintenance action outside this interactive limiter. Do not reuse namespace `2026071502`.
+- Configure `AI_RATE_LIMITER` from `wrangler.jsonc`; it enforces five interactive AI analysis/translation/knowledge-search/factual-answer calls per 60 seconds by client IP. Production interactive AI calls fail closed if the binding or trusted Cloudflare client IP is unavailable. Administrator bulk indexing is an explicit maintenance action outside this interactive limiter. Do not reuse namespace `2026071502`.
 - Configure the Workers AI `AI` binding from `wrangler.jsonc`; OpenNext server code accesses it through `getCloudflareContext({ async: true })`. No Account ID, API Token, or model key belongs in source or runtime variables.
 - `next.config.mjs` calls `initOpenNextCloudflareForDev()` only for Next.js `PHASE_DEVELOPMENT_SERVER`. Keep this phase guard: Workers AI development bindings are remote, while production builds only need to bundle the runtime binding. Removing the guard makes `next build` open a remote proxy and causes non-interactive Workers Builds to fail when `workers.dev` is protected by Cloudflare Access.
 - `cloudflare-env.d.ts` remains generated and ignored rather than hand-maintained. The package `prebuild` lifecycle runs the existing `pnpm cf-typegen` command before `next build`, so local builds, OpenNext, and clean Workers Builds all derive `CloudflareEnv` from the checked-in Wrangler configuration before TypeScript runs.
 - Actual deployment uses `scripts/deploy-worker.mjs` rather than `opennextjs-cloudflare deploy`. OpenNext 1.20.1 loads the entire Wrangler environment through `getPlatformProxy()` before its cache-population step, which connects the Workers AI binding to the Access-protected `workers.dev` hostname and fails in non-interactive builds. This project uses the default OpenNext configuration and has no remote R2/KV/DO cache binding, so the wrapper safely deploys the generated Worker/assets with Wrangler while setting `OPEN_NEXT_DEPLOY=true` to prevent Wrangler from delegating back to OpenNext.
 - Use ignored `.dev.vars` for local workerd preview runtime values; `.env.local` supplies local Next.js runtime values but is not a substitute for Worker runtime bindings.
 - Configure ModelScope and password credentials in deployed Worker runtime **Variables and Secrets**, preferably encrypted secrets.
-- ModelScope analysis and translation share a Supabase-backed limit of 180 upstream HTTP attempts per Beijing calendar day. Local document Embedding and Workers AI knowledge search do not consume this counter.
+- ModelScope analysis, translation, and factual-answer generation share a Supabase-backed limit of 180 upstream HTTP attempts per Beijing calendar day. Zero-candidate answers, local document Embedding, and Workers-AI-only knowledge search do not consume this counter.
 - Workers Builds variables and deployed runtime variables are separate scopes. Current application environment lookup is runtime-only; configure deployed Worker bindings for live requests.
 - `keep_vars: true` asks Wrangler to preserve dashboard-managed values during deployment; confirm behavior before changing it.
 - Never use a Supabase service-role key as `SUPABASE_ANON_KEY`.
@@ -124,7 +126,7 @@ Rules:
 - Compatibility flag: `nodejs_compat`.
 - Observability: enabled.
 - Variable preservation: `keep_vars: true`.
-- Rate-limit bindings: `LOGIN_RATE_LIMITER` for five login calls, `ANONYMOUS_MESSAGE_RATE_LIMITER` for three message writes, and `AI_RATE_LIMITER` for five interactive AI/translation/knowledge-search calls per 60 seconds.
+- Rate-limit bindings: `LOGIN_RATE_LIMITER` for five login calls, `ANONYMOUS_MESSAGE_RATE_LIMITER` for three message writes, and `AI_RATE_LIMITER` for five interactive AI/translation/knowledge-search/factual-answer calls per 60 seconds.
 - Custom domain: `diary.wuzhizhii.com`, production environment.
 - Zone routes: none target `diaryproject`; the custom domain targets the Worker directly.
 - Runtime bindings declared by the repository: `ASSETS`, `AI`, `LOGIN_RATE_LIMITER`, `ANONYMOUS_MESSAGE_RATE_LIMITER`, and `AI_RATE_LIMITER`. Configure the named runtime variables/secrets before enabling the corresponding features.
@@ -140,8 +142,8 @@ Cloudflare variables are plain configuration values; secrets are encrypted runti
 
 - Browser code uses same-origin APIs and does not require Supabase credentials in the build output.
 - `/api/diary-download` is admin-only and uses `lib/server/supabaseAdmin.ts`; the service-role factory is not a browser import path.
-- `/api/knowledge/index` and `/api/knowledge/search` are admin-only, use the same service-role boundary, and require the applied knowledge migration. Browser code never receives ModelScope or Supabase credentials.
-- Analysis and translation require `reserve_modelscope_api_call()` before contacting ModelScope. Local document indexing calls `http://127.0.0.1:8000/embeddings`; online knowledge search uses Workers AI query Embedding and reranking. Neither reserves ModelScope quota.
+- `/api/knowledge/index`, `/api/knowledge/search`, and `/api/knowledge/answer` are admin-only, use the same service-role boundary, and require the applied knowledge migration. Browser code never receives ModelScope or Supabase credentials.
+- Analysis, translation, and factual-answer generation require `reserve_modelscope_api_call()` before contacting ModelScope. The answer route first reuses the Workers AI/Supabase retrieval pipeline; zero candidates return insufficient evidence without a reservation, while non-empty retrieval reserves exactly once for one generation attempt. Local document indexing calls `http://127.0.0.1:8000/embeddings`; standalone online knowledge search uses Workers AI query Embedding and reranking without reserving ModelScope quota.
 - Administrator indexing remains request-bound and local-only. The production interface disables sync, rebuild, and retry controls, and the production index-maintenance POST API returns `409`; GET status and knowledge search remain available. One local click issues sequential API batches of up to ten sources without a batch/source cap; the server and client enforce at least two seconds between tasks/batches. It stops only when the queue is empty, a request fails, or three consecutive source failures preserve the failed rows and requeue unprocessed claimed rows. There is no automatic per-source retry.
 - The fixed loopback Embedding address is intentionally local-only and remains required for administrator document indexing. The FastAPI implementation is currently maintained separately from this repository. Run it together with `pnpm dev`, and do not add or edit diaries during the indexing window. If a full rebuild is interrupted by network failure, rerun the full rebuild locally. Deployed knowledge search does not depend on Worker access to the loopback address; it requires the `AI` binding instead.
 - Index failures are logged with structured category/status/code metadata. The service-role-only job row also stores bounded upstream and diary-content diagnostic excerpts; credential-like values are redacted. Treat `knowledge_index_jobs.last_error` as private diary data and never include it in public/admin status responses.
@@ -194,15 +196,16 @@ The direct-deployment identity and Workers write scope were confirmed again on 2
 - Authorized Supabase read/create/update/delete under production policies.
 - Diary image proxy display, yearly-image proxy display, and admin audio Range streaming. Batch 3 production verification on 2026-07-13 returned `200 image/webp` for a viewer diary image and `206` with `Content-Range`/`Accept-Ranges` for admin audio.
 - Batch 4 media writes, health, and yearly-summary metadata use authorized APIs. Batch 5 production verification on 2026-07-15 confirmed private buckets, denied direct anon Storage access, unchanged diary/yearly/audio proxies, denied anon access to every sensitive table, health/yearly admin CRUD, guest/viewer/admin role boundaries, and admin CSV export. The follow-up Worker and anonymous-message/function-ACL migrations were deployed the same day; public message GET/POST, User-Agent capture, wrong-year 404s, 413 handling, role boundaries, bindings, and both trigger postflights passed.
-- AI analysis and translation with the runtime token.
-- ModelScope shared quota: confirm reservation 180 succeeds, reservation 181 returns a clear `429` without an upstream call, counter/RPC errors return `503` without an upstream call, and the date rolls over at Beijing midnight. Verify analysis and translation share the counter; local indexing and Workers AI knowledge search must not change it.
+- AI analysis, translation, and administrator factual answers with the runtime token.
+- ModelScope shared quota: confirm reservation 180 succeeds, reservation 181 returns a clear `429` without an upstream call, counter/RPC errors return `503` without an upstream call, and the date rolls over at Beijing midnight. Verify analysis, translation, and non-empty factual answers share the counter; zero-candidate answers, local indexing, and standalone Workers AI knowledge search must not change it.
 - Administrator knowledge status, initial pending count, semantic/date-filtered search, and source-diary navigation. In production, confirm all maintenance POST actions return `409` and their UI controls are disabled. Run batched backfill and retry checks only from the local development server. Confirm guest/viewer requests are denied, direct anon/authenticated access to all three knowledge tables/functions is denied, and diary writes remain successful when later indexing fails.
 - Workers AI knowledge search: as an administrator, enable “诊断模式” and confirm stage 1 shows the RPC-ordered candidates with fusion rank, date, title, chunk number, content, vector similarity, and RPC score; stage 2 maps each finite BGE result to the correct original candidate number; and stage 3 shows the merged/diversified final results. Confirm the query vector has 1,024 dimensions and unit norm through internal tests rather than returning it. Successful responses set `rerankApplied: true`; forced reranker failure keeps stage 1, leaves stage 2 empty, and preserves up to five vector-ordered final results with `rerankApplied: false`. Do not log the full vector or diary context during this check.
+- Fact Layer: submit an administrator question with and without matching diary evidence. Confirm supported answers contain only server-owned `S1`–`S5` citations whose cards open the correct source diaries; zero or inadequate evidence produces the explicit non-answer; reranker fallback is visible; duplicate submission is blocked; guest/viewer/invalid-Origin requests are denied; and malformed provider JSON or citation IDs return a generic provider error without displaying unvalidated text. Confirm no answer, citation, or conversation row is written.
 - Locally verify uncapped continuation until the queue is empty, two-second pacing across task and batch boundaries, no automatic retry after a failed source, carry-over of consecutive-failure state between API batches, and stop/requeue behavior at the third consecutive failure.
 - Verify new failure rows contain bounded diagnostic JSON without runtime credentials, and that the status API does not return `last_error` content.
 - The initial 2026-07-20 knowledge rollout verified the default Worker hostname and custom domain, guest `401`, viewer `403`, admin status access, one-source Qwen3 indexing, hybrid search, and admin source-diary access.
 - The later 2026-07-20 quota rollout deployed Worker `6fb8845e-63f8-4488-961a-aa75b6c53af7` after tests, Next.js/OpenNext builds, lint, and Wrangler dry-run passed. The custom domain returned `200` for homepage and guest/viewer/admin sessions, denied guest/viewer knowledge access with `401`/`403`, and returned a clear quota `429` to an admin sync at `call_count = 180`. Before and after the request, knowledge state remained 195 completed, 344 pending, 56 failed, and zero processing jobs; source diaries/jobs/chunks remained 595/595/210.
-- Oversized JSON/multipart requests return `413`; invalid dates, field lengths, file types, and array sizes return `400` before downstream writes. ModelScope requests time out after 30 seconds, and the sixth interactive AI/translation/knowledge-search call in 60 seconds returns `429` for the same client IP.
+- Oversized JSON/multipart requests return `413`; invalid dates, field lengths, file types, and array sizes return `400` before downstream writes. ModelScope requests time out after 30 seconds, and the sixth interactive AI/translation/knowledge-search/factual-answer call in 60 seconds returns `429` for the same client IP.
 - ModelScope SDK automatic retries remain disabled; any future explicit retry must reserve a new daily slot before the new upstream attempt.
 - CSV export from `/api/diary-download`.
 - Browser console/network errors and Cloudflare logs/observability.

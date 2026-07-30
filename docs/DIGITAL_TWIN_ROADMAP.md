@@ -10,9 +10,9 @@ It is a roadmap, not a frozen schema or prompt specification. Each phase should 
 
 | Phase | Capability | Status |
 |---|---|---|
-| 1 | Shared private knowledge index | Implemented; current follow-up changes are not yet committed or deployed |
-| 2 | Administrator factual question answering with citations | Next development phase |
-| 3 | Auditable structured understanding | Planned |
+| 1 | Shared private knowledge index | Implemented |
+| 2 | Administrator factual question answering with citations | Implemented locally; production acceptance pending |
+| 3 | Auditable structured understanding | Planned; do not begin until Phase 2 production acceptance |
 | 4 | Private digital twin | Planned |
 | 5 | Growth analysis and historical versions | Planned |
 | 6 | Public digital twin | Planned; must wait for private boundaries and review workflows to mature |
@@ -174,4 +174,3 @@ Before starting any later phase:
 4. Define the smallest independently useful batch and its failure behavior.
 5. Add migration, API, authorization, model-output validation, and UI tests before production rollout.
 6. Update this roadmap when implementation evidence changes the recommended sequence or boundaries.
-

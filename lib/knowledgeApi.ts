@@ -60,6 +60,25 @@ export type KnowledgeSearchResponse = {
   diagnostics?: KnowledgeSearchDiagnostics
 }
 
+export type KnowledgeAnswerCitation = {
+  citationId: string
+  sourceId: number
+  sourceDate: string
+  sourceTitle: string | null
+  chunkIndex: number
+  chunkEndIndex: number
+  charStart: number
+  charEnd: number
+  excerpt: string
+}
+
+export type KnowledgeAnswerResponse = {
+  answer: string
+  evidenceStatus: 'supported' | 'insufficient'
+  citations: KnowledgeAnswerCitation[]
+  rerankApplied: boolean
+}
+
 async function knowledgeRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
   if (!response.ok) {
@@ -116,4 +135,23 @@ export function searchKnowledge(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
+}
+
+export function answerKnowledgeQuestion(input: {
+  question: string
+  startDate?: string
+  endDate?: string
+}): Promise<KnowledgeAnswerResponse> {
+  return knowledgeRequest('/api/knowledge/answer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export function openKnowledgeCitation(
+  citation: Pick<KnowledgeAnswerCitation, 'sourceId'>,
+  onOpenDiary: (sourceId: number) => Promise<void>,
+): Promise<void> {
+  return onOpenDiary(citation.sourceId)
 }

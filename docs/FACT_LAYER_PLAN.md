@@ -23,29 +23,30 @@ The implemented knowledge foundation already provides:
 The primary implementation files are:
 
 - [`../lib/server/knowledgeSearch.ts`](../lib/server/knowledgeSearch.ts)
+- [`../lib/server/knowledgeAnswer.ts`](../lib/server/knowledgeAnswer.ts)
+- [`../lib/server/modelScopeClient.ts`](../lib/server/modelScopeClient.ts)
 - [`../lib/server/workersAi.ts`](../lib/server/workersAi.ts)
 - [`../lib/server/knowledgeIndex.ts`](../lib/server/knowledgeIndex.ts)
 - [`../app/api/knowledge/search/route.ts`](../app/api/knowledge/search/route.ts)
+- [`../app/api/knowledge/answer/route.ts`](../app/api/knowledge/answer/route.ts)
 - [`../components/knowledge-base.tsx`](../components/knowledge-base.tsx)
 
 ## Current handoff state
 
 As of 2026-07-30:
 
-- Git is on `main` at `ba91aa1`; the Phase 1 follow-up changes are still uncommitted and have not been deployed.
-- Those changes make production knowledge-index maintenance status-only: production sync/rebuild/retry controls are disabled and maintenance POST requests return `409`; local `pnpm dev` retains all maintenance actions.
-- New tests cover the batch state machine, production maintenance boundary, migration transaction/ACL/`SKIP LOCKED` contracts, and the read-only production postflight.
-- The last completed validation passed 32 test files and 126 tests, `pnpm lint`, `pnpm build`, `pnpm cf:build`, and `git diff --check`.
-- A read-only production query reported 604 diary sources, 604 source settings, 773 chunks, 598 completed jobs, 6 pending jobs, and no processing or failed jobs.
-- [`../test_extra/diary.txt`](../test_extra/diary.txt) contains an unrelated user change. Preserve it and do not include or rewrite it accidentally.
-- No new database migration is pending from the Phase 1 follow-up. The new [`../supabase/verification/20260729_knowledge_index_postflight.sql`](../supabase/verification/20260729_knowledge_index_postflight.sql) is read-only.
+- The repository was clean on `main` at `c8f2a8a` before Phase 2 work began. The Phase 1 status-only maintenance boundary and its tests are already present in current history.
+- Phase 2 is implemented locally but remains uncommitted and undeployed. It adds the separate answer route, server-only answer orchestration, shared ModelScope client settings, structured citation validation, a separate administrator answer form, source navigation, and focused tests.
+- Local WSL validation passes 34 test files and 153 tests, `pnpm lint`, `pnpm build`, `pnpm cf:build`, and `git diff --check`. The OpenNext artifact includes `/api/knowledge/answer`.
+- No database schema, migration, RPC signature, stored vector, environment-variable name, or Wrangler binding changed for Phase 2.
+- The last documented read-only production snapshot reported 604 diary sources, 604 source settings, 773 chunks, 598 completed jobs, 6 pending jobs, and no processing or failed jobs. It has not been refreshed during this implementation task and may be stale.
 - Cloudflare Workers Builds is already confirmed on GitHub `DazhiWu/diaryProject`, branch `main`, root `/`, build command `pnpm run cf:build`, and deploy command `pnpm run deploy`.
 
 Before Phase 2 production acceptance:
 
-1. Review and create a Git checkpoint for the current uncommitted Phase 1 follow-up without including the unrelated diary text change.
-2. Start the separately maintained FastAPI service and `pnpm dev`, then process the six pending knowledge jobs locally.
-3. Decide whether to deploy the Phase 1 status-only boundary separately or together with the first Fact Layer release.
+1. Review and commit the Phase 2 implementation as one intentional checkpoint.
+2. Refresh the production knowledge-index counts read-only. If pending jobs remain, start the separately maintained FastAPI service and `pnpm dev`, then process them locally before acceptance.
+3. Run the full OpenNext gate, deploy the intended commit, record the new Worker version and immediate rollback version, and complete the administrator/guest/viewer acceptance matrix below.
 
 ## Confirmed operating decisions
 
@@ -56,10 +57,10 @@ Keep these boundaries unless the user explicitly changes them:
 - Do not replace full rebuild with a transactional RPC now. If a rebuild request is interrupted by network failure, rerun the complete rebuild locally after connectivity returns.
 - Defer `excluded` scope management until the wider feature set is complete.
 - Keep `Qwen3-Embedding-0.6B`; do not add Embedding model validation work or a retrieval evaluation dataset.
-- Production remains unable to run document indexing. It may read index status and perform online knowledge search.
+- Production remains unable to run document indexing. After Phase 2 deployment it may read index status, perform online knowledge search, and answer administrator factual questions.
 - Do not implement structured understanding, personality, growth snapshots, public digital-avatar access, or automatic memory writeback in Phase 2.
 
-## Phase 2 functional scope
+## Implemented Phase 2 functional scope
 
 Implement one administrator-only factual-answer flow:
 
@@ -73,7 +74,7 @@ Implement one administrator-only factual-answer flow:
 
 The first version remains a single-turn question-answer feature. It does not persist conversations, summaries, conclusions, or new knowledge.
 
-## Recommended API design
+## Implemented API design
 
 Add `POST /api/knowledge/answer` rather than expanding the existing search response.
 
@@ -94,7 +95,7 @@ Use the existing limits unless implementation evidence requires a smaller bound:
 - start date must not be after end date;
 - JSON body: existing model JSON byte limit.
 
-Recommended response:
+Response:
 
 ```ts
 type KnowledgeAnswerResponse = {
@@ -163,7 +164,7 @@ These deferred capabilities are not abandoned. Their intended order, review requ
 
 ## Required tests
 
-At minimum, add:
+The local suite covers:
 
 - request validation, Origin, guest/viewer denial, and admin success tests;
 - AI rate-limit denial before Workers AI, Supabase, or ModelScope calls;
@@ -189,6 +190,8 @@ git diff --check
 ```
 
 ## Completion criteria
+
+The local implementation satisfies the code and test portions below. Phase 2 is not production-complete until deployment, rollback capture, and the live acceptance flow also pass.
 
 Phase 2 first release is complete when:
 

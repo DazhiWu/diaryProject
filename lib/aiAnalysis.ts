@@ -1,5 +1,9 @@
-import OpenAI from 'openai';
-import { getRuntimeEnvValue } from '@/lib/runtimeEnv';
+import {
+  createModelScopeClient,
+  MODELSCOPE_CHAT_MODEL,
+  MODELSCOPE_TIMEOUT_MS,
+  safeModelScopeErrorMetadata,
+} from '@/lib/server/modelScopeClient';
 import { reserveModelScopeApiCall } from '@/lib/server/modelScopeQuota';
 import { HttpError } from '@/lib/server/session';
 
@@ -7,32 +11,6 @@ export type AIAnalysisResult = {
   summary: string;
   emotion: string;
 };
-
-const MODELSCOPE_TIMEOUT_MS = 30_000;
-
-function safeErrorMetadata(error: unknown) {
-  if (!error || typeof error !== 'object') return { name: 'UnknownError' };
-  const value = error as { name?: unknown; status?: unknown; code?: unknown; response?: { status?: unknown } };
-  return {
-    name: typeof value.name === 'string' ? value.name : 'Error',
-    status: typeof value.status === 'number' ? value.status : typeof value.response?.status === 'number' ? value.response.status : undefined,
-    code: typeof value.code === 'string' ? value.code : undefined,
-  };
-}
-
-async function createModelScopeClient() {
-  const apiKey = await getRuntimeEnvValue('MODELSCOPE_TOKEN_API_KEY');
-
-  if (!apiKey) {
-    throw new Error('MODELSCOPE_TOKEN_API_KEY is not configured');
-  }
-
-  return new OpenAI({
-    baseURL: 'https://api-inference.modelscope.cn/v1',
-    apiKey,
-    maxRetries: 0,
-  });
-}
 
 export async function analyzeDiaryWithAI(content: string): Promise<AIAnalysisResult> {
   try {
@@ -59,7 +37,7 @@ ${content}
 }`;
 
     const response = await (client.chat.completions.create as any)({
-      model: 'deepseek-ai/DeepSeek-V3.2',
+      model: MODELSCOPE_CHAT_MODEL,
       messages: [
         {
           role: 'user',
@@ -80,7 +58,7 @@ ${content}
     return parseAIAnalysisResult(aiResponse);
   } catch (error: any) {
     if (error instanceof HttpError) throw error;
-    console.error('[modelscope]', { operation: 'analyze', outcome: 'failed', ...safeErrorMetadata(error) });
+    console.error('[modelscope]', { operation: 'analyze', outcome: 'failed', ...safeModelScopeErrorMetadata(error) });
 
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
       throw new Error('网络连接错误，请检查网络连接或稍后重试');
@@ -119,7 +97,7 @@ ${content}
 请直接返回英文翻译结果，不要添加任何额外的解释或说明。`;
 
     const response = await (client.chat.completions.create as any)({
-      model: 'deepseek-ai/DeepSeek-V3.2',
+      model: MODELSCOPE_CHAT_MODEL,
       messages: [
         {
           role: 'user',
@@ -141,7 +119,7 @@ ${content}
     return aiResponse.trim();
   } catch (error: any) {
     if (error instanceof HttpError) throw error;
-    console.error('[modelscope]', { operation: 'translate', outcome: 'failed', ...safeErrorMetadata(error) });
+    console.error('[modelscope]', { operation: 'translate', outcome: 'failed', ...safeModelScopeErrorMetadata(error) });
 
     if ((error.response && error.response.status === 401) || error.status === 401) {
       throw new Error('API认证失败，请检查API密钥是否正确');
