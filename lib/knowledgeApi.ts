@@ -79,6 +79,75 @@ export type KnowledgeAnswerResponse = {
   rerankApplied: boolean
 }
 
+export type ThemeTimelineEvidence = {
+  id: number
+  sourceId: number
+  chunkId: number
+  chunkIndex: number
+  charStart: number
+  charEnd: number
+  excerpt: string
+}
+
+export type ThemeTimelineObservation = {
+  id: string
+  sourceId: number
+  sourceDate: string
+  sourceTitle: string | null
+  statement: string
+  classification: 'fact' | 'summary' | 'inference'
+  reviewState: 'proposed' | 'confirmed' | 'edited' | 'rejected' | 'superseded'
+  evidence: ThemeTimelineEvidence[]
+}
+
+export type ThemeTimelineSummary = {
+  id: string
+  statement: string
+  classification: 'summary' | 'inference'
+  reviewState: 'proposed' | 'confirmed' | 'edited' | 'rejected' | 'superseded'
+  supersedesSummaryId: string | null
+  observationIds: string[]
+  generatedAt: string
+  reviewedAt: string | null
+}
+
+export type ThemeTimelineRun = {
+  id: string
+  analysisType: 'theme_timeline'
+  theme: string
+  startDate: string
+  endDate: string
+  status: 'pending' | 'extracting' | 'paused' | 'ready_for_summary' | 'completed' | 'failed'
+  corpusFingerprint: string
+  frozenSourceCount: number
+  modelVersion: string
+  promptVersion: string
+  versionStale: boolean
+  resultStale: boolean
+  coverage: {
+    eligible: number
+    processed: number
+    failed: number
+    stale: number
+    excluded: number
+    pending: number
+    processing: number
+  }
+  distinctDiaryCount: number
+  firstSupportedDate: string | null
+  lastSupportedDate: string | null
+  periodDistribution: Array<{ period: string; diaryCount: number }>
+  observations: ThemeTimelineObservation[]
+  summaries: ThemeTimelineSummary[]
+  createdAt: string
+  completedAt: string | null
+}
+
+export type ThemeTimelineProcessResult = {
+  outcome: 'processed' | 'failed' | 'complete'
+  run: ThemeTimelineRun
+}
+
 async function knowledgeRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
   if (!response.ok) {
@@ -146,6 +215,54 @@ export function answerKnowledgeQuestion(input: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
+  })
+}
+
+export function fetchThemeTimelineRuns(): Promise<ThemeTimelineRun[]> {
+  return knowledgeRequest('/api/knowledge/understanding', { cache: 'no-store' })
+}
+
+export function fetchThemeTimelineRun(runId: string): Promise<ThemeTimelineRun> {
+  return knowledgeRequest(`/api/knowledge/understanding?runId=${encodeURIComponent(runId)}`, { cache: 'no-store' })
+}
+
+export function createThemeTimeline(input: {
+  theme: string
+  startDate: string
+  endDate: string
+}): Promise<ThemeTimelineRun> {
+  return knowledgeRequest('/api/knowledge/understanding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'create', ...input }),
+  })
+}
+
+export function processThemeTimeline(runId: string): Promise<ThemeTimelineProcessResult> {
+  return knowledgeRequest('/api/knowledge/understanding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'process', runId }),
+  })
+}
+
+export function retryThemeTimeline(runId: string): Promise<ThemeTimelineRun> {
+  return knowledgeRequest('/api/knowledge/understanding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'retry', runId }),
+  })
+}
+
+export function reviewThemeTimelineSummary(input: {
+  summaryId: string
+  reviewAction: 'confirm' | 'edit' | 'reject' | 'supersede'
+  statement?: string
+}): Promise<ThemeTimelineRun> {
+  return knowledgeRequest('/api/knowledge/understanding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'review', ...input }),
   })
 }
 

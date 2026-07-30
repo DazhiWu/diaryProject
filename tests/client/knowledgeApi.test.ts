@@ -2,8 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   answerKnowledgeQuestion,
+  createThemeTimeline,
   fetchKnowledgeIndexStatus,
+  fetchThemeTimelineRuns,
   openKnowledgeCitation,
+  processThemeTimeline,
+  reviewThemeTimelineSummary,
   searchKnowledge,
 } from '@/lib/knowledgeApi'
 
@@ -49,5 +53,42 @@ describe('knowledge API client', () => {
     const onOpenDiary = vi.fn().mockResolvedValue(undefined)
     await openKnowledgeCitation({ sourceId: 604 }, onOpenDiary)
     expect(onOpenDiary).toHaveBeenCalledWith(604)
+  })
+
+  it('uses a separate uncached Phase 3 endpoint and explicit lifecycle actions', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }))
+    await fetchThemeTimelineRuns()
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/knowledge/understanding', { cache: 'no-store' })
+
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({ id: 'run' }), { status: 200 }))
+    await createThemeTimeline({ theme: '目标', startDate: '2026-07-01', endDate: '2026-07-30' })
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/knowledge/understanding', expect.objectContaining({
+      body: JSON.stringify({
+        action: 'create',
+        theme: '目标',
+        startDate: '2026-07-01',
+        endDate: '2026-07-30',
+      }),
+    }))
+
+    await processThemeTimeline('11111111-1111-4111-8111-111111111111')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/knowledge/understanding', expect.objectContaining({
+      body: JSON.stringify({
+        action: 'process',
+        runId: '11111111-1111-4111-8111-111111111111',
+      }),
+    }))
+
+    await reviewThemeTimelineSummary({
+      summaryId: '22222222-2222-4222-8222-222222222222',
+      reviewAction: 'confirm',
+    })
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/knowledge/understanding', expect.objectContaining({
+      body: JSON.stringify({
+        action: 'review',
+        summaryId: '22222222-2222-4222-8222-222222222222',
+        reviewAction: 'confirm',
+      }),
+    }))
   })
 })

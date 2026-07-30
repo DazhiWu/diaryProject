@@ -9,6 +9,7 @@
 - AI 分析生成短标题和情绪标签；翻译同样通过服务端接口完成，ModelScope 密钥不进入浏览器代码。
 - 管理员个人知识库使用本地 `Qwen/Qwen3-Embedding-0.6B` 将日记按原文位置分段并生成 1024 维向量。线上搜索由 Cloudflare `@cf/qwen/qwen3-embedding-0.6b` 生成归一化查询向量，经 Supabase 现有 pgvector/原文融合 RPC 召回 20 个候选，再由 `@cf/baai/bge-reranker-base` 返回前 5 个结果。Embedding 失败返回 503；Reranker 失败时按原始向量相似度降级，并在管理员界面标明未应用重排。可选“诊断模式”会依次展示 RPC 召回候选、Reranker 原始前五和合并/多样化后的最终结果，用于直接检查真实日记语料的召回质量。
 - 管理员事实问答复用同一检索链，将最多 5 个最终片段交给 `deepseek-ai/DeepSeek-V3.2`。服务端预先分配 `S1`–`S5`，只接受结构化、引用标识合法且正文引用一致的模型结果；无候选或证据不足时明确拒答，引用卡片可打开原日记。回答和引用不会写入数据库。
+- Phase 3A 新增管理员“可审核主题时间线”：以批准的冻结语料检查点为运行级快照，按选定主题和日期范围逐篇提取结构化观察，展示 eligible/processed/failed/stale/excluded 覆盖、按月 distinct diary 分布、首末支持日期和原文证据；生成的摘要明确标为待审核，并支持确认、编辑、拒绝和取代且保留历史。提取仅在本地开发服务器显式运行，线上只读取和审核已存储结果。
 - ModelScope 分析、翻译和事实回答生成共享北京时间自然日 180 次的服务端安全上限；零候选问答、本地知识索引和仅使用 Workers AI 的知识搜索不消耗此额度。
 - 年度总结包含重要事件、AI 读后感、意见和年度照片。
 - 匿名留言支持 1–2000 字内容、HTML 转义和每页 10 条分页；写入通过同源 API 按客户端 IP 限制为每 60 秒 3 条。
@@ -110,7 +111,11 @@ Storage bucket 为 `2024To2025_diary_images`、`2025_Summary_Images` 和 `audio_
 
 Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postflight 与重复 preflight。Batch 4、Batch 5 和后续匿名留言/函数 ACL 加固均已于 2026-07-15 在生产完成并通过回归。个人知识库迁移及首批 Worker 已于 2026-07-20 上线并通过单篇索引、搜索和来源日记回归。详见 [`docs/DATABASE.md`](docs/DATABASE.md)。
 
-`supabase/migrations/20260719155837_knowledge_base_index.sql` 已在生产应用。迁移为现有日记创建待索引任务；管理员需要同时启动本地 FastAPI 服务和 `pnpm dev`，再从本地页面执行同步，应用才会调用本机服务生成文档向量。该 FastAPI 服务当前由管理员在仓库外单独维护。生产页面在索引维护方面只显示状态；知识搜索可在线使用，本次 Fact Layer 部署并验收后事实问答也可在线使用。索引同步、重建和失败任务重试按钮均禁用，对生产 `/api/knowledge/index` 的维护请求也会返回 `409`。索引请求使用 `input_type: "document"`，每批最多 16 条文本。线上查询不调用本地回环服务，也不重新生成现有文档向量。日记保存本身不会等待 Embedding。切分规则更新后，已有向量不会自动重建；需要在本地先点击“重建全部索引”，再同步待处理日记。
+`supabase/migrations/20260719155837_knowledge_base_index.sql` 已在生产应用。迁移为现有日记创建待索引任务；管理员需要同时启动本地 FastAPI 服务和 `pnpm dev`，再从本地页面执行同步，应用才会调用本机服务生成文档向量。该 FastAPI 服务当前由管理员在仓库外单独维护。生产页面在索引维护方面只显示状态；知识搜索和已部署验收的 Fact Layer 事实问答均可在线使用。索引同步、重建和失败任务重试按钮均禁用，对生产 `/api/knowledge/index` 的维护请求也会返回 `409`。索引请求使用 `input_type: "document"`，每批最多 16 条文本。线上查询不调用本地回环服务，也不重新生成现有文档向量。日记保存本身不会等待 Embedding。切分规则更新后，已有向量不会自动重建；需要在本地先点击“重建全部索引”，再同步待处理日记。
+
+Phase 3 开发使用 2026-07-30 时已完成索引的 598 篇日记作为冻结语料基线。每天新增日记可以继续积累为待处理任务，不阻塞开发，也不会被表示为已经纳入全语料分析；Phase 3 功能完成后再补齐全部索引并重新生成受影响的派生结果。
+
+Batch 3A 的代码和迁移位于 `supabase/migrations/20260730071934_phase3_theme_timeline.sql`。创建运行时会原子校验 598 篇基线及 corpus fingerprint，并保存全部 `source_id + indexed_content_hash`；日期范围只决定其中哪些快照来源进入本次提取。逐来源 ModelScope 提取和最终待审核摘要各自预留每日额度，配额不可用时安全暂停，失败来源可重试，已完成来源不会重复生成观察。来源哈希、索引状态或模型/Prompt 版本变化会让结果显示为 stale，而不会静默覆盖。该迁移已于 2026-07-30 作为生产 Supabase migration `20260730080402_phase3_theme_timeline` 应用；同日的 `20260730081356_phase3_theme_timeline_fk_indexes` 补齐两条外键覆盖索引。独立 postflight、事务回滚冒烟测试和权限/顾问检查通过，Phase 3 派生表保持为空，598 completed 与 7 pending 索引状态未改变。Phase 3A Worker 源码仍未部署或生产验收；当前线上 Worker 行为仍是 Phase 2。
 
 本地每次点击“同步待处理日记”会连续运行每批最多 10 篇的 API 批次，直到队列为空、连续 3 篇失败或请求异常；不再设置 50 批或约 500 篇的单次上限。相邻索引任务及批次之间至少间隔 2 秒。同步期间状态卡片每 2 秒绕过缓存读取数据库计数，所有退出路径都会执行最终刷新。“日记来源”显示当前 `completed` 任务数而不是历史 `last_indexed_at` 数量。单篇失败不会自动重试而是继续下一篇，连续 3 篇失败会停止本次同步并提示管理员，尚未处理的已领取任务会返回待处理队列。失败任务手动重新入队后仍按现有队列顺序排在后面。当前维护流程按单一管理员操作设计：同步期间不新增或修改日记；全量重建请求若因网络中断失败，联网后从本地重新执行完整重建。
 
@@ -143,6 +148,7 @@ pnpm run deploy
 - [`docs/DATABASE.md`](docs/DATABASE.md)：数据库、RLS、Storage 与访问模式。
 - [`docs/DEPLOY.md`](docs/DEPLOY.md)：OpenNext、Wrangler、环境变量与部署流程。
 - [`docs/FACT_LAYER_PLAN.md`](docs/FACT_LAYER_PLAN.md)：第二阶段事实问答的已实现边界、验证要求与生产验收状态。
+- [`docs/PHASE3_UNDERSTANDING_PLAN.md`](docs/PHASE3_UNDERSTANDING_PLAN.md)：第三阶段可审核理解的开发基线、独立批次、覆盖率与验收边界。
 - [`docs/DIGITAL_TWIN_ROADMAP.md`](docs/DIGITAL_TWIN_ROADMAP.md)：事实层之后的可审核理解、私人分身、成长分析、公开分身与长期维护路线图。
 
 ## 许可证

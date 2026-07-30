@@ -11,14 +11,20 @@ It is a roadmap, not a frozen schema or prompt specification. Each phase should 
 | Phase | Capability | Status |
 |---|---|---|
 | 1 | Shared private knowledge index | Implemented |
-| 2 | Administrator factual question answering with citations | Implemented locally; production acceptance pending |
-| 3 | Auditable structured understanding | Planned; do not begin until Phase 2 production acceptance |
+| 2 | Administrator factual question answering with citations | Completed and accepted in production |
+| 3 | Auditable structured understanding | Batch 3A implemented locally; schema applied, Worker deployment/acceptance pending |
 | 4 | Private digital twin | Planned |
 | 5 | Growth analysis and historical versions | Planned |
 | 6 | Public digital twin | Planned; must wait for private boundaries and review workflows to mature |
 | 7 | Long-term maintenance and additional data sources | Planned |
 
 Do not skip directly from factual retrieval to a public or self-updating digital twin. The understanding, review, provenance, and scope controls introduced in the intermediate phases are prerequisites.
+
+## Phase 3 entry baseline
+
+Phase 2 commit `0bc4b45` is deployed and accepted in production. The 2026-07-30 data checkpoint contains 598 completed indexed sources and seven intentionally deferred pending sources without chunks or indexed-content hashes. The operator approved the 598 completed sources as the fixed initial Phase 3 development corpus so daily diary growth does not repeatedly reset the development baseline.
+
+Each Phase 3 run must freeze exact eligible source IDs/content hashes and report coverage against that frozen set. Pending sources are outside development results rather than silently counted as analyzed. After the feature is complete, finish the index backlog, regenerate affected derived records, and require full eligible-source coverage before Phase 3 production acceptance. Detailed handoff and batch boundaries are in [`PHASE3_UNDERSTANDING_PLAN.md`](PHASE3_UNDERSTANDING_PLAN.md).
 
 ## Invariants across all later phases
 
@@ -60,7 +66,7 @@ Each proposed item should contain:
 - a review state such as `proposed`, `confirmed`, `edited`, `rejected`, or `superseded`;
 - an optional user correction or replacement statement.
 
-The exact tables and enums should be designed when Phase 3 begins; they are intentionally not fixed by this roadmap.
+The first concrete implementation now uses versioned `understanding_*` runs, frozen sources, observations, evidence, summaries, and summary-observation links for the `theme_timeline` slice. Detailed current schema and lifecycle belong in [`DATABASE.md`](DATABASE.md); later Phase 3 types should reuse the proven provenance/review boundaries without assuming this first schema already covers 3C–3E.
 
 ### Recommended implementation batches
 
@@ -174,3 +180,5 @@ Before starting any later phase:
 4. Define the smallest independently useful batch and its failure behavior.
 5. Add migration, API, authorization, model-output validation, and UI tests before production rollout.
 6. Update this roadmap when implementation evidence changes the recommended sequence or boundaries.
+
+For Phase 3 development only, the production data checkpoint is the approved frozen 598-source corpus described above. This exception does not waive the full-index refresh and derived-data regeneration required before Phase 3 production acceptance.

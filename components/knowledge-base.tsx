@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
+import { ThemeTimeline } from '@/components/theme-timeline'
 import { KNOWLEDGE_SEARCH_DEFAULT_START_DATE, localDateInputValue } from '@/lib/dateInput'
 import {
   answerKnowledgeQuestion,
@@ -347,6 +348,8 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
           <p className="text-xs text-muted-foreground">日记保存不会等待 Embedding；新增或修改后的内容会进入待处理队列。本地同步时每个任务间隔 2 秒，连续 3 篇失败会停止本次同步；重建只重新排队，不会立即删除现有可搜索片段。</p>
         </CardContent>
       </Card>
+
+      <ThemeTimeline localProcessingEnabled={localIndexingEnabled} onOpenDiary={onOpenDiary} />
 
       <Card>
         <CardHeader>

@@ -36,17 +36,19 @@ The primary implementation files are:
 As of 2026-07-30:
 
 - The repository was clean on `main` at `c8f2a8a` before Phase 2 work began. The Phase 1 status-only maintenance boundary and its tests are already present in current history.
-- Phase 2 is implemented locally but remains uncommitted and undeployed. It adds the separate answer route, server-only answer orchestration, shared ModelScope client settings, structured citation validation, a separate administrator answer form, source navigation, and focused tests.
+- Phase 2 was committed to `main` as `0bc4b45`, pushed to `origin/main`, deployed, and accepted in production. It adds the separate answer route, server-only answer orchestration, shared ModelScope client settings, structured citation validation, a separate administrator answer form, source navigation, and focused tests.
 - Local WSL validation passes 34 test files and 153 tests, `pnpm lint`, `pnpm build`, `pnpm cf:build`, and `git diff --check`. The OpenNext artifact includes `/api/knowledge/answer`.
 - No database schema, migration, RPC signature, stored vector, environment-variable name, or Wrangler binding changed for Phase 2.
-- The last documented read-only production snapshot reported 604 diary sources, 604 source settings, 773 chunks, 598 completed jobs, 6 pending jobs, and no processing or failed jobs. It has not been refreshed during this implementation task and may be stale.
+- The 2026-07-30 read-only production checkpoint reported 605 diary sources, 605 source settings, 773 chunks, 598 completed jobs, 7 pending jobs, and no processing, failed, or excluded sources. The seven pending sources had neither chunks nor an indexed-content hash.
+- The deployed Phase 2 Worker version is `b258ef8d-e303-42f2-941b-2dd72a2391ea`; the immediate pre-Phase-2 rollback version is `b897c9f4-0e65-41d9-b5ae-2aafc0245b89`.
 - Cloudflare Workers Builds is already confirmed on GitHub `DazhiWu/diaryProject`, branch `main`, root `/`, build command `pnpm run cf:build`, and deploy command `pnpm run deploy`.
 
-Before Phase 2 production acceptance:
+Phase 2 production acceptance is complete. Phase 3 may begin under the operator-approved development baseline below:
 
-1. Review and commit the Phase 2 implementation as one intentional checkpoint.
-2. Refresh the production knowledge-index counts read-only. If pending jobs remain, start the separately maintained FastAPI service and `pnpm dev`, then process them locally before acceptance.
-3. Run the full OpenNext gate, deploy the intended commit, record the new Worker version and immediate rollback version, and complete the administrator/guest/viewer acceptance matrix below.
+1. Freeze the current 598 completed indexed sources as the initial Phase 3 development corpus.
+2. Allow daily diary writes to continue creating pending index jobs; pending sources do not block Phase 3 development and must not be represented as covered by a corpus-analysis result.
+3. Do not sync the pending backlog merely to keep development counts current. After the Phase 3 feature is complete, index every remaining eligible diary, invalidate or regenerate affected derived records, and run the full Phase 3 production acceptance gate.
+4. Each Phase 3 analysis run must persist or otherwise reproducibly identify its exact eligible source IDs/content hashes and report eligible, processed, failed, stale, and excluded coverage.
 
 ## Confirmed operating decisions
 
@@ -57,7 +59,7 @@ Keep these boundaries unless the user explicitly changes them:
 - Do not replace full rebuild with a transactional RPC now. If a rebuild request is interrupted by network failure, rerun the complete rebuild locally after connectivity returns.
 - Defer `excluded` scope management until the wider feature set is complete.
 - Keep `Qwen3-Embedding-0.6B`; do not add Embedding model validation work or a retrieval evaluation dataset.
-- Production remains unable to run document indexing. After Phase 2 deployment it may read index status, perform online knowledge search, and answer administrator factual questions.
+- Production remains unable to run document indexing. It may read index status, perform online knowledge search, and answer administrator factual questions.
 - Do not implement structured understanding, personality, growth snapshots, public digital-avatar access, or automatic memory writeback in Phase 2.
 
 ## Implemented Phase 2 functional scope
@@ -191,7 +193,7 @@ git diff --check
 
 ## Completion criteria
 
-The local implementation satisfies the code and test portions below. Phase 2 is not production-complete until deployment, rollback capture, and the live acceptance flow also pass.
+Phase 2 satisfies the code, deployment, rollback, and production-acceptance criteria below. The intentionally deferred pending-index backlog is a Phase 3 development-baseline decision, not unfinished Phase 2 implementation.
 
 Phase 2 first release is complete when:
 
