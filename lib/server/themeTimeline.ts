@@ -67,6 +67,18 @@ export type ThemeTimelineEvidence = {
   excerpt: string
 }
 
+export type ThemeTimelineObservationReview = {
+  id: number
+  action: 'confirm' | 'edit' | 'reject'
+  previousStatement: string
+  previousClassification: 'fact' | 'summary' | 'inference'
+  previousReviewState: Exclude<ThemeTimelineReviewState, 'rejected' | 'superseded'>
+  resultingStatement: string
+  resultingClassification: 'fact' | 'summary' | 'inference'
+  resultingReviewState: 'confirmed' | 'edited' | 'rejected'
+  reviewedAt: string
+}
+
 export type ThemeTimelineObservation = {
   id: string
   sourceId: number
@@ -76,6 +88,7 @@ export type ThemeTimelineObservation = {
   classification: 'fact' | 'summary' | 'inference'
   reviewState: ThemeTimelineReviewState
   evidence: ThemeTimelineEvidence[]
+  reviews: ThemeTimelineObservationReview[]
 }
 
 export type ThemeTimelineSummary = {
@@ -526,6 +539,19 @@ type SummaryObservationRow = {
   observation_id: string
 }
 
+type ObservationReviewRow = {
+  id: number
+  observation_id: string
+  action: 'confirm' | 'edit' | 'reject'
+  previous_statement: string
+  previous_classification: 'fact' | 'summary' | 'inference'
+  previous_review_state: Exclude<ThemeTimelineReviewState, 'rejected' | 'superseded'>
+  resulting_statement: string
+  resulting_classification: 'fact' | 'summary' | 'inference'
+  resulting_review_state: 'confirmed' | 'edited' | 'rejected'
+  reviewed_at: string
+}
+
 async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
   const supabase = await getSupabaseAdmin()
   const [
@@ -559,7 +585,7 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
   const observationIds = observationRows.map((observation) => observation.id)
   const summaryIds = summaryRows.map((summary) => summary.id)
 
-  const [actualEvidenceResult, actualSummaryLinksResult] = await Promise.all([
+  const [actualEvidenceResult, actualSummaryLinksResult, observationReviewsResult] = await Promise.all([
     observationIds.length === 0
       ? Promise.resolve({ data: [] as EvidenceRow[], error: null })
       : supabase.from('understanding_observation_evidence')
@@ -571,9 +597,17 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
       : supabase.from('understanding_summary_observations')
         .select('summary_id, observation_id')
         .in('summary_id', summaryIds),
+    observationIds.length === 0
+      ? Promise.resolve({ data: [] as ObservationReviewRow[], error: null })
+      : supabase.from('understanding_observation_reviews')
+        .select('id, observation_id, action, previous_statement, previous_classification, previous_review_state, resulting_statement, resulting_classification, resulting_review_state, reviewed_at')
+        .in('observation_id', observationIds)
+        .order('reviewed_at', { ascending: false })
+        .order('id', { ascending: false }),
   ])
   assertRpc(actualEvidenceResult.error, 'read-evidence')
   assertRpc(actualSummaryLinksResult.error, 'read-summary-links')
+  assertRpc(observationReviewsResult.error, 'read-observation-reviews')
 
   const staleResult = await supabase.rpc('get_theme_timeline_stale_sources', { p_run_id: run.id })
   assertRpc(staleResult.error, 'read-stale-sources')
@@ -601,6 +635,22 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
     evidenceByObservation.set(evidence.observation_id, current)
   }
   const sourceTitleById = new Map(runSources.map((source) => [source.source_id, source.source_title]))
+  const reviewsByObservation = new Map<string, ThemeTimelineObservationReview[]>()
+  for (const review of safeRows<ObservationReviewRow>(observationReviewsResult.data)) {
+    const current = reviewsByObservation.get(review.observation_id) ?? []
+    current.push({
+      id: review.id,
+      action: review.action,
+      previousStatement: review.previous_statement,
+      previousClassification: review.previous_classification,
+      previousReviewState: review.previous_review_state,
+      resultingStatement: review.resulting_statement,
+      resultingClassification: review.resulting_classification,
+      resultingReviewState: review.resulting_review_state,
+      reviewedAt: review.reviewed_at,
+    })
+    reviewsByObservation.set(review.observation_id, current)
+  }
   const observations = observationRows.map((observation) => ({
     id: observation.id,
     sourceId: observation.source_id,
@@ -610,6 +660,7 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
     classification: observation.classification,
     reviewState: observation.review_state,
     evidence: evidenceByObservation.get(observation.id) ?? [],
+    reviews: reviewsByObservation.get(observation.id) ?? [],
   }))
 
   const observationIdsBySummary = new Map<string, string[]>()
@@ -634,7 +685,11 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
       .filter((source) => source.status === 'completed' && !staleSourceIds.has(source.source_id))
       .map((source) => source.source_id),
   )
-  const supportedObservations = observations.filter((observation) => completedSourceIds.has(observation.sourceId))
+  const supportedObservations = observations.filter((observation) => (
+    completedSourceIds.has(observation.sourceId)
+    && observation.reviewState !== 'rejected'
+    && observation.reviewState !== 'superseded'
+  ))
   const supportedDates = supportedObservations.map((observation) => observation.sourceDate).sort()
   const periodSources = new Map<string, Set<number>>()
   for (const observation of supportedObservations) {
@@ -788,6 +843,29 @@ async function observationsForSummary(runId: string): Promise<Array<{
     .order('source_date', { ascending: true })
     .order('source_id', { ascending: true })
   assertRpc(error, 'summary-observations')
+  return safeRows<{ id: string; source_date: string; statement: string; classification: string }>(data)
+    .map((row) => ({
+      id: row.id,
+      sourceDate: row.source_date,
+      statement: row.statement,
+      classification: row.classification,
+    }))
+}
+
+async function reviewedObservationsForSummary(runId: string): Promise<Array<{
+  id: string
+  sourceDate: string
+  statement: string
+  classification: string
+}>> {
+  const supabase = await getSupabaseAdmin()
+  const { data, error } = await supabase.from('understanding_observations')
+    .select('id, source_date, statement, classification')
+    .eq('run_id', runId)
+    .in('review_state', ['confirmed', 'edited'])
+    .order('source_date', { ascending: true })
+    .order('source_id', { ascending: true })
+  assertRpc(error, 'reviewed-summary-observations')
   return safeRows<{ id: string; source_date: string; statement: string; classification: string }>(data)
     .map((row) => ({
       id: row.id,
@@ -952,4 +1030,107 @@ export async function reviewThemeTimelineSummary(input: {
   })
   assertRpc(error, 'review')
   return getThemeTimelineRun(summary.run_id)
+}
+
+export async function regenerateThemeTimelineSummary(
+  runId: string,
+  dependencies: ThemeTimelineDependencies = DEFAULT_DEPENDENCIES,
+): Promise<ThemeTimelineRun> {
+  const run = await getThemeTimelineRun(runId)
+  if (run.status !== 'completed') throw new Error('Theme timeline run is not completed')
+  if (run.resultStale) throw new Error('Stale theme timeline run cannot regenerate a summary')
+  if (run.summaries.some((summary) => (
+    summary.reviewState === 'proposed'
+    || summary.reviewState === 'confirmed'
+    || summary.reviewState === 'edited'
+  ))) {
+    throw new Error('Theme timeline run already has an active summary')
+  }
+
+  const previousSummary = run.summaries[0]
+  if (!previousSummary) throw new Error('Theme timeline run has no summary history')
+
+  const unreviewedCount = run.observations.filter((observation) => (
+    observation.reviewState !== 'confirmed'
+    && observation.reviewState !== 'edited'
+    && observation.reviewState !== 'rejected'
+  )).length
+  if (unreviewedCount > 0) {
+    throw new Error(`Review all observations before regenerating the summary (${unreviewedCount} remaining)`)
+  }
+
+  const observations = await reviewedObservationsForSummary(run.id)
+  let summary: ThemeSummaryResult
+  if (observations.length === 0) {
+    summary = {
+      statement: `在 ${run.startDate} 至 ${run.endDate} 的冻结语料范围内，本次审核没有保留与“${run.theme}”相关的观察。`,
+      classification: 'summary',
+      observationIds: [],
+    }
+  } else {
+    const prompts = buildThemeSummaryPrompts(
+      run.theme,
+      run.startDate,
+      run.endDate,
+      observations,
+      run.generationConfig,
+    )
+    try {
+      const raw = await dependencies.complete({
+        config: run.generationConfig,
+        system: prompts.system,
+        user: prompts.user,
+        maxTokens: run.generationConfig.summaryMaxTokens,
+        schema: buildThemeSummaryResponseSchema(
+          observations.map((observation) => observation.id),
+        ),
+      })
+      summary = parseThemeSummary(raw, new Set(observations.map((observation) => observation.id)))
+    } catch (error) {
+      const mapped = providerError(error)
+      logProviderFailure('summarize', error, mapped.reason, run.generationConfig.model)
+      throw mapped
+    }
+  }
+
+  const supabase = await getSupabaseAdmin()
+  const { error } = await supabase.rpc('regenerate_theme_timeline_summary', {
+    p_run_id: run.id,
+    p_previous_summary_id: previousSummary.id,
+    p_statement: summary.statement,
+    p_classification: summary.classification,
+    p_observation_ids: summary.observationIds,
+  })
+  assertRpc(error, 'regenerate-summary')
+  return getThemeTimelineRun(run.id)
+}
+
+export async function reviewThemeTimelineObservation(input: {
+  observationId: string
+  action: 'confirm' | 'edit' | 'reject'
+  statement?: string
+  classification?: 'fact' | 'summary' | 'inference'
+}): Promise<ThemeTimelineRun> {
+  const supabase = await getSupabaseAdmin()
+  const { data: observation, error: observationError } = await supabase
+    .from('understanding_observations')
+    .select('run_id')
+    .eq('id', input.observationId)
+    .maybeSingle()
+  assertRpc(observationError, 'observation-review-read')
+  if (!observation || typeof observation.run_id !== 'string') {
+    throw new Error('Theme timeline observation not found')
+  }
+
+  const run = await getThemeTimelineRun(observation.run_id)
+  if (run.resultStale) throw new Error('Stale theme timeline observation cannot be reviewed')
+
+  const { error } = await supabase.rpc('review_theme_timeline_observation', {
+    p_observation_id: input.observationId,
+    p_action: input.action,
+    p_statement: input.statement ?? null,
+    p_classification: input.classification ?? null,
+  })
+  assertRpc(error, 'observation-review')
+  return getThemeTimelineRun(observation.run_id)
 }

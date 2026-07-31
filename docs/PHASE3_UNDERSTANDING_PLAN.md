@@ -20,7 +20,7 @@ Phase 3 may begin. The pending backlog is intentionally deferred until the featu
 
 ## Current implementation state
 
-Batch 3A and the recommended theme-timeline slice are implemented in the working tree. The database schema is deployed, but the Worker source and feature are not deployed or production-accepted:
+Batches 3A and 3B are implemented in the working tree and accepted by the operator in local use. Their database schema is deployed, but the Worker source and feature are not deployed or production-accepted. The repository is ready to begin Batch 3C after the Phase 3A/3B working tree and this handoff documentation are committed:
 
 - migration `20260730071934_phase3_theme_timeline.sql`, applied to production as `20260730080402_phase3_theme_timeline`, adds locked versioned runs, exact frozen source snapshots, proposed observations, immutable chunk evidence, versioned summaries, and review-history links;
 - run creation verifies both the approved 598 count and corpus fingerprint `f5fc43c2927ce4413cff073e580cd4ce`, then stores all exact source IDs/hashes while marking only the selected date-range subset eligible;
@@ -29,11 +29,12 @@ Batch 3A and the recommended theme-timeline slice are implemented in the working
 - each extraction request constrains Ollama decoding to the exact chunk indexes present for that source, and each summary request constrains it to the exact stored observation IDs. The server parser and database RPC continue to reject any value outside those sets;
 - final summary generation is proposed-only, uses validated observation IDs, and exact coverage/month/first/last/distinct-diary values come from stored rows rather than model counting;
 - immutable extractor/summary rules prohibit inferring causality from chronology, co-occurrence, repetition, or adjacent text; unsupported relationships must remain neutral or explicitly limited inference;
-- the administrator UI exposes one paged observation/evidence card at a time, failed-source diagnostics, and supports confirm, edit, reject, and supersede while preserving summary history; stale source/index/model/Prompt state blocks confirmation;
-- GET and review can operate online after the Worker source is deployed, while create/process/retry remain local-only.
+- the administrator UI exposes one paged observation/evidence card at a time, failed-source diagnostics, per-observation confirm/edit/reject with append-only before/after history, and versioned summary review. Editing or rejecting an observation moves linked active summaries to history; stale source/index/model/Prompt state blocks review;
+- after every observation reaches confirmed/edited/rejected, a local-only action summarizes only confirmed/edited observations with one Ollama call when any remain, emits a deterministic fixed statement when none remain, excludes rejected observations, and atomically links the proposed replacement to the previous summary history head without rerunning diary extraction;
+- GET and review can operate online after the Worker source is deployed, while create/process/retry/regenerate-summary remain local-only.
 - the UI configures and freezes Ollama model, `num_ctx`, temperature, `top_p`, `top_k`, thinking, extraction/summary output limits, and two custom system prompts. Server-owned evidence, anti-injection, and JSON-schema rules remain mandatory. Migration `20260731015350_phase3_ollama_run_config.sql` stores that configuration and was applied to production as `20260731024031_phase3_ollama_run_config`.
 
-Current local verification passes 185 tests, lint, TypeScript, the Next.js production build, the OpenNext Cloudflare build, and Wrangler dry-run. Production base-migration execution, least-privilege postflight, and a transaction-only create/snapshot/claim/release rollback smoke passed on 2026-07-30. Follow-up migration `20260730081356_phase3_theme_timeline_fk_indexes` covers both advisor-reported foreign keys. The Ollama configuration migration, least-privilege checks, unchanged security/performance advisors, and rollback subtransaction smoke passed on 2026-07-31. Windows-to-WSL Ollama reachability and a one-source stored production-data run also passed. An initial one-month run covered 31 eligible sources and produced 25 observations after one invalid structured response succeeded on manual retry; its summary did not amplify the operator-identified causal errors, but the observation errors motivated the stricter v3 causality rules and safe diagnostics above. A subsequent v3 one-month run is paused at 29 completed and 2 failed sources: both failures returned otherwise valid JSON but used diary paragraph ordinals `[1]` and `[3]` as evidence indexes even though each source had only the server-owned chunk index `0`. Per-source response schemas now enumerate only the actual chunk indexes, and retrying those two failed sources remains pending operator verification. The approved fingerprint remained unchanged and the pending index backlog stayed outside all runs. Full isolated failure/stale/rollback testing, complete role review, Worker deployment, and production acceptance remain pending. Batches 3C–3E have not started.
+Current local verification passes 196 tests, lint, TypeScript, the Next.js production build, and the OpenNext Cloudflare build. The base schema, FK indexes, Ollama configuration, observation-review, and summary-regeneration migrations/postflights passed. Two v3 one-month runs each completed 31/31 sources with zero failed/pending/stale sources after the evidence-index schema correction; their initial summaries were operator-confirmed. Phase 3B migrations were applied as production migrations `20260731063023_phase3_observation_review` and `20260731071402_phase3_summary_regeneration`. Least-privilege postflights, advisor comparisons, confirm/edit/reject/regenerate transaction smokes, and rollback-script smokes passed. The operator completed all observations in the latest reviewed run: 16 are confirmed/edited and 2 rejected; its summary history contains 2 superseded and 1 edited summary. Production retains 63 observations, 75 evidence rows, 6 summaries, 21 observation-review rows, and 1 summary-impact row. The local environment lookup no longer opens remote Workers binding connections for configured `.env.local` values; three authenticated read-only timing samples completed in 2.6 seconds cold and 1.3–1.4 seconds warm without `Establishing remote connection` log lines, and the operator reported the final review/regeneration test working normally. The approved 598 fingerprint remains unchanged and the eight pending index jobs stay outside all runs. Batch 3C local development may begin; complete role review, Worker deployment, refreshed full-corpus regeneration, and production acceptance remain pending. Batches 3C–3E have not been implemented.
 
 ## Development-corpus contract
 
@@ -63,7 +64,7 @@ Do not solve corpus analysis by only increasing the existing Top-K constants or 
 - Add claim/resume/failure behavior for explicit local administrator processing.
 - Start with one small administrator-selected date range and one understanding type.
 
-Implementation status: **implemented locally with the database schema applied; Worker deployment and feature acceptance remain pending**. The finalized first type is `theme_timeline`; exact schema and lifecycle are documented in [`DATABASE.md`](DATABASE.md).
+Implementation status: **development-complete and operator-accepted locally, with the database schema applied; Worker deployment and production acceptance remain pending**. The finalized first type is `theme_timeline`; exact schema and lifecycle are documented in [`DATABASE.md`](DATABASE.md).
 
 The exact table and enum names must be finalized against the current schema during implementation; this document does not pre-authorize an unreviewed migration.
 
@@ -73,7 +74,7 @@ The exact table and enum names must be finalized against the current schema duri
 - Support confirm, edit, reject, and supersede actions while preserving history.
 - Never let a proposed or rejected interpretation masquerade as a confirmed user fact or viewpoint.
 
-Implementation status: **minimal theme-summary review lifecycle implemented as part of the first usable slice**. A general multi-type review queue remains deferred.
+Implementation status: **development-complete and operator-accepted locally, including theme-summary review, per-observation review, and local summary regeneration**. Observation confirm/edit/reject is administrator-only, keeps immutable evidence, appends before/after history, invalidates linked active summaries on edit/reject, and blocks stale/incomplete runs. Regeneration requires all observations to reach a terminal review state and uses only confirmed/edited observations. A general multi-type review queue remains deferred.
 
 ### Batch 3C: corpus aggregation
 
@@ -81,6 +82,21 @@ Implementation status: **minimal theme-summary review lifecycle implemented as p
 - Compute exact counts, first/last dates, and period groupings in PostgreSQL from structured evidence records rather than asking a model to count sampled excerpts.
 - Distinguish literal counts from semantic extractor results. Semantic counts must show the corpus coverage and extractor/model version.
 - Preserve links from an aggregate through its observations to the original diary excerpts.
+
+Implementation status: **ready to start; no Phase 3C schema, migration, API, or UI has been implemented**.
+
+#### Phase 3C new-conversation handoff
+
+At the start of the new development conversation:
+
+1. Read `README.md`, `AGENTS.md`, `docs/DATABASE.md`, `docs/DEPLOY.md`, this plan, and `docs/DIGITAL_TWIN_ROADMAP.md`; inspect `git status`, the Phase 3A/3B commit, current migrations, and the actual `understanding_*` code before designing 3C.
+2. Treat the approved 598 completed-source fingerprint as the fixed development baseline. Do not process the eight pending diaries, create another full-range extraction run, or call a paid service merely to start 3C. The reviewed monthly run is sufficient for the first aggregation implementation and acceptance fixture.
+3. Design the smallest independently useful aggregate contract before writing a migration. It must select only `confirmed` or `edited` observations from completed/current, non-stale runs and must exclude proposed, rejected, superseded, stale, incomplete, pending, and out-of-range records.
+4. Compute literal counts, distinct diary counts, first/last dates, and calendar period groupings in PostgreSQL. Keep semantic extractor/model results in separately labeled fields with frozen corpus coverage and extractor/model/prompt versions; never present semantic occurrence counts as literal diary counts.
+5. Preserve the complete provenance path from every aggregate to contributing observation IDs, immutable evidence rows, and original source diaries. Do not rewrite reviewed observations or evidence and do not silently merge independent pilot/full-range runs.
+6. Keep aggregate creation and regeneration explicit and administrator-only. Any new tables/functions require RLS, no anon/authenticated access, service-role-only invoker functions, a rollback that preserves diaries/index/3A/3B data, a least-privilege postflight, and migration contract tests.
+7. Do not create a Supabase branch or perform any task that can generate charges. Prepare migrations locally first; apply a 3C migration to production only after a separate operator confirmation and a verified rollback plan.
+8. Finish the batch with `pnpm test`, `pnpm lint`, TypeScript, `pnpm build`, `pnpm cf:build`, and `git diff --check`, then update the durable documentation. Worker deployment, pending-index completion, a refreshed full-corpus checkpoint, affected-derived-data regeneration, and the administrator/guest/viewer production matrix remain later Phase 3 production-acceptance work.
 
 ### Batch 3D: change and contradiction analysis
 

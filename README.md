@@ -9,7 +9,7 @@
 - AI 分析生成短标题和情绪标签；翻译同样通过服务端接口完成，ModelScope 密钥不进入浏览器代码。
 - 管理员个人知识库使用本地 `Qwen/Qwen3-Embedding-0.6B` 将日记按原文位置分段并生成 1024 维向量。线上搜索由 Cloudflare `@cf/qwen/qwen3-embedding-0.6b` 生成归一化查询向量，经 Supabase 现有 pgvector/原文融合 RPC 召回 20 个候选，再由 `@cf/baai/bge-reranker-base` 返回前 5 个结果。Embedding 失败返回 503；Reranker 失败时按原始向量相似度降级，并在管理员界面标明未应用重排。可选“诊断模式”会依次展示 RPC 召回候选、Reranker 原始前五和合并/多样化后的最终结果，用于直接检查真实日记语料的召回质量。
 - 管理员事实问答复用同一检索链，将最多 5 个最终片段交给 `deepseek-ai/DeepSeek-V3.2`。服务端预先分配 `S1`–`S5`，只接受结构化、引用标识合法且正文引用一致的模型结果；无候选或证据不足时明确拒答，引用卡片可打开原日记。回答和引用不会写入数据库。
-- Phase 3A 新增管理员“可审核主题时间线”：以批准的冻结语料检查点为运行级快照，按选定主题和日期范围逐篇调用本地 Ollama `qwen3.5:4b` 提取结构化观察，展示 eligible/processed/failed/stale/excluded 覆盖、按月 distinct diary 分布、首末支持日期和原文证据；逐日记观察一次只显示一篇，并通过上一页/下一页按钮切换。生成的摘要明确标为待审核，并支持确认、编辑、拒绝和取代且保留历史。创建运行时可设置并冻结模型、`num_ctx`、temperature、`top_p`、`top_k`、thinking、提取/摘要输出长度和两段系统提示词；服务器仍追加不可覆盖的证据、结构化输出、防提示注入和因果边界规则。Ollama 的提取 Schema 动态枚举当前日记实际存在的 chunk 编号，摘要 Schema 同样枚举本次观察 ID，避免模型把正文段落序号误当证据编号；服务器解析器仍执行独立校验。失败来源向管理员显示细分诊断代码，以及最多 240 字符、经过凭据脱敏的日记和模型输出片段。提取仅在本地开发服务器显式运行，线上只读取和审核已存储结果。
+- Phase 3A/3B 新增管理员“可审核主题时间线”：以批准的冻结语料检查点为运行级快照，按选定主题和日期范围逐篇调用本地 Ollama `qwen3.5:4b` 提取结构化观察，展示 eligible/processed/failed/stale/excluded 覆盖、按月 distinct diary 分布、首末支持日期和原文证据；逐日记观察一次只显示一篇，并通过上一页/下一页按钮切换。每条观察都可确认、编辑或拒绝，编辑保留只追加的前后版本历史与原始证据，编辑/拒绝会把引用它的当前摘要转为历史态；仅 `confirmed/edited` 观察可进入后续 Phase 3C 聚合。所有观察进入确认/编辑/拒绝终态后，本地页面可仅基于确认/编辑观察重新生成待审核摘要：有保留观察时调用一次 Ollama，全部拒绝时生成固定说明；拒绝的观察不会进入新摘要，两种情况都不会重新提取日记。主题摘要同样支持确认、编辑、拒绝和取代且保留历史。创建运行时可设置并冻结模型、`num_ctx`、temperature、`top_p`、`top_k`、thinking、提取/摘要输出长度和两段系统提示词；服务器仍追加不可覆盖的证据、结构化输出、防提示注入和因果边界规则。Ollama 的提取 Schema 动态枚举当前日记实际存在的 chunk 编号，摘要 Schema 同样枚举本次观察 ID，避免模型把正文段落序号误当证据编号；服务器解析器仍执行独立校验。失败来源向管理员显示细分诊断代码，以及最多 240 字符、经过凭据脱敏的日记和模型输出片段。提取及摘要重新生成仅在本地开发服务器显式运行，线上只读取和审核已存储结果。
 - ModelScope 分析、翻译和事实回答生成共享北京时间自然日 180 次的服务端安全上限；零候选问答、本地知识索引和仅使用 Workers AI 的知识搜索不消耗此额度。
 - 年度总结包含重要事件、AI 读后感、意见和年度照片。
 - 匿名留言支持 1–2000 字内容、HTML 转义和每页 10 条分页；写入通过同源 API 按客户端 IP 限制为每 60 秒 3 条。
@@ -51,6 +51,8 @@
 ## 本地开发
 
 在未提交的 `.env.local` 中配置变量；仓库目前没有 `.env.example`。不要提交真实 URL、密钥、令牌或密码。
+
+本地 `pnpm dev` 优先直接读取 `.env.local` 注入的 `process.env`。只有本地值缺失时才回退到 Cloudflare context；生产 Worker 仍以运行时 bindings 为准。这个顺序避免普通会话校验、Supabase API 和本地 Ollama 请求无意义地建立远程 Workers 绑定连接。
 
 ```dotenv
 SUPABASE_URL=
@@ -119,6 +121,10 @@ Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postf
 Phase 3 开发使用 2026-07-30 时已完成索引的 598 篇日记作为冻结语料基线。每天新增日记可以继续积累为待处理任务，不阻塞开发，也不会被表示为已经纳入全语料分析；Phase 3 功能完成后再补齐全部索引并重新生成受影响的派生结果。
 
 Batch 3A 的基础迁移位于 `supabase/migrations/20260730071934_phase3_theme_timeline.sql`。创建运行时会原子校验 598 篇基线及 corpus fingerprint，并保存全部 `source_id + indexed_content_hash`；日期范围只决定其中哪些快照来源进入本次提取。每个 eligible 来源调用一次本地 Ollama；只要存在提取观察，最后再调用一次生成待审核摘要。Ollama 不占用 ModelScope 日额度；超时或不可达会释放当前 claim 回 pending 并停止，结构化输出无效才记为可重试失败，已完成来源不会重复生成观察。来源哈希、索引状态或冻结模型/Prompt/参数签名变化会让结果显示为 stale，而不会静默覆盖。基础迁移已于 2026-07-30 作为生产 Supabase migration `20260730080402_phase3_theme_timeline` 应用；同日的 `20260730081356_phase3_theme_timeline_fk_indexes` 补齐两条外键覆盖索引。新增 `20260731015350_phase3_ollama_run_config.sql` 已于 2026-07-31 作为生产 migration `20260731024031_phase3_ollama_run_config` 应用；权限 postflight、顾问复查和子事务回滚冒烟通过。Windows-to-WSL Ollama 连通通过后，一个明确标记的 2026-07-22 单篇运行完成了 1 次提取和 1 次摘要，保存 1 条观察、1 条原文证据和 1 条待审核摘要，且无 failed/pending/stale 来源。冻结基线仍为 598 completed 和原 fingerprint；当前 8 条 pending 日记未处理。Phase 3A Worker 源码仍未部署或生产验收；当前线上 Worker 行为仍是 Phase 2。
+
+Phase 3B 观察审核迁移 `supabase/migrations/20260731062228_phase3_observation_review.sql` 已于 2026-07-31 作为生产 migration `20260731063023_phase3_observation_review` 应用。它新增 service-role-only 的审核历史和摘要影响记录，并提供确认、编辑、拒绝 RPC；stale 或未完成运行不能审核。摘要闭环迁移 `supabase/migrations/20260731070803_phase3_summary_regeneration.sql` 同日作为 `20260731071402_phase3_summary_regeneration` 应用：只有全部观察完成审核、没有活动摘要且运行仍为 current/completed 时，才允许基于确认/编辑观察创建新的 proposed 摘要。两项 migration 的 postflight、顾问检查、事务审核/生成冒烟和 rollback 脚本演练均通过；操作员已完成最新运行的全部观察审核及摘要重新生成/编辑，验收快照为 16 条确认或编辑观察、2 条拒绝观察、2 条已取代摘要和 1 条用户编辑摘要。生产总状态为 63 条观察、75 条证据、6 个摘要、21 条观察审核历史和 1 条摘要影响记录。
+
+Phase 3A/3B 的本地开发与操作员验收已经完成，可以进入 Phase 3C 的语料聚合开发。3C 只能使用 completed/current、非 stale 运行中 `confirmed` 或 `edited` 的观察，必须排除 proposed、rejected、superseded 和 stale 数据；精确次数、首末日期和时间分组由 PostgreSQL 确定性计算，语义提取结果必须单独披露覆盖范围及模型/提取器版本，并保留“聚合结果 → 审核观察 → 原文证据 → 来源日记”的追踪链。开发可继续使用已经审核的月度试跑，不需要先全量重跑 598 篇，也不处理当前 pending 日记；完整索引、全量派生数据重建、Worker 部署和角色验收仍留到 Phase 3 生产验收前完成。详细交接见 [`docs/PHASE3_UNDERSTANDING_PLAN.md`](docs/PHASE3_UNDERSTANDING_PLAN.md)。
 
 Windows Ollama 默认只监听 Windows 自身的 `127.0.0.1:11434`。如果 `pnpm dev` 运行在 WSL，应在 Windows 端把 Ollama 绑定到 WSL 可访问的接口，并用 Windows 防火墙把 11434 端口限制在本机/WSL 虚拟网络，然后在 WSL 的 `.env.local` 设置 `OLLAMA_BASE_URL=http://<Windows-host-IP>:11434`。不要把 Ollama API 暴露到公网；先用 `curl "$OLLAMA_BASE_URL/api/tags"` 确认 WSL 能看到 `qwen3.5:4b`，再从页面创建运行。本仓库不会自动修改 Windows 的 Ollama 或防火墙配置。
 

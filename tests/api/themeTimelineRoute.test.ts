@@ -6,7 +6,9 @@ const mocks = vi.hoisted(() => ({
   getThemeTimelineRun: vi.fn(),
   listThemeTimelineRuns: vi.fn(),
   processNextThemeTimelineSource: vi.fn(),
+  regenerateThemeTimelineSummary: vi.fn(),
   retryThemeTimelineSources: vi.fn(),
+  reviewThemeTimelineObservation: vi.fn(),
   reviewThemeTimelineSummary: vi.fn(),
 }))
 
@@ -22,7 +24,9 @@ vi.mock('@/lib/server/themeTimeline', async (importOriginal) => {
     getThemeTimelineRun: mocks.getThemeTimelineRun,
     listThemeTimelineRuns: mocks.listThemeTimelineRuns,
     processNextThemeTimelineSource: mocks.processNextThemeTimelineSource,
+    regenerateThemeTimelineSummary: mocks.regenerateThemeTimelineSummary,
     retryThemeTimelineSources: mocks.retryThemeTimelineSources,
+    reviewThemeTimelineObservation: mocks.reviewThemeTimelineObservation,
     reviewThemeTimelineSummary: mocks.reviewThemeTimelineSummary,
   }
 })
@@ -144,6 +148,61 @@ describe('theme timeline route boundary', () => {
       summaryId,
       action: 'supersede',
       statement: '用户修订后的摘要',
+    })
+  })
+
+  it('keeps summary regeneration local-only and validates its run id', async () => {
+    const runId = '44444444-4444-4444-8444-444444444444'
+    mocks.regenerateThemeTimelineSummary.mockResolvedValue({ id: runId })
+
+    mocks.executionMode = 'status-only'
+    expect((await POST(await request({
+      action: 'regenerate-summary',
+      runId,
+    }, 'admin'))).status).toBe(409)
+    expect(mocks.regenerateThemeTimelineSummary).not.toHaveBeenCalled()
+
+    mocks.executionMode = 'local'
+    expect((await POST(await request({
+      action: 'regenerate-summary',
+      runId: 'invalid',
+    }, 'admin'))).status).toBe(400)
+
+    const response = await POST(await request({
+      action: 'regenerate-summary',
+      runId,
+    }, 'admin'))
+    expect(response.status).toBe(200)
+    expect(mocks.regenerateThemeTimelineSummary).toHaveBeenCalledWith(runId)
+  })
+
+  it('validates and submits observation review without enabling local extraction', async () => {
+    mocks.executionMode = 'status-only'
+    mocks.reviewThemeTimelineObservation.mockResolvedValue({ id: 'run' })
+    const observationId = '33333333-3333-4333-8333-333333333333'
+
+    expect((await POST(await request({
+      action: 'review-observation',
+      observationId,
+      reviewAction: 'edit',
+      statement: '修改后的观察',
+      classification: 'opinion',
+    }, 'admin'))).status).toBe(400)
+    expect(mocks.reviewThemeTimelineObservation).not.toHaveBeenCalled()
+
+    const response = await POST(await request({
+      action: 'review-observation',
+      observationId,
+      reviewAction: 'edit',
+      statement: '  修改后的观察  ',
+      classification: 'inference',
+    }, 'admin'))
+    expect(response.status).toBe(200)
+    expect(mocks.reviewThemeTimelineObservation).toHaveBeenCalledWith({
+      observationId,
+      action: 'edit',
+      statement: '修改后的观察',
+      classification: 'inference',
     })
   })
 })

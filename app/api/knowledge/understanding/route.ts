@@ -13,7 +13,9 @@ import {
   getThemeTimelineRun,
   listThemeTimelineRuns,
   processNextThemeTimelineSource,
+  regenerateThemeTimelineSummary,
   retryThemeTimelineSources,
+  reviewThemeTimelineObservation,
   reviewThemeTimelineSummary,
   ThemeTimelineProviderError,
 } from '@/lib/server/themeTimeline'
@@ -71,6 +73,7 @@ export async function POST(request: Request) {
     const body = await readJsonBody(request, REQUEST_LIMITS.modelJson) as {
       action?: unknown
       runId?: unknown
+      observationId?: unknown
       summaryId?: unknown
       theme?: unknown
       startDate?: unknown
@@ -78,6 +81,7 @@ export async function POST(request: Request) {
       generationConfig?: unknown
       reviewAction?: unknown
       statement?: unknown
+      classification?: unknown
     } | null
     const action = stringField(body?.action, 'theme timeline action', { min: 1, max: 20, trim: true })
 
@@ -105,6 +109,13 @@ export async function POST(request: Request) {
       ))
     }
 
+    if (action === 'regenerate-summary') {
+      requireLocalProcessing()
+      return NextResponse.json(await regenerateThemeTimelineSummary(
+        uuidField(body?.runId, 'theme timeline run id'),
+      ))
+    }
+
     if (action === 'review') {
       const reviewAction = stringField(body?.reviewAction, 'theme timeline review action', { min: 1, max: 20, trim: true })
       if (reviewAction !== 'confirm' && reviewAction !== 'edit' && reviewAction !== 'reject' && reviewAction !== 'supersede') {
@@ -117,6 +128,31 @@ export async function POST(request: Request) {
         summaryId: uuidField(body?.summaryId, 'theme timeline summary id'),
         action: reviewAction,
         statement,
+      }))
+    }
+
+    if (action === 'review-observation') {
+      const reviewAction = stringField(body?.reviewAction, 'theme timeline observation review action', { min: 1, max: 20, trim: true })
+      if (reviewAction !== 'confirm' && reviewAction !== 'edit' && reviewAction !== 'reject') {
+        throw new HttpError(400, 'Invalid theme timeline observation review action')
+      }
+      const statement = reviewAction === 'edit'
+        ? stringField(body?.statement, 'theme timeline observation statement', { min: 1, max: 2_000, trim: true })
+        : undefined
+      const classification = reviewAction === 'edit'
+        ? stringField(body?.classification, 'theme timeline observation classification', { min: 1, max: 20, trim: true })
+        : undefined
+      if (classification !== undefined
+        && classification !== 'fact'
+        && classification !== 'summary'
+        && classification !== 'inference') {
+        throw new HttpError(400, 'Invalid theme timeline observation classification')
+      }
+      return NextResponse.json(await reviewThemeTimelineObservation({
+        observationId: uuidField(body?.observationId, 'theme timeline observation id'),
+        action: reviewAction,
+        statement,
+        classification,
       }))
     }
 

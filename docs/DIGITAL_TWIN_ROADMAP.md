@@ -12,7 +12,7 @@ It is a roadmap, not a frozen schema or prompt specification. Each phase should 
 |---|---|---|
 | 1 | Shared private knowledge index | Implemented |
 | 2 | Administrator factual question answering with citations | Completed and accepted in production |
-| 3 | Auditable structured understanding | Batch 3A implemented locally; schema applied, Worker deployment/acceptance pending |
+| 3 | Auditable structured understanding | Batches 3A/3B implemented and operator-accepted locally; Batch 3C next, Worker deployment/acceptance pending |
 | 4 | Private digital twin | Planned |
 | 5 | Growth analysis and historical versions | Planned |
 | 6 | Public digital twin | Planned; must wait for private boundaries and review workflows to mature |
@@ -66,14 +66,15 @@ Each proposed item should contain:
 - a review state such as `proposed`, `confirmed`, `edited`, `rejected`, or `superseded`;
 - an optional user correction or replacement statement.
 
-The first concrete implementation now uses versioned `understanding_*` runs, frozen sources, observations, evidence, summaries, and summary-observation links for the `theme_timeline` slice. Detailed current schema and lifecycle belong in [`DATABASE.md`](DATABASE.md); later Phase 3 types should reuse the proven provenance/review boundaries without assuming this first schema already covers 3C–3E.
+The first concrete implementation now uses versioned `understanding_*` runs, frozen sources, observations, immutable evidence, summaries, observation review history, summary impacts, and summary-observation links for the `theme_timeline` slice. Batches 3A/3B and the local operator review/regeneration workflow are complete, so deterministic corpus aggregation is the next batch. Detailed current schema and the Phase 3C handoff belong in [`DATABASE.md`](DATABASE.md) and [`PHASE3_UNDERSTANDING_PLAN.md`](PHASE3_UNDERSTANDING_PLAN.md); later Phase 3 types should reuse the proven provenance/review boundaries without assuming the current schema already covers 3C–3E.
 
 ### Recommended implementation batches
 
-1. Add the versioned derived-record model and evidence links, initially for a small administrator-selected date range.
-2. Add an administrator review queue with confirm, edit, reject, and supersede actions.
-3. Add contradiction/change detection and time-bounded summaries only after the review lifecycle is reliable.
-4. Allow factual answers to optionally use confirmed understanding, while continuing to cite the original diaries behind it.
+1. Batch 3A: add the versioned derived-record model and evidence links, initially for a small administrator-selected date range. **Completed locally.**
+2. Batch 3B: add administrator confirm, edit, reject, supersede, history, and reviewed-observation-only regeneration. **Completed and operator-accepted locally.**
+3. Batch 3C: add deterministic corpus aggregation and time-bounded summaries over confirmed/edited, non-stale observations while retaining original-diary provenance. **Next.**
+4. Batch 3D: add contradiction and change detection only after aggregate review/stale boundaries are proven.
+5. Batch 3E: allow factual answers to optionally use confirmed understanding, while continuing to cite the original diaries behind it.
 
 Extraction should initially be an explicit administrator operation. Do not automatically process the entire corpus or write model output as confirmed knowledge.
 

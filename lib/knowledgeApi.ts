@@ -100,6 +100,17 @@ export type ThemeTimelineObservation = {
   classification: 'fact' | 'summary' | 'inference'
   reviewState: 'proposed' | 'confirmed' | 'edited' | 'rejected' | 'superseded'
   evidence: ThemeTimelineEvidence[]
+  reviews: Array<{
+    id: number
+    action: 'confirm' | 'edit' | 'reject'
+    previousStatement: string
+    previousClassification: 'fact' | 'summary' | 'inference'
+    previousReviewState: 'proposed' | 'confirmed' | 'edited'
+    resultingStatement: string
+    resultingClassification: 'fact' | 'summary' | 'inference'
+    resultingReviewState: 'confirmed' | 'edited' | 'rejected'
+    reviewedAt: string
+  }>
 }
 
 export type ThemeTimelineSummary = {
@@ -279,6 +290,14 @@ export function retryThemeTimeline(runId: string): Promise<ThemeTimelineRun> {
   })
 }
 
+export function regenerateThemeTimelineSummary(runId: string): Promise<ThemeTimelineRun> {
+  return knowledgeRequest('/api/knowledge/understanding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'regenerate-summary', runId }),
+  })
+}
+
 export function reviewThemeTimelineSummary(input: {
   summaryId: string
   reviewAction: 'confirm' | 'edit' | 'reject' | 'supersede'
@@ -288,6 +307,19 @@ export function reviewThemeTimelineSummary(input: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'review', ...input }),
+  })
+}
+
+export function reviewThemeTimelineObservation(input: {
+  observationId: string
+  reviewAction: 'confirm' | 'edit' | 'reject'
+  statement?: string
+  classification?: 'fact' | 'summary' | 'inference'
+}): Promise<ThemeTimelineRun> {
+  return knowledgeRequest('/api/knowledge/understanding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'review-observation', ...input }),
   })
 }
 

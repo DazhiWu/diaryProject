@@ -7,6 +7,8 @@ import {
   fetchThemeTimelineRuns,
   openKnowledgeCitation,
   processThemeTimeline,
+  regenerateThemeTimelineSummary,
+  reviewThemeTimelineObservation,
   reviewThemeTimelineSummary,
   searchKnowledge,
 } from '@/lib/knowledgeApi'
@@ -86,6 +88,14 @@ describe('knowledge API client', () => {
       }),
     }))
 
+    await regenerateThemeTimelineSummary('11111111-1111-4111-8111-111111111111')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/knowledge/understanding', expect.objectContaining({
+      body: JSON.stringify({
+        action: 'regenerate-summary',
+        runId: '11111111-1111-4111-8111-111111111111',
+      }),
+    }))
+
     await reviewThemeTimelineSummary({
       summaryId: '22222222-2222-4222-8222-222222222222',
       reviewAction: 'confirm',
@@ -95,6 +105,22 @@ describe('knowledge API client', () => {
         action: 'review',
         summaryId: '22222222-2222-4222-8222-222222222222',
         reviewAction: 'confirm',
+      }),
+    }))
+
+    await reviewThemeTimelineObservation({
+      observationId: '33333333-3333-4333-8333-333333333333',
+      reviewAction: 'edit',
+      statement: '用户修订后的观察',
+      classification: 'fact',
+    })
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/knowledge/understanding', expect.objectContaining({
+      body: JSON.stringify({
+        action: 'review-observation',
+        observationId: '33333333-3333-4333-8333-333333333333',
+        reviewAction: 'edit',
+        statement: '用户修订后的观察',
+        classification: 'fact',
       }),
     }))
   })

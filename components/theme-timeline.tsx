@@ -12,7 +12,9 @@ import {
   createThemeTimeline,
   fetchThemeTimelineRuns,
   processThemeTimeline,
+  regenerateThemeTimelineSummary,
   retryThemeTimeline,
+  reviewThemeTimelineObservation,
   reviewThemeTimelineSummary,
   type ThemeTimelineRun,
   type ThemeTimelineSummary,
@@ -103,13 +105,16 @@ function Coverage({ run }: { run: ThemeTimelineRun }) {
 function SummaryReview({
   run,
   onRun,
+  localProcessingEnabled,
 }: {
   run: ThemeTimelineRun
   onRun: (run: ThemeTimelineRun) => void
+  localProcessingEnabled: boolean
 }) {
   const summary = currentSummary(run)
   const [replacement, setReplacement] = useState(summary?.statement ?? '')
   const [reviewing, setReviewing] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
 
   useEffect(() => setReplacement(summary?.statement ?? ''), [summary?.id, summary?.statement])
   if (!summary) return null
@@ -133,6 +138,34 @@ function SummaryReview({
     }
   }
 
+  async function regenerate() {
+    setRegenerating(true)
+    try {
+      const updated = await regenerateThemeTimelineSummary(run.id)
+      onRun(updated)
+      toast.success('已基于审核通过的观察生成新的待审核摘要')
+    } catch (error) {
+      console.error('Failed to regenerate theme timeline summary:', error)
+      toast.error(error instanceof Error ? error.message : '主题摘要重新生成失败')
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
+  const hasActiveSummary = run.summaries.some((item) => (
+    item.reviewState === 'proposed'
+    || item.reviewState === 'confirmed'
+    || item.reviewState === 'edited'
+  ))
+  const unreviewedCount = run.observations.filter((observation) => (
+    observation.reviewState !== 'confirmed'
+    && observation.reviewState !== 'edited'
+    && observation.reviewState !== 'rejected'
+  )).length
+  const acceptedCount = run.observations.filter((observation) => (
+    observation.reviewState === 'confirmed' || observation.reviewState === 'edited'
+  )).length
+  const rejectedCount = run.observations.filter((observation) => observation.reviewState === 'rejected').length
   const reviewable = !run.resultStale && summary.reviewState !== 'rejected' && summary.reviewState !== 'superseded'
   return (
     <div className="space-y-3 rounded-md border p-4">
@@ -143,6 +176,29 @@ function SummaryReview({
       <p className="whitespace-pre-wrap text-sm leading-7">{summary.statement}</p>
       {run.resultStale && (
         <p className="text-sm text-amber-700 dark:text-amber-300">来源哈希、处理覆盖或模型/Prompt 版本已变化；该摘要只能作为 stale 历史记录查看，不能确认。</p>
+      )}
+      {!hasActiveSummary && (
+        <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+          <p>旧摘要已进入历史。新摘要只会使用已确认或已编辑的观察，并排除已拒绝的观察。</p>
+          <p className="text-xs text-muted-foreground">
+            已保留 {acceptedCount} 条 · 已拒绝 {rejectedCount} 条 · 待审核 {unreviewedCount} 条
+          </p>
+          {unreviewedCount > 0 && (
+            <p className="text-amber-700 dark:text-amber-300">请先审核剩余 {unreviewedCount} 条观察，完成后才能重新生成摘要。</p>
+          )}
+          {!localProcessingEnabled && (
+            <p className="text-amber-700 dark:text-amber-300">摘要重新生成需要访问本地 Ollama，只能在本地开发服务器执行。</p>
+          )}
+          <Button
+            size="sm"
+            onClick={() => void regenerate()}
+            disabled={!localProcessingEnabled || regenerating || run.resultStale || unreviewedCount > 0}
+          >
+            {regenerating ? <Spinner className="h-4 w-4" /> : null}
+            重新生成待审核摘要
+          </Button>
+          <p className="text-xs text-muted-foreground">有保留观察时，此操作只调用一次本地 Ollama；全部拒绝时生成固定说明。两种情况都不会重新提取日记。</p>
+        </div>
       )}
       {reviewable && (
         <>
@@ -181,29 +237,80 @@ function SummaryReview({
 }
 
 function ObservationPager({
-  runId,
-  observations,
+  run,
   onOpenDiary,
+  onRun,
 }: {
-  runId: string
-  observations: ThemeTimelineRun['observations']
+  run: ThemeTimelineRun
   onOpenDiary: (sourceId: number) => Promise<void>
+  onRun: (run: ThemeTimelineRun) => void
 }) {
+  const observations = run.observations
   const [observationIndex, setObservationIndex] = useState(0)
+  const [replacement, setReplacement] = useState('')
+  const [classification, setClassification] = useState<'fact' | 'summary' | 'inference'>('summary')
+  const [reviewing, setReviewing] = useState(false)
   const lastIndex = observations.length - 1
   const observation = observations[observationIndex] ?? observations[0]
 
-  useEffect(() => setObservationIndex(0), [runId])
+  useEffect(() => setObservationIndex(0), [run.id])
   useEffect(() => {
     setObservationIndex((current) => Math.min(current, Math.max(lastIndex, 0)))
   }, [lastIndex])
+  useEffect(() => {
+    setReplacement(observation?.statement ?? '')
+    setClassification(observation?.classification ?? 'summary')
+  }, [observation?.id, observation?.statement, observation?.classification])
 
   if (!observation) return null
+
+  const reviewedCount = observations.filter((item) => (
+    item.reviewState === 'confirmed'
+    || item.reviewState === 'edited'
+    || item.reviewState === 'rejected'
+  )).length
+  const acceptedCount = observations.filter((item) => (
+    item.reviewState === 'confirmed' || item.reviewState === 'edited'
+  )).length
+  const reviewable = !run.resultStale
+    && observation.reviewState !== 'rejected'
+    && observation.reviewState !== 'superseded'
+  const changed = replacement.trim() !== observation.statement
+    || classification !== observation.classification
+
+  async function review(reviewAction: 'confirm' | 'edit' | 'reject') {
+    if (reviewAction === 'edit' && (!replacement.trim() || !changed)) return
+    setReviewing(true)
+    try {
+      const updated = await reviewThemeTimelineObservation({
+        observationId: observation!.id,
+        reviewAction,
+        statement: reviewAction === 'edit' ? replacement.trim() : undefined,
+        classification: reviewAction === 'edit' ? classification : undefined,
+      })
+      onRun(updated)
+      toast.success(reviewAction === 'confirm'
+        ? '逐日记观察已确认'
+        : reviewAction === 'edit'
+          ? '逐日记观察已保存编辑'
+          : '逐日记观察已拒绝')
+    } catch (error) {
+      console.error('Failed to review theme timeline observation:', error)
+      toast.error(error instanceof Error ? error.message : '逐日记观察审核失败')
+    } finally {
+      setReviewing(false)
+    }
+  }
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-semibold">逐日记观察与原文证据（{observations.length}）</h3>
+        <div>
+          <h3 className="font-semibold">逐日记观察与原文证据（{observations.length}）</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            已审核 {reviewedCount} / {observations.length} · 可供 Phase 3C 聚合 {acceptedCount} 条
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -233,7 +340,7 @@ function ObservationPager({
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <CardTitle className="text-base">{observation.sourceTitle || `日记 ${observation.sourceDate}`}</CardTitle>
-              <CardDescription>{observation.sourceDate} · {observation.classification} · {observation.reviewState}</CardDescription>
+              <CardDescription>{observation.sourceDate} · {observation.classification} · {REVIEW_LABELS[observation.reviewState]}</CardDescription>
             </div>
             <Button size="sm" variant="outline" onClick={() => void onOpenDiary(observation.sourceId)}>打开原日记</Button>
           </div>
@@ -245,6 +352,80 @@ function ObservationPager({
               片段 #{evidence.chunkIndex + 1}：{evidence.excerpt}
             </blockquote>
           ))}
+          {run.resultStale && (
+            <p className="text-sm text-amber-700 dark:text-amber-300">来源、覆盖或模型/Prompt 版本已变化；该观察只能作为历史记录查看，不能审核。</p>
+          )}
+          {reviewable && (
+            <div className="space-y-3 border-t pt-3">
+              <p className="text-xs text-muted-foreground">编辑或拒绝观察会把引用它的当前主题摘要转为历史版本，避免旧摘要继续参与后续审核。</p>
+              <label className="block space-y-1 text-sm">
+                <span className="text-muted-foreground">审核后的观察陈述</span>
+                <textarea
+                  value={replacement}
+                  onChange={(event) => setReplacement(event.target.value)}
+                  maxLength={2_000}
+                  className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block space-y-1 text-sm">
+                <span className="text-muted-foreground">分类</span>
+                <select
+                  value={classification}
+                  onChange={(event) => setClassification(event.target.value as typeof classification)}
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                >
+                  <option value="fact">fact</option>
+                  <option value="summary">summary</option>
+                  <option value="inference">inference</option>
+                </select>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => void review('confirm')}
+                  disabled={reviewing || observation.reviewState === 'confirmed'}
+                >
+                  确认
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void review('edit')}
+                  disabled={reviewing || !replacement.trim() || !changed}
+                >
+                  保存编辑
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => void review('reject')}
+                  disabled={reviewing}
+                >
+                  拒绝
+                </Button>
+              </div>
+            </div>
+          )}
+          {observation.reviews.length > 0 && (
+            <details className="border-t pt-3 text-sm">
+              <summary className="cursor-pointer text-muted-foreground">查看审核历史（{observation.reviews.length}）</summary>
+              <div className="mt-3 space-y-2">
+                {observation.reviews.map((review) => (
+                  <div key={review.id} className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(review.reviewedAt).toLocaleString()} · {review.action} · {REVIEW_LABELS[review.resultingReviewState]}
+                    </div>
+                    {review.action === 'edit' && (
+                      <>
+                        <p className="mt-2 text-xs text-muted-foreground">修改前：{review.previousStatement}</p>
+                        <p className="mt-1">修改后：{review.resultingStatement}</p>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -567,13 +748,17 @@ export function ThemeTimeline({
               </div>
             )}
 
-            <SummaryReview run={selectedRun} onRun={applyRun} />
+            <SummaryReview
+              run={selectedRun}
+              onRun={applyRun}
+              localProcessingEnabled={localProcessingEnabled}
+            />
 
             {selectedRun.observations.length > 0 && (
               <ObservationPager
-                runId={selectedRun.id}
-                observations={selectedRun.observations}
+                run={selectedRun}
                 onOpenDiary={onOpenDiary}
+                onRun={applyRun}
               />
             )}
           </div>
