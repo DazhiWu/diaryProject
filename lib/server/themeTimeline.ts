@@ -1,17 +1,24 @@
 import 'server-only'
 
-import {
-  createModelScopeClient,
-  MODELSCOPE_CHAT_MODEL,
-  MODELSCOPE_TIMEOUT_MS,
-  safeModelScopeErrorMetadata,
-} from '@/lib/server/modelScopeClient'
-import { ModelScopeQuotaStopError, reserveModelScopeApiCall } from '@/lib/server/modelScopeQuota'
+import { createHash } from 'node:crypto'
+
+import { createOllamaChatCompletion, OllamaClientError } from '@/lib/server/ollamaClient'
 import { getSupabaseAdmin } from '@/lib/server/supabaseAdmin'
+import {
+  parseStoredThemeTimelineFailure,
+  serializeThemeTimelineFailure,
+  type StoredThemeTimelineFailure,
+  type ThemeTimelineFailureCode,
+} from '@/lib/server/themeTimelineFailure'
+import {
+  DEFAULT_THEME_TIMELINE_GENERATION_CONFIG,
+  parseThemeTimelineGenerationConfig,
+  type ThemeTimelineGenerationConfig,
+} from '@/lib/themeTimelineConfig'
 
 export const THEME_TIMELINE_ANALYSIS_TYPE = 'theme_timeline'
-export const THEME_TIMELINE_PROMPT_VERSION = 'theme-timeline-extractor-v1'
-export const THEME_TIMELINE_SUMMARY_PROMPT_VERSION = 'theme-timeline-summary-v1'
+export const THEME_TIMELINE_PROMPT_VERSION = 'theme-timeline-extractor-v3'
+export const THEME_TIMELINE_SUMMARY_PROMPT_VERSION = 'theme-timeline-summary-v3'
 export const PHASE3_FROZEN_SOURCE_COUNT = 598
 export const PHASE3_FROZEN_CORPUS_FINGERPRINT = 'f5fc43c2927ce4413cff073e580cd4ce'
 
@@ -82,6 +89,13 @@ export type ThemeTimelineSummary = {
   reviewedAt: string | null
 }
 
+export type ThemeTimelineFailure = StoredThemeTimelineFailure & {
+  sourceId: number
+  sourceDate: string
+  sourceTitle: string | null
+  attempts: number
+}
+
 export type ThemeTimelineRun = {
   id: string
   analysisType: typeof THEME_TIMELINE_ANALYSIS_TYPE
@@ -93,6 +107,7 @@ export type ThemeTimelineRun = {
   frozenSourceCount: number
   modelVersion: string
   promptVersion: string
+  generationConfig: ThemeTimelineGenerationConfig
   versionStale: boolean
   resultStale: boolean
   coverage: {
@@ -108,80 +123,98 @@ export type ThemeTimelineRun = {
   firstSupportedDate: string | null
   lastSupportedDate: string | null
   periodDistribution: Array<{ period: string; diaryCount: number }>
+  failures: ThemeTimelineFailure[]
   observations: ThemeTimelineObservation[]
   summaries: ThemeTimelineSummary[]
   createdAt: string
   completedAt: string | null
 }
 
-type ModelCompletion = (system: string, user: string, maxTokens: number) => Promise<string>
-
 type ThemeTimelineDependencies = {
-  prepareCompletion(): Promise<ModelCompletion>
-  reserveQuota: typeof reserveModelScopeApiCall
-}
-
-type ModelScopeCompletionResponse = {
-  choices?: Array<{ message?: { content?: string | null } }>
-}
-
-type ModelScopeCompletionCreate = (
-  body: {
-    model: string
-    messages: Array<{ role: 'system' | 'user'; content: string }>
-    stream: false
-    max_tokens: number
-    extra_body: { enable_thinking: boolean }
-  },
-  options: { signal: AbortSignal },
-) => Promise<ModelScopeCompletionResponse>
-
-async function prepareModelScopeCompletion(): Promise<ModelCompletion> {
-  const client = await createModelScopeClient()
-  const createCompletion = client.chat.completions.create.bind(client.chat.completions) as unknown as ModelScopeCompletionCreate
-  return async (system, user, maxTokens) => {
-    const response = await createCompletion({
-      model: MODELSCOPE_CHAT_MODEL,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      stream: false,
-      max_tokens: maxTokens,
-      extra_body: { enable_thinking: true },
-    }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) })
-    return response.choices?.[0]?.message?.content ?? ''
-  }
+  complete: typeof createOllamaChatCompletion
 }
 
 const DEFAULT_DEPENDENCIES: ThemeTimelineDependencies = {
-  prepareCompletion: prepareModelScopeCompletion,
-  reserveQuota: reserveModelScopeApiCall,
+  complete: createOllamaChatCompletion,
 }
 
 export class ThemeTimelineProviderError extends Error {
-  constructor(public readonly reason: 'timeout' | 'invalid-response' | 'unavailable') {
+  constructor(
+    public readonly reason: 'timeout' | 'invalid-response' | 'unavailable',
+    public readonly diagnosticCode: ThemeTimelineFailureCode = 'unknown',
+  ) {
     super('Theme timeline provider failed')
     this.name = 'ThemeTimelineProviderError'
   }
 }
 
-function isTimeoutError(error: unknown): boolean {
-  const metadata = safeModelScopeErrorMetadata(error)
-  return metadata.name === 'TimeoutError'
-    || metadata.name === 'AbortError'
-    || metadata.name === 'APIConnectionTimeoutError'
-    || metadata.code === 'ETIMEDOUT'
-}
-
-function logProviderFailure(operation: 'prepare' | 'extract' | 'summarize', error: unknown, reason: ThemeTimelineProviderError['reason']) {
+function logProviderFailure(
+  operation: 'extract' | 'summarize',
+  error: unknown,
+  reason: ThemeTimelineProviderError['reason'],
+  model: string,
+) {
   console.error('[theme-timeline]', {
     operation,
     outcome: 'failed',
-    model: MODELSCOPE_CHAT_MODEL,
+    provider: 'ollama',
+    model,
     reason,
-    ...safeModelScopeErrorMetadata(error),
+    status: error instanceof OllamaClientError ? error.status : undefined,
+    code: error instanceof ThemeTimelineProviderError
+      ? error.diagnosticCode
+      : error instanceof OllamaClientError
+        ? error.diagnosticCode
+        : undefined,
   })
+}
+
+function providerError(error: unknown): ThemeTimelineProviderError {
+  if (error instanceof ThemeTimelineProviderError) return error
+  if (error instanceof OllamaClientError) {
+    return new ThemeTimelineProviderError(error.reason, error.diagnosticCode ?? 'unknown')
+  }
+  return new ThemeTimelineProviderError('unavailable')
+}
+
+export function buildThemeExtractionResponseSchema(chunks: ThemeTimelineChunk[]): Record<string, unknown> {
+  const allowedIndexes = [...new Set(chunks.map((chunk) => chunk.chunkIndex))]
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['relevant', 'statement', 'classification', 'evidenceChunkIndexes'],
+    properties: {
+      relevant: { type: 'boolean' },
+      statement: { type: ['string', 'null'] },
+      classification: { type: ['string', 'null'], enum: ['fact', 'summary', 'inference', null] },
+      evidenceChunkIndexes: {
+        type: 'array',
+        items: { type: 'integer', enum: allowedIndexes },
+        uniqueItems: true,
+        maxItems: Math.min(20, allowedIndexes.length),
+      },
+    },
+  }
+}
+
+export function buildThemeSummaryResponseSchema(observationIds: string[]): Record<string, unknown> {
+  const allowedIds = [...new Set(observationIds)]
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['statement', 'classification', 'observationIds'],
+    properties: {
+      statement: { type: 'string' },
+      classification: { type: 'string', enum: ['summary', 'inference'] },
+      observationIds: {
+        type: 'array',
+        items: { type: 'string', enum: allowedIds },
+        uniqueItems: true,
+        minItems: 1,
+        maxItems: Math.min(500, allowedIds.length),
+      },
+    },
+  }
 }
 
 function cleanStructuredResponse(raw: string): string {
@@ -195,24 +228,26 @@ function objectResponse(raw: string): Record<string, unknown> {
   try {
     value = JSON.parse(cleanStructuredResponse(raw))
   } catch {
-    throw new ThemeTimelineProviderError('invalid-response')
+    throw new ThemeTimelineProviderError('invalid-response', 'invalid_json')
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ThemeTimelineProviderError('invalid-response')
+    throw new ThemeTimelineProviderError('invalid-response', 'invalid_object')
   }
   return value as Record<string, unknown>
 }
 
 export function parseThemeExtraction(raw: string, chunks: ThemeTimelineChunk[]): ThemeExtractionResult {
   const value = objectResponse(raw)
-  if (typeof value.relevant !== 'boolean') throw new ThemeTimelineProviderError('invalid-response')
+  if (typeof value.relevant !== 'boolean') {
+    throw new ThemeTimelineProviderError('invalid-response', 'invalid_relevant_flag')
+  }
 
   if (!value.relevant) {
     if (value.statement !== null || value.classification !== null) {
-      throw new ThemeTimelineProviderError('invalid-response')
+      throw new ThemeTimelineProviderError('invalid-response', 'irrelevant_payload_not_empty')
     }
     if (!Array.isArray(value.evidenceChunkIndexes) || value.evidenceChunkIndexes.length !== 0) {
-      throw new ThemeTimelineProviderError('invalid-response')
+      throw new ThemeTimelineProviderError('invalid-response', 'invalid_evidence_indexes')
     }
     return {
       relevant: false,
@@ -225,25 +260,28 @@ export function parseThemeExtraction(raw: string, chunks: ThemeTimelineChunk[]):
   const statement = typeof value.statement === 'string' ? value.statement.trim() : ''
   const classification = value.classification
   const evidenceChunkIndexes = value.evidenceChunkIndexes
+  if (!statement || statement.length > 2_000) {
+    throw new ThemeTimelineProviderError('invalid-response', 'invalid_statement')
+  }
+  if (classification !== 'fact' && classification !== 'summary' && classification !== 'inference') {
+    throw new ThemeTimelineProviderError('invalid-response', 'invalid_classification')
+  }
   if (
-    !statement
-    || statement.length > 2_000
-    || (classification !== 'fact' && classification !== 'summary' && classification !== 'inference')
-    || !Array.isArray(evidenceChunkIndexes)
+    !Array.isArray(evidenceChunkIndexes)
     || evidenceChunkIndexes.length < 1
     || evidenceChunkIndexes.length > 20
     || evidenceChunkIndexes.some((index) => !Number.isSafeInteger(index))
   ) {
-    throw new ThemeTimelineProviderError('invalid-response')
+    throw new ThemeTimelineProviderError('invalid-response', 'invalid_evidence_indexes')
   }
 
   const uniqueIndexes = new Set(evidenceChunkIndexes as number[])
   const allowedIndexes = new Set(chunks.map((chunk) => chunk.chunkIndex))
-  if (
-    uniqueIndexes.size !== evidenceChunkIndexes.length
-    || [...uniqueIndexes].some((index) => !allowedIndexes.has(index))
-  ) {
-    throw new ThemeTimelineProviderError('invalid-response')
+  if (uniqueIndexes.size !== evidenceChunkIndexes.length) {
+    throw new ThemeTimelineProviderError('invalid-response', 'duplicate_evidence_indexes')
+  }
+  if ([...uniqueIndexes].some((index) => !allowedIndexes.has(index))) {
+    throw new ThemeTimelineProviderError('invalid-response', 'unknown_evidence_index')
   }
 
   return {
@@ -259,22 +297,25 @@ export function parseThemeSummary(raw: string, allowedObservationIds: Set<string
   const statement = typeof value.statement === 'string' ? value.statement.trim() : ''
   const classification = value.classification
   const observationIds = value.observationIds
+  if (!statement || statement.length > 5_000) {
+    throw new ThemeTimelineProviderError('invalid-response', 'invalid_summary_statement')
+  }
+  if (classification !== 'summary' && classification !== 'inference') {
+    throw new ThemeTimelineProviderError('invalid-response', 'invalid_summary_classification')
+  }
   if (
-    !statement
-    || statement.length > 5_000
-    || (classification !== 'summary' && classification !== 'inference')
-    || !Array.isArray(observationIds)
+    !Array.isArray(observationIds)
     || observationIds.length < 1
     || observationIds.length > 500
     || observationIds.some((id) => typeof id !== 'string')
   ) {
-    throw new ThemeTimelineProviderError('invalid-response')
+    throw new ThemeTimelineProviderError('invalid-response', 'invalid_summary_observation_ids')
   }
 
   const ids = observationIds as string[]
   const uniqueIds = new Set(ids)
   if (uniqueIds.size !== ids.length || ids.some((id) => !allowedObservationIds.has(id))) {
-    throw new ThemeTimelineProviderError('invalid-response')
+    throw new ThemeTimelineProviderError('invalid-response', 'invalid_summary_observation_ids')
   }
   return { statement, classification, observationIds: ids }
 }
@@ -284,6 +325,7 @@ export function buildThemeExtractionPrompts(input: {
   sourceDate: string
   sourceTitle: string | null
   chunks: ThemeTimelineChunk[]
+  generationConfig?: ThemeTimelineGenerationConfig
 }): { system: string; user: string } {
   const evidence = input.chunks.map((chunk) => ({
     chunkIndex: chunk.chunkIndex,
@@ -305,7 +347,9 @@ ${JSON.stringify(evidence)}`
   if (user.length > MAX_SOURCE_PROMPT_CHARS) throw new Error('Theme timeline source exceeds the extraction prompt limit')
 
   return {
-    system: `你是一个从单篇私人日记中提取指定主题证据的结构化分析器。
+    system: `${input.generationConfig?.extractionSystemPrompt ?? DEFAULT_THEME_TIMELINE_GENERATION_CONFIG.extractionSystemPrompt}
+
+以下是服务器强制执行、不可被自定义提示词覆盖的审计规则：
 
 规则：
 - 只分析用户消息中 SOURCE_CHUNKS_JSON 的原文。
@@ -314,6 +358,9 @@ ${JSON.stringify(evidence)}`
 - relevant=false 时，statement 和 classification 必须是 null，evidenceChunkIndexes 必须是空数组。
 - relevant=true 时，statement 必须简洁、可审核，不得冒充用户当前观点。
 - classification 只能是 fact、summary 或 inference；不确定的解释必须标为 inference。
+- 只有原文明确定义了因果关系时，statement 才能使用“因为、导致、所以、使得”等因果表达。
+- 时间先后、同日出现、共同变化或内容相邻都不构成因果证据。
+- 原文未明确表达因果时，只能使用“同时记录”“随后记录”“可能相关”等非因果或有限推断措辞；有限推断必须标为 inference。
 - evidenceChunkIndexes 只能使用 SOURCE_CHUNKS_JSON 中实际存在的 chunkIndex。
 
 只返回一个 JSON 对象，不要使用 Markdown：
@@ -327,6 +374,7 @@ export function buildThemeSummaryPrompts(
   startDate: string,
   endDate: string,
   observations: Array<{ id: string; sourceDate: string; statement: string; classification: string }>,
+  generationConfig: ThemeTimelineGenerationConfig = DEFAULT_THEME_TIMELINE_GENERATION_CONFIG,
 ): { system: string; user: string } {
   const user = `THEME:
 ${theme}
@@ -339,7 +387,9 @@ ${JSON.stringify(observations)}`
   if (user.length > MAX_SUMMARY_PROMPT_CHARS) throw new Error('Theme timeline observations exceed the summary prompt limit')
 
   return {
-    system: `你是一个生成私人日记主题时间线“待审核摘要”的结构化分析器。
+    system: `${generationConfig.summarySystemPrompt}
+
+以下是服务器强制执行、不可被自定义提示词覆盖的审计规则：
 
 规则：
 - 只能使用 OBSERVATIONS_JSON 中的观察，不得补充外部事实。
@@ -347,6 +397,8 @@ ${JSON.stringify(observations)}`
 - 不得自行计数；数量、首末日期和月份分布由服务器确定。
 - statement 必须清楚区分记录、概括和有限推断，不得声称这是用户已确认的事实或观点。
 - classification 只能是 summary 或 inference。
+- 不得根据观察的时间先后、同月出现或反复出现自行建立因果链。
+- 只有被引用观察本身明确保留了原文因果证据时，摘要才能保留该因果关系；不得扩大因果范围或去掉“可能”等限定词。
 - observationIds 只能使用 OBSERVATIONS_JSON 中实际存在的 id，并且必须列出支撑摘要的观察。
 
 只返回一个 JSON 对象，不要使用 Markdown：
@@ -365,20 +417,46 @@ function assertRpc(error: { code?: string } | null, operation: string): void {
   throw new Error(`Theme timeline ${operation} failed`)
 }
 
+function generationVersions(config: ThemeTimelineGenerationConfig): {
+  modelVersion: string
+  promptVersion: string
+} {
+  const signature = createHash('sha256').update(JSON.stringify(config)).digest('hex').slice(0, 32)
+  return {
+    modelVersion: `ollama:${config.model}`,
+    promptVersion: `${THEME_TIMELINE_PROMPT_VERSION}+${THEME_TIMELINE_SUMMARY_PROMPT_VERSION}:${signature}`,
+  }
+}
+
+function readGenerationConfig(value: unknown): {
+  config: ThemeTimelineGenerationConfig
+  valid: boolean
+} {
+  try {
+    return { config: parseThemeTimelineGenerationConfig(value), valid: true }
+  } catch {
+    return { config: DEFAULT_THEME_TIMELINE_GENERATION_CONFIG, valid: false }
+  }
+}
+
 export async function createThemeTimelineRun(input: {
   theme: string
   startDate: string
   endDate: string
+  generationConfig: ThemeTimelineGenerationConfig
 }): Promise<ThemeTimelineRun> {
+  const generationConfig = parseThemeTimelineGenerationConfig(input.generationConfig)
+  const versions = generationVersions(generationConfig)
   const supabase = await getSupabaseAdmin()
-  const { data, error } = await supabase.rpc('create_theme_timeline_run', {
+  const { data, error } = await supabase.rpc('create_theme_timeline_run_with_config', {
     p_theme: input.theme,
     p_start_date: input.startDate,
     p_end_date: input.endDate,
     p_expected_source_count: PHASE3_FROZEN_SOURCE_COUNT,
     p_expected_fingerprint: PHASE3_FROZEN_CORPUS_FINGERPRINT,
-    p_model_version: MODELSCOPE_CHAT_MODEL,
-    p_prompt_version: `${THEME_TIMELINE_PROMPT_VERSION}+${THEME_TIMELINE_SUMMARY_PROMPT_VERSION}`,
+    p_model_version: versions.modelVersion,
+    p_prompt_version: versions.promptVersion,
+    p_generation_config: generationConfig,
   })
   assertRpc(error, 'create')
   if (typeof data !== 'string') throw new Error('Theme timeline create returned an invalid run id')
@@ -398,6 +476,7 @@ type RunRow = {
   excluded_source_count: number
   model_version: string
   prompt_version: string
+  generation_config: unknown
   created_at: string
   completed_at: string | null
 }
@@ -408,6 +487,8 @@ type RunSourceRow = {
   source_date: string
   source_title: string | null
   status: 'out_of_range' | 'pending' | 'processing' | 'completed' | 'failed' | 'stale'
+  attempts: number
+  last_error: string | null
 }
 
 type ObservationRow = {
@@ -453,7 +534,7 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
     summariesResult,
   ] = await Promise.all([
     supabase.from('understanding_run_sources')
-      .select('source_id, source_hash, source_date, source_title, status')
+      .select('source_id, source_hash, source_date, source_title, status, attempts, last_error')
       .eq('run_id', run.id)
       .eq('in_date_range', true)
       .order('source_date', { ascending: true })
@@ -500,8 +581,11 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
     safeRows<{ source_id: number }>(staleResult.data).map((source) => source.source_id),
   )
 
-  const versionStale = run.model_version !== MODELSCOPE_CHAT_MODEL
-    || run.prompt_version !== `${THEME_TIMELINE_PROMPT_VERSION}+${THEME_TIMELINE_SUMMARY_PROMPT_VERSION}`
+  const storedConfig = readGenerationConfig(run.generation_config)
+  const expectedVersions = generationVersions(storedConfig.config)
+  const versionStale = !storedConfig.valid
+    || run.model_version !== expectedVersions.modelVersion
+    || run.prompt_version !== expectedVersions.promptVersion
   const evidenceByObservation = new Map<string, ThemeTimelineEvidence[]>()
   for (const evidence of safeRows<EvidenceRow>(actualEvidenceResult.data)) {
     const current = evidenceByObservation.get(evidence.observation_id) ?? []
@@ -573,6 +657,15 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
     || coverage.stale > 0
     || coverage.processed !== coverage.eligible
     || coverage.failed > 0
+  const failures = runSources
+    .filter((source) => source.status === 'failed' && !staleSourceIds.has(source.source_id))
+    .map((source) => ({
+      sourceId: source.source_id,
+      sourceDate: source.source_date,
+      sourceTitle: source.source_title,
+      attempts: source.attempts,
+      ...parseStoredThemeTimelineFailure(source.last_error),
+    }))
 
   return {
     id: run.id,
@@ -585,6 +678,7 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
     frozenSourceCount: run.frozen_source_count,
     modelVersion: run.model_version,
     promptVersion: run.prompt_version,
+    generationConfig: storedConfig.config,
     versionStale,
     resultStale,
     coverage,
@@ -594,6 +688,7 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
     periodDistribution: [...periodSources.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([period, ids]) => ({ period, diaryCount: ids.size })),
+    failures,
     observations,
     summaries,
     createdAt: run.created_at,
@@ -604,7 +699,7 @@ async function hydrateThemeTimelineRun(run: RunRow): Promise<ThemeTimelineRun> {
 export async function listThemeTimelineRuns(): Promise<ThemeTimelineRun[]> {
   const supabase = await getSupabaseAdmin()
   const { data, error } = await supabase.from('understanding_runs')
-    .select('id, analysis_type, theme, start_date, end_date, status, corpus_fingerprint, frozen_source_count, eligible_source_count, excluded_source_count, model_version, prompt_version, created_at, completed_at')
+    .select('id, analysis_type, theme, start_date, end_date, status, corpus_fingerprint, frozen_source_count, eligible_source_count, excluded_source_count, model_version, prompt_version, generation_config, created_at, completed_at')
     .eq('analysis_type', THEME_TIMELINE_ANALYSIS_TYPE)
     .order('created_at', { ascending: false })
     .limit(10)
@@ -615,7 +710,7 @@ export async function listThemeTimelineRuns(): Promise<ThemeTimelineRun[]> {
 export async function getThemeTimelineRun(runId: string): Promise<ThemeTimelineRun> {
   const supabase = await getSupabaseAdmin()
   const { data, error } = await supabase.from('understanding_runs')
-    .select('id, analysis_type, theme, start_date, end_date, status, corpus_fingerprint, frozen_source_count, eligible_source_count, excluded_source_count, model_version, prompt_version, created_at, completed_at')
+    .select('id, analysis_type, theme, start_date, end_date, status, corpus_fingerprint, frozen_source_count, eligible_source_count, excluded_source_count, model_version, prompt_version, generation_config, created_at, completed_at')
     .eq('id', runId)
     .maybeSingle()
   assertRpc(error, 'read')
@@ -631,15 +726,20 @@ async function claimNextSource(runId: string): Promise<ClaimedThemeTimelineSourc
   return source ?? null
 }
 
-async function readRunTheme(runId: string): Promise<string> {
+async function readRunExecution(runId: string): Promise<{
+  theme: string
+  generationConfig: ThemeTimelineGenerationConfig
+}> {
   const supabase = await getSupabaseAdmin()
   const { data, error } = await supabase.from('understanding_runs')
-    .select('theme')
+    .select('theme, generation_config')
     .eq('id', runId)
     .maybeSingle()
-  assertRpc(error, 'read-theme')
+  assertRpc(error, 'read-execution')
   if (!data || typeof data.theme !== 'string') throw new Error('Theme timeline run not found')
-  return data.theme
+  const storedConfig = readGenerationConfig(data.generation_config)
+  if (!storedConfig.valid) throw new Error('Theme timeline run has no valid Ollama generation config')
+  return { theme: data.theme, generationConfig: storedConfig.config }
 }
 
 async function completeSource(runId: string, source: ClaimedThemeTimelineSource, result: ThemeExtractionResult): Promise<void> {
@@ -710,24 +810,28 @@ async function finalizeRun(
       observationIds: [],
     }
   } else {
-    const prompts = buildThemeSummaryPrompts(run.theme, run.startDate, run.endDate, observations)
-    let complete: ModelCompletion
+    const prompts = buildThemeSummaryPrompts(
+      run.theme,
+      run.startDate,
+      run.endDate,
+      observations,
+      run.generationConfig,
+    )
     try {
-      complete = await dependencies.prepareCompletion()
-    } catch (error) {
-      logProviderFailure('prepare', error, 'unavailable')
-      throw new ThemeTimelineProviderError('unavailable')
-    }
-    await dependencies.reserveQuota()
-    try {
-      const raw = await complete(prompts.system, prompts.user, 1_500)
+      const raw = await dependencies.complete({
+        config: run.generationConfig,
+        system: prompts.system,
+        user: prompts.user,
+        maxTokens: run.generationConfig.summaryMaxTokens,
+        schema: buildThemeSummaryResponseSchema(
+          observations.map((observation) => observation.id),
+        ),
+      })
       summary = parseThemeSummary(raw, new Set(observations.map((observation) => observation.id)))
     } catch (error) {
-      const reason = error instanceof ThemeTimelineProviderError
-        ? error.reason
-        : isTimeoutError(error) ? 'timeout' : 'unavailable'
-      logProviderFailure('summarize', error, reason)
-      throw error instanceof ThemeTimelineProviderError ? error : new ThemeTimelineProviderError(reason)
+      const mapped = providerError(error)
+      logProviderFailure('summarize', error, mapped.reason, run.generationConfig.model)
+      throw mapped
     }
   }
 
@@ -756,47 +860,64 @@ export async function processNextThemeTimelineSource(
   }
 
   let prompts: { system: string; user: string }
+  let execution: Awaited<ReturnType<typeof readRunExecution>>
   try {
+    execution = await readRunExecution(runId)
     prompts = buildThemeExtractionPrompts({
-      theme: await readRunTheme(runId),
+      theme: execution.theme,
       sourceDate: source.source_date,
       sourceTitle: source.source_title,
       chunks: source.chunks,
+      generationConfig: execution.generationConfig,
     })
   } catch (error) {
-    await failSource(runId, source.source_id, 'Theme extraction input is invalid')
+    const code: ThemeTimelineFailureCode = error instanceof Error
+      && error.message === 'Theme timeline source exceeds the extraction prompt limit'
+      ? 'prompt_too_large'
+      : 'unknown'
+    await failSource(runId, source.source_id, serializeThemeTimelineFailure({
+      category: 'invalid_input',
+      code,
+      diaryContent: source.chunks.map((chunk) => chunk.content).join('\n'),
+    }))
     console.error('[theme-timeline]', {
       operation: 'prepare-source',
       outcome: 'failed',
       name: error instanceof Error ? error.name : 'UnknownError',
+      code,
     })
     return { outcome: 'failed', run: await getThemeTimelineRun(runId) }
   }
 
-  let complete: ModelCompletion
+  let rawResponse: string | undefined
   try {
-    complete = await dependencies.prepareCompletion()
-  } catch (error) {
-    await failSource(runId, source.source_id, 'Model provider is unavailable')
-    logProviderFailure('prepare', error, 'unavailable')
-    return { outcome: 'failed', run: await getThemeTimelineRun(runId) }
-  }
-
-  try {
-    await dependencies.reserveQuota()
-    const raw = await complete(prompts.system, prompts.user, 1_000)
-    await completeSource(runId, source, parseThemeExtraction(raw, source.chunks))
+    rawResponse = await dependencies.complete({
+      config: execution.generationConfig,
+      system: prompts.system,
+      user: prompts.user,
+      maxTokens: execution.generationConfig.extractionMaxTokens,
+      schema: buildThemeExtractionResponseSchema(source.chunks),
+    })
+    await completeSource(runId, source, parseThemeExtraction(rawResponse, source.chunks))
     return { outcome: 'processed', run: await getThemeTimelineRun(runId) }
   } catch (error) {
-    if (error instanceof ModelScopeQuotaStopError) {
-      await releaseSource(runId, source.source_id, error.message)
-      throw error
+    const mapped = providerError(error)
+    logProviderFailure('extract', error, mapped.reason, execution.generationConfig.model)
+    if (mapped.reason === 'timeout' || mapped.reason === 'unavailable') {
+      await releaseSource(
+        runId,
+        source.source_id,
+        mapped.reason === 'timeout' ? 'Local Ollama timed out' : 'Local Ollama is unavailable',
+      )
+      throw mapped
     }
-    const reason = error instanceof ThemeTimelineProviderError
-      ? error.reason
-      : isTimeoutError(error) ? 'timeout' : 'unavailable'
-    await failSource(runId, source.source_id, reason === 'timeout' ? 'Model provider timed out' : 'Theme extraction failed')
-    logProviderFailure('extract', error, reason)
+    await failSource(runId, source.source_id, serializeThemeTimelineFailure({
+      category: 'invalid_response',
+      code: mapped.diagnosticCode,
+      status: error instanceof OllamaClientError ? error.status : undefined,
+      diaryContent: source.chunks.map((chunk) => chunk.content).join('\n'),
+      modelOutput: rawResponse,
+    }))
     return { outcome: 'failed', run: await getThemeTimelineRun(runId) }
   }
 }

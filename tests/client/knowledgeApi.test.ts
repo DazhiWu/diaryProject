@@ -10,6 +10,7 @@ import {
   reviewThemeTimelineSummary,
   searchKnowledge,
 } from '@/lib/knowledgeApi'
+import { DEFAULT_THEME_TIMELINE_GENERATION_CONFIG } from '@/lib/themeTimelineConfig'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -61,13 +62,19 @@ describe('knowledge API client', () => {
     expect(fetchMock).toHaveBeenLastCalledWith('/api/knowledge/understanding', { cache: 'no-store' })
 
     fetchMock.mockImplementation(async () => new Response(JSON.stringify({ id: 'run' }), { status: 200 }))
-    await createThemeTimeline({ theme: '目标', startDate: '2026-07-01', endDate: '2026-07-30' })
+    await createThemeTimeline({
+      theme: '目标',
+      startDate: '2026-07-01',
+      endDate: '2026-07-30',
+      generationConfig: DEFAULT_THEME_TIMELINE_GENERATION_CONFIG,
+    })
     expect(fetchMock).toHaveBeenLastCalledWith('/api/knowledge/understanding', expect.objectContaining({
       body: JSON.stringify({
         action: 'create',
         theme: '目标',
         startDate: '2026-07-01',
         endDate: '2026-07-30',
+        generationConfig: DEFAULT_THEME_TIMELINE_GENERATION_CONFIG,
       }),
     }))
 

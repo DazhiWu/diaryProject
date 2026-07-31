@@ -1,6 +1,6 @@
 # AI 日记分析应用
 
-这是一个基于 Next.js、React 和 Supabase 的个人日记应用。它支持日记 CRUD、搜索与日历浏览、图片和音频、健康记录、匿名留言、CSV 导出、年度总结与管理员个人知识库。日记分析、翻译和有引用的事实问答由服务端调用 ModelScope；知识库文档 Embedding 在本地调用 Qwen3-Embedding-0.6B FastAPI 服务，线上查询 Embedding 与候选重排使用 Cloudflare Workers AI。
+这是一个基于 Next.js、React 和 Supabase 的个人日记应用。它支持日记 CRUD、搜索与日历浏览、图片和音频、健康记录、匿名留言、CSV 导出、年度总结与管理员个人知识库。日记分析、翻译和有引用的事实问答由服务端调用 ModelScope；Phase 3A 主题时间线由本地 Ollama 对话模型生成。知识库文档 Embedding 在本地调用 Qwen3-Embedding-0.6B FastAPI 服务，线上查询 Embedding 与候选重排使用 Cloudflare Workers AI。
 
 ## 功能
 
@@ -9,7 +9,7 @@
 - AI 分析生成短标题和情绪标签；翻译同样通过服务端接口完成，ModelScope 密钥不进入浏览器代码。
 - 管理员个人知识库使用本地 `Qwen/Qwen3-Embedding-0.6B` 将日记按原文位置分段并生成 1024 维向量。线上搜索由 Cloudflare `@cf/qwen/qwen3-embedding-0.6b` 生成归一化查询向量，经 Supabase 现有 pgvector/原文融合 RPC 召回 20 个候选，再由 `@cf/baai/bge-reranker-base` 返回前 5 个结果。Embedding 失败返回 503；Reranker 失败时按原始向量相似度降级，并在管理员界面标明未应用重排。可选“诊断模式”会依次展示 RPC 召回候选、Reranker 原始前五和合并/多样化后的最终结果，用于直接检查真实日记语料的召回质量。
 - 管理员事实问答复用同一检索链，将最多 5 个最终片段交给 `deepseek-ai/DeepSeek-V3.2`。服务端预先分配 `S1`–`S5`，只接受结构化、引用标识合法且正文引用一致的模型结果；无候选或证据不足时明确拒答，引用卡片可打开原日记。回答和引用不会写入数据库。
-- Phase 3A 新增管理员“可审核主题时间线”：以批准的冻结语料检查点为运行级快照，按选定主题和日期范围逐篇提取结构化观察，展示 eligible/processed/failed/stale/excluded 覆盖、按月 distinct diary 分布、首末支持日期和原文证据；生成的摘要明确标为待审核，并支持确认、编辑、拒绝和取代且保留历史。提取仅在本地开发服务器显式运行，线上只读取和审核已存储结果。
+- Phase 3A 新增管理员“可审核主题时间线”：以批准的冻结语料检查点为运行级快照，按选定主题和日期范围逐篇调用本地 Ollama `qwen3.5:4b` 提取结构化观察，展示 eligible/processed/failed/stale/excluded 覆盖、按月 distinct diary 分布、首末支持日期和原文证据；逐日记观察一次只显示一篇，并通过上一页/下一页按钮切换。生成的摘要明确标为待审核，并支持确认、编辑、拒绝和取代且保留历史。创建运行时可设置并冻结模型、`num_ctx`、temperature、`top_p`、`top_k`、thinking、提取/摘要输出长度和两段系统提示词；服务器仍追加不可覆盖的证据、结构化输出、防提示注入和因果边界规则。Ollama 的提取 Schema 动态枚举当前日记实际存在的 chunk 编号，摘要 Schema 同样枚举本次观察 ID，避免模型把正文段落序号误当证据编号；服务器解析器仍执行独立校验。失败来源向管理员显示细分诊断代码，以及最多 240 字符、经过凭据脱敏的日记和模型输出片段。提取仅在本地开发服务器显式运行，线上只读取和审核已存储结果。
 - ModelScope 分析、翻译和事实回答生成共享北京时间自然日 180 次的服务端安全上限；零候选问答、本地知识索引和仅使用 Workers AI 的知识搜索不消耗此额度。
 - 年度总结包含重要事件、AI 读后感、意见和年度照片。
 - 匿名留言支持 1–2000 字内容、HTML 转义和每页 10 条分页；写入通过同源 API 按客户端 IP 限制为每 60 秒 3 条。
@@ -43,6 +43,7 @@
 - Tailwind CSS 4、Radix UI、Lucide React
 - Supabase PostgreSQL 和 Storage
 - ModelScope OpenAI-compatible API 与 `deepseek-ai/DeepSeek-V3.2`
+- Windows Ollama 与本地 `qwen3.5:4b`（仅 Phase 3A 提取和摘要）
 - 本地 Qwen3-Embedding-0.6B FastAPI 服务（`http://127.0.0.1:8000/embeddings`，仅文档索引）
 - OpenNext、Cloudflare Workers、Workers AI、Wrangler
 - Node.js 22+、pnpm 10.20.0
@@ -54,6 +55,7 @@
 ```dotenv
 SUPABASE_URL=
 MODELSCOPE_TOKEN_API_KEY=
+OLLAMA_BASE_URL=http://127.0.0.1:11434
 AUTH_PASSWORD_ADMIN=
 AUTH_PASSWORD_VIEWER=
 SESSION_SECRET=
@@ -67,6 +69,7 @@ APP_ORIGIN=
 | `SUPABASE_URL` | Supabase 项目 URL | 服务端 API 必需；不再注入浏览器构建 |
 | `SUPABASE_ANON_KEY` | Supabase anon 凭据 | 应用运行不需要；仅旧的操作审计脚本/直接访问回归需要 |
 | `MODELSCOPE_TOKEN_API_KEY` | AI 分析、翻译和事实回答生成 | 启用对应功能时必需；仅服务端运行时 |
+| `OLLAMA_BASE_URL` | Phase 3A 本地 Ollama API 根地址 | 本地 Phase 3A 处理必需；仅服务端，默认 `http://127.0.0.1:11434` |
 | `AUTH_PASSWORD_ADMIN` | 管理员密码 | 启用管理员模式时必需；仅服务端运行时 |
 | `AUTH_PASSWORD_VIEWER` | 浏览者密码 | 启用浏览者模式时必需；仅服务端运行时 |
 | `SESSION_SECRET` | Cookie 会话 HMAC 密钥 | 必需；仅服务端运行时，至少 32 字节 |
@@ -115,7 +118,9 @@ Batch 3 的媒体不变量迁移已于 2026-07-13 在生产执行并通过 postf
 
 Phase 3 开发使用 2026-07-30 时已完成索引的 598 篇日记作为冻结语料基线。每天新增日记可以继续积累为待处理任务，不阻塞开发，也不会被表示为已经纳入全语料分析；Phase 3 功能完成后再补齐全部索引并重新生成受影响的派生结果。
 
-Batch 3A 的代码和迁移位于 `supabase/migrations/20260730071934_phase3_theme_timeline.sql`。创建运行时会原子校验 598 篇基线及 corpus fingerprint，并保存全部 `source_id + indexed_content_hash`；日期范围只决定其中哪些快照来源进入本次提取。逐来源 ModelScope 提取和最终待审核摘要各自预留每日额度，配额不可用时安全暂停，失败来源可重试，已完成来源不会重复生成观察。来源哈希、索引状态或模型/Prompt 版本变化会让结果显示为 stale，而不会静默覆盖。该迁移已于 2026-07-30 作为生产 Supabase migration `20260730080402_phase3_theme_timeline` 应用；同日的 `20260730081356_phase3_theme_timeline_fk_indexes` 补齐两条外键覆盖索引。独立 postflight、事务回滚冒烟测试和权限/顾问检查通过，Phase 3 派生表保持为空，598 completed 与 7 pending 索引状态未改变。Phase 3A Worker 源码仍未部署或生产验收；当前线上 Worker 行为仍是 Phase 2。
+Batch 3A 的基础迁移位于 `supabase/migrations/20260730071934_phase3_theme_timeline.sql`。创建运行时会原子校验 598 篇基线及 corpus fingerprint，并保存全部 `source_id + indexed_content_hash`；日期范围只决定其中哪些快照来源进入本次提取。每个 eligible 来源调用一次本地 Ollama；只要存在提取观察，最后再调用一次生成待审核摘要。Ollama 不占用 ModelScope 日额度；超时或不可达会释放当前 claim 回 pending 并停止，结构化输出无效才记为可重试失败，已完成来源不会重复生成观察。来源哈希、索引状态或冻结模型/Prompt/参数签名变化会让结果显示为 stale，而不会静默覆盖。基础迁移已于 2026-07-30 作为生产 Supabase migration `20260730080402_phase3_theme_timeline` 应用；同日的 `20260730081356_phase3_theme_timeline_fk_indexes` 补齐两条外键覆盖索引。新增 `20260731015350_phase3_ollama_run_config.sql` 已于 2026-07-31 作为生产 migration `20260731024031_phase3_ollama_run_config` 应用；权限 postflight、顾问复查和子事务回滚冒烟通过。Windows-to-WSL Ollama 连通通过后，一个明确标记的 2026-07-22 单篇运行完成了 1 次提取和 1 次摘要，保存 1 条观察、1 条原文证据和 1 条待审核摘要，且无 failed/pending/stale 来源。冻结基线仍为 598 completed 和原 fingerprint；当前 8 条 pending 日记未处理。Phase 3A Worker 源码仍未部署或生产验收；当前线上 Worker 行为仍是 Phase 2。
+
+Windows Ollama 默认只监听 Windows 自身的 `127.0.0.1:11434`。如果 `pnpm dev` 运行在 WSL，应在 Windows 端把 Ollama 绑定到 WSL 可访问的接口，并用 Windows 防火墙把 11434 端口限制在本机/WSL 虚拟网络，然后在 WSL 的 `.env.local` 设置 `OLLAMA_BASE_URL=http://<Windows-host-IP>:11434`。不要把 Ollama API 暴露到公网；先用 `curl "$OLLAMA_BASE_URL/api/tags"` 确认 WSL 能看到 `qwen3.5:4b`，再从页面创建运行。本仓库不会自动修改 Windows 的 Ollama 或防火墙配置。
 
 本地每次点击“同步待处理日记”会连续运行每批最多 10 篇的 API 批次，直到队列为空、连续 3 篇失败或请求异常；不再设置 50 批或约 500 篇的单次上限。相邻索引任务及批次之间至少间隔 2 秒。同步期间状态卡片每 2 秒绕过缓存读取数据库计数，所有退出路径都会执行最终刷新。“日记来源”显示当前 `completed` 任务数而不是历史 `last_indexed_at` 数量。单篇失败不会自动重试而是继续下一篇，连续 3 篇失败会停止本次同步并提示管理员，尚未处理的已领取任务会返回待处理队列。失败任务手动重新入队后仍按现有队列顺序排在后面。当前维护流程按单一管理员操作设计：同步期间不新增或修改日记；全量重建请求若因网络中断失败，联网后从本地重新执行完整重建。
 
@@ -138,7 +143,7 @@ pnpm exec wrangler deploy --dry-run
 pnpm run deploy
 ```
 
-`SUPABASE_URL`、service-role、认证和 ModelScope 配置均由服务端运行时读取，不再通过 `next.config.mjs` 注入浏览器构建。Worker 部署配置声明了 Workers AI `AI` binding，并保留登录、匿名留言和交互式 AI 三个 Rate Limit binding；`AI_RATE_LIMITER` 将分析、翻译、知识搜索和事实问答限制为每客户端 IP 每 60 秒 5 次，ModelScope 请求另有 30 秒超时。当前本地 Embedding 回环地址仅服务管理员文档索引，线上查询使用 Workers AI。Workers AI 免费计划每天提供 10,000 Neurons 免费额度，超过额度的请求会失败并进入既定错误/降级路径；本项目不要求新增模型密钥、Account ID 或 API Token。
+`SUPABASE_URL`、service-role、认证和 ModelScope 配置均由服务端运行时读取，不再通过 `next.config.mjs` 注入浏览器构建。`OLLAMA_BASE_URL` 同样只在本地服务端读取，不配置到生产 Worker。Worker 部署配置声明了 Workers AI `AI` binding，并保留登录、匿名留言和交互式 AI 三个 Rate Limit binding；`AI_RATE_LIMITER` 将分析、翻译、知识搜索和事实问答限制为每客户端 IP 每 60 秒 5 次，ModelScope 请求另有 30 秒超时。当前本地 Embedding 回环地址仅服务管理员文档索引，线上查询使用 Workers AI。Workers AI 免费计划每天提供 10,000 Neurons 免费额度，超过额度的请求会失败并进入既定错误/降级路径；本项目不要求新增模型密钥、Account ID 或 API Token。
 
 已确认生产 Worker 为 `diaryproject`，自定义域名为 `diary.wuzhizhii.com`，未配置单独的 zone route，并存在可回滚的历史版本。Workers Builds 当前连接 GitHub `DazhiWu/diaryProject` 的 `main` 分支，root directory 为 `/`，build command 为 `pnpm run cf:build`。Deploy command 必须设为 `pnpm run deploy`，不能使用 `opennextjs-cloudflare deploy`。完整流程见 [`docs/DEPLOY.md`](docs/DEPLOY.md)。
 
@@ -149,6 +154,7 @@ pnpm run deploy
 - [`docs/DEPLOY.md`](docs/DEPLOY.md)：OpenNext、Wrangler、环境变量与部署流程。
 - [`docs/FACT_LAYER_PLAN.md`](docs/FACT_LAYER_PLAN.md)：第二阶段事实问答的已实现边界、验证要求与生产验收状态。
 - [`docs/PHASE3_UNDERSTANDING_PLAN.md`](docs/PHASE3_UNDERSTANDING_PLAN.md)：第三阶段可审核理解的开发基线、独立批次、覆盖率与验收边界。
+- [`docs/THEME_TIMELINE_THEME_CATALOG.md`](docs/THEME_TIMELINE_THEME_CATALOG.md)：长期日记主题时间线的可复制主题目录、主题写法和试跑/全量边界。
 - [`docs/DIGITAL_TWIN_ROADMAP.md`](docs/DIGITAL_TWIN_ROADMAP.md)：事实层之后的可审核理解、私人分身、成长分析、公开分身与长期维护路线图。
 
 ## 许可证

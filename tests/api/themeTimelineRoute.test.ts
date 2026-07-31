@@ -29,6 +29,7 @@ vi.mock('@/lib/server/themeTimeline', async (importOriginal) => {
 
 import { GET, POST } from '@/app/api/knowledge/understanding/route'
 import { createSession } from '@/lib/server/session'
+import { DEFAULT_THEME_TIMELINE_GENERATION_CONFIG } from '@/lib/themeTimelineConfig'
 
 const originalEnv = { ...process.env }
 
@@ -81,6 +82,21 @@ describe('theme timeline route boundary', () => {
     expect(mocks.createThemeTimelineRun).not.toHaveBeenCalled()
   })
 
+  it('rejects invalid Ollama controls before creating a run', async () => {
+    const response = await POST(await request({
+      action: 'create',
+      theme: '目标',
+      startDate: '2026-07-01',
+      endDate: '2026-07-30',
+      generationConfig: {
+        ...DEFAULT_THEME_TIMELINE_GENERATION_CONFIG,
+        temperature: 9,
+      },
+    }, 'admin'))
+    expect(response.status).toBe(400)
+    expect(mocks.createThemeTimelineRun).not.toHaveBeenCalled()
+  })
+
   it('creates against validated fields only on the local development server', async () => {
     mocks.createThemeTimelineRun.mockResolvedValue({ id: 'run' })
     const response = await POST(await request({
@@ -88,12 +104,14 @@ describe('theme timeline route boundary', () => {
       theme: '  个人知识库  ',
       startDate: '2026-07-01',
       endDate: '2026-07-30',
+      generationConfig: DEFAULT_THEME_TIMELINE_GENERATION_CONFIG,
     }, 'admin'))
     expect(response.status).toBe(200)
     expect(mocks.createThemeTimelineRun).toHaveBeenCalledWith({
       theme: '个人知识库',
       startDate: '2026-07-01',
       endDate: '2026-07-30',
+      generationConfig: DEFAULT_THEME_TIMELINE_GENERATION_CONFIG,
     })
 
     mocks.executionMode = 'status-only'

@@ -5,6 +5,10 @@ import { assertAllowedOrigin } from '@/lib/server/origin'
 import { exactDateField, readJsonBody, REQUEST_LIMITS, stringField } from '@/lib/server/requestLimits'
 import { HttpError, readSession, requireAdmin } from '@/lib/server/session'
 import {
+  parseThemeTimelineGenerationConfig,
+  ThemeTimelineConfigError,
+} from '@/lib/themeTimelineConfig'
+import {
   createThemeTimelineRun,
   getThemeTimelineRun,
   listThemeTimelineRuns,
@@ -23,9 +27,12 @@ function uuidField(value: unknown, name: string): string {
 
 function responseFor(error: unknown) {
   if (error instanceof HttpError) return NextResponse.json({ error: error.message }, { status: error.status })
+  if (error instanceof ThemeTimelineConfigError) {
+    return NextResponse.json({ error: 'Invalid Ollama generation config' }, { status: 400 })
+  }
   if (error instanceof ThemeTimelineProviderError) {
     return NextResponse.json(
-      { error: 'Theme timeline provider is temporarily unavailable' },
+      { error: 'Local Ollama is temporarily unavailable' },
       { status: error.reason === 'timeout' ? 504 : 502 },
     )
   }
@@ -68,6 +75,7 @@ export async function POST(request: Request) {
       theme?: unknown
       startDate?: unknown
       endDate?: unknown
+      generationConfig?: unknown
       reviewAction?: unknown
       statement?: unknown
     } | null
@@ -79,7 +87,8 @@ export async function POST(request: Request) {
       const startDate = exactDateField(body?.startDate, 'start date')
       const endDate = exactDateField(body?.endDate, 'end date')
       if (startDate > endDate) throw new HttpError(400, 'Start date must not be after end date')
-      return NextResponse.json(await createThemeTimelineRun({ theme, startDate, endDate }))
+      const generationConfig = parseThemeTimelineGenerationConfig(body?.generationConfig)
+      return NextResponse.json(await createThemeTimelineRun({ theme, startDate, endDate, generationConfig }))
     }
 
     if (action === 'process') {

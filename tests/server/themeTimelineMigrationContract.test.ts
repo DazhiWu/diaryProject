@@ -36,10 +36,24 @@ const indexPostflight = readFileSync(
   ),
   'utf8',
 )
+const ollamaConfigMigration = readFileSync(
+  path.resolve(process.cwd(), 'supabase/migrations/20260731015350_phase3_ollama_run_config.sql'),
+  'utf8',
+)
+const ollamaConfigRollback = readFileSync(
+  path.resolve(process.cwd(), 'supabase/rollbacks/20260731015350_phase3_ollama_run_config_rollback.sql'),
+  'utf8',
+)
+const ollamaConfigPostflight = readFileSync(
+  path.resolve(process.cwd(), 'supabase/verification/20260731_phase3_ollama_run_config_postflight.sql'),
+  'utf8',
+)
 const normalizedMigration = migration.replace(/\s+/g, ' ').trim().toLowerCase()
 const normalizedRollback = rollback.replace(/\s+/g, ' ').trim().toLowerCase()
 const normalizedIndexMigration = indexMigration.replace(/\s+/g, ' ').trim().toLowerCase()
 const normalizedIndexRollback = indexRollback.replace(/\s+/g, ' ').trim().toLowerCase()
+const normalizedOllamaConfigMigration = ollamaConfigMigration.replace(/\s+/g, ' ').trim().toLowerCase()
+const normalizedOllamaConfigRollback = ollamaConfigRollback.replace(/\s+/g, ' ').trim().toLowerCase()
 
 describe('Phase 3A theme timeline migration contract', () => {
   it('keeps the migration atomic and rollback limited to derived Phase 3 data', () => {
@@ -113,5 +127,19 @@ describe('Phase 3A theme timeline migration contract', () => {
     expect(normalizedIndexRollback).not.toContain('drop table')
     expect(indexPostflight).toContain('indisvalid')
     expect(indexPostflight).toContain('indisready')
+  })
+
+  it('persists local Ollama controls through a service-role-only atomic wrapper', () => {
+    expect(normalizedOllamaConfigMigration).toMatch(/^-- .* begin; /)
+    expect(normalizedOllamaConfigMigration).toMatch(/ commit;$/)
+    expect(normalizedOllamaConfigMigration).toContain('generation_config jsonb')
+    expect(normalizedOllamaConfigMigration).toContain('create_theme_timeline_run_with_config')
+    expect(normalizedOllamaConfigMigration).toContain('security invoker')
+    expect(normalizedOllamaConfigMigration).toContain('from public, anon, authenticated')
+    expect(normalizedOllamaConfigMigration).toContain('to service_role')
+    expect(normalizedOllamaConfigRollback).toContain('drop function if exists')
+    expect(normalizedOllamaConfigRollback).toContain('drop column if exists generation_config')
+    expect(ollamaConfigPostflight).toContain("has_function_privilege('anon'")
+    expect(ollamaConfigPostflight).toContain('configured_run_count')
   })
 })

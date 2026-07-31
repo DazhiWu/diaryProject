@@ -17,6 +17,11 @@ import {
   type ThemeTimelineRun,
   type ThemeTimelineSummary,
 } from '@/lib/knowledgeApi'
+import {
+  DEFAULT_THEME_TIMELINE_GENERATION_CONFIG,
+  THEME_TIMELINE_CONFIG_LIMITS,
+  type ThemeTimelineGenerationConfig,
+} from '@/lib/themeTimelineConfig'
 
 const PROCESS_INTERVAL_MS = 2_000
 
@@ -37,9 +42,24 @@ const REVIEW_LABELS: Record<ThemeTimelineSummary['reviewState'], string> = {
   superseded: '已被取代',
 }
 
+const FAILURE_LABELS: Record<ThemeTimelineRun['failures'][number]['category'], string> = {
+  invalid_input: '输入准备失败',
+  invalid_response: '模型结构化输出无效',
+  legacy: '旧格式错误',
+}
+
 function delay(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
+
+function finiteInputValue(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback
+}
+
+type GenerationNumberField = {
+  [Key in keyof ThemeTimelineGenerationConfig]:
+    ThemeTimelineGenerationConfig[Key] extends number ? Key : never
+}[keyof ThemeTimelineGenerationConfig]
 
 function currentSummary(run: ThemeTimelineRun): ThemeTimelineSummary | null {
   return run.summaries.find((summary) => summary.reviewState !== 'superseded') ?? run.summaries[0] ?? null
@@ -66,6 +86,15 @@ function Coverage({ run }: { run: ThemeTimelineRun }) {
       <p className="text-xs text-muted-foreground">
         冻结基线 {run.frozenSourceCount} 篇 · corpus fingerprint {run.corpusFingerprint} ·
         Model {run.modelVersion} · Prompt {run.promptVersion}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Ollama 参数：num_ctx {run.generationConfig.numCtx} · temperature {run.generationConfig.temperature} ·
+        top_p {run.generationConfig.topP} · top_k {run.generationConfig.topK} ·
+        thinking {run.generationConfig.thinking ? '开启' : '关闭'} ·
+        提取/摘要输出上限 {run.generationConfig.extractionMaxTokens}/{run.generationConfig.summaryMaxTokens} tokens
+      </p>
+      <p className="text-xs text-muted-foreground">
+        本主题运行首次完整处理最多调用 {run.coverage.eligible + 1} 次（每篇 eligible 来源 1 次，存在观察时摘要 1 次；无观察不调用摘要，失败重试另计）。
       </p>
     </div>
   )
@@ -151,6 +180,77 @@ function SummaryReview({
   )
 }
 
+function ObservationPager({
+  runId,
+  observations,
+  onOpenDiary,
+}: {
+  runId: string
+  observations: ThemeTimelineRun['observations']
+  onOpenDiary: (sourceId: number) => Promise<void>
+}) {
+  const [observationIndex, setObservationIndex] = useState(0)
+  const lastIndex = observations.length - 1
+  const observation = observations[observationIndex] ?? observations[0]
+
+  useEffect(() => setObservationIndex(0), [runId])
+  useEffect(() => {
+    setObservationIndex((current) => Math.min(current, Math.max(lastIndex, 0)))
+  }, [lastIndex])
+
+  if (!observation) return null
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="font-semibold">逐日记观察与原文证据（{observations.length}）</h3>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label="查看上一篇主题观察"
+            onClick={() => setObservationIndex((current) => Math.max(0, current - 1))}
+            disabled={observationIndex === 0}
+          >
+            ← 上一篇
+          </Button>
+          <span className="min-w-16 text-center text-sm text-muted-foreground">
+            {observationIndex + 1} / {observations.length}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label="查看下一篇主题观察"
+            onClick={() => setObservationIndex((current) => Math.min(lastIndex, current + 1))}
+            disabled={observationIndex === lastIndex}
+          >
+            下一篇 →
+          </Button>
+        </div>
+      </div>
+      <Card key={observation.id} className="gap-3 py-4">
+        <CardHeader className="px-4 sm:px-6">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-base">{observation.sourceTitle || `日记 ${observation.sourceDate}`}</CardTitle>
+              <CardDescription>{observation.sourceDate} · {observation.classification} · {observation.reviewState}</CardDescription>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => void onOpenDiary(observation.sourceId)}>打开原日记</Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 px-4 sm:px-6">
+          <p className="text-sm leading-7">{observation.statement}</p>
+          {observation.evidence.map((evidence) => (
+            <blockquote key={evidence.id} className="border-l-2 pl-3 text-sm leading-7 text-muted-foreground">
+              片段 #{evidence.chunkIndex + 1}：{evidence.excerpt}
+            </blockquote>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 export function ThemeTimeline({
   localProcessingEnabled,
   onOpenDiary,
@@ -163,6 +263,9 @@ export function ThemeTimeline({
   const [theme, setTheme] = useState('')
   const [startDate, setStartDate] = useState(KNOWLEDGE_SEARCH_DEFAULT_START_DATE)
   const [endDate, setEndDate] = useState('')
+  const [generationConfig, setGenerationConfig] = useState<ThemeTimelineGenerationConfig>({
+    ...DEFAULT_THEME_TIMELINE_GENERATION_CONFIG,
+  })
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const selectedRun = useMemo(
@@ -173,6 +276,13 @@ export function ThemeTimeline({
   function applyRun(run: ThemeTimelineRun) {
     setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)])
     setSelectedRunId(run.id)
+  }
+
+  function setGenerationNumber(field: GenerationNumberField, value: number) {
+    setGenerationConfig((current) => ({
+      ...current,
+      [field]: finiteInputValue(value, current[field]),
+    }))
   }
 
   useEffect(() => {
@@ -194,7 +304,7 @@ export function ThemeTimeline({
     if (!theme.trim() || !startDate || !endDate) return
     setProcessing(true)
     try {
-      const run = await createThemeTimeline({ theme: theme.trim(), startDate, endDate })
+      const run = await createThemeTimeline({ theme: theme.trim(), startDate, endDate, generationConfig })
       applyRun(run)
       toast.success(`已冻结 ${run.frozenSourceCount} 篇来源，并选出范围内 ${run.coverage.eligible} 篇`)
     } catch (error) {
@@ -257,7 +367,7 @@ export function ThemeTimeline({
       <CardContent className="space-y-6">
         <div className={`rounded-md border px-3 py-2 text-sm ${localProcessingEnabled ? 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-amber-500/40 bg-amber-500/5 text-amber-800 dark:text-amber-300'}`}>
           {localProcessingEnabled
-            ? '本地 Phase 3 提取已启用；每篇来源单独预留 ModelScope 日额度并可中断续跑。'
+            ? '本地 Phase 3 提取已启用；每篇 eligible 来源调用一次本地 Ollama，并可中断续跑。存在观察时，最后再调用一次生成待审核摘要。'
             : '线上只读取和审核已存储结果；创建、提取和失败重试必须在本地开发服务器执行。'}
         </div>
 
@@ -267,6 +377,89 @@ export function ThemeTimeline({
             <label className="space-y-1 text-sm"><span className="text-muted-foreground">开始日期</span><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
             <label className="space-y-1 text-sm"><span className="text-muted-foreground">结束日期</span><Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
           </div>
+          <p className="text-xs text-muted-foreground">
+            每个运行的主题、日期范围、冻结来源和 Ollama 参数创建后不可变。小范围试跑是独立运行，不能扩展为全量运行，也不会自动复用到另一运行。
+          </p>
+          <details className="rounded-md border p-3" open>
+            <summary className="cursor-pointer font-medium">Ollama 运行参数（创建后冻结）</summary>
+            <p className="mt-2 text-xs text-muted-foreground">
+              API 地址由服务端 OLLAMA_BASE_URL 控制，不接受浏览器传入。自定义提示词之后仍会附加不可覆盖的证据、结构化 JSON 与防提示注入规则。
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="space-y-1 text-sm sm:col-span-2">
+                <span className="text-muted-foreground">模型</span>
+                <Input
+                  value={generationConfig.model}
+                  onChange={(event) => setGenerationConfig((current) => ({ ...current, model: event.target.value }))}
+                  maxLength={THEME_TIMELINE_CONFIG_LIMITS.modelLength}
+                  required
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">num_ctx</span>
+                <Input
+                  type="number"
+                  min={THEME_TIMELINE_CONFIG_LIMITS.minNumCtx}
+                  max={THEME_TIMELINE_CONFIG_LIMITS.maxNumCtx}
+                  step={1024}
+                  value={generationConfig.numCtx}
+                  onChange={(event) => setGenerationNumber('numCtx', event.currentTarget.valueAsNumber)}
+                  required
+                />
+              </label>
+              <label className="flex items-end gap-2 pb-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={generationConfig.thinking}
+                  onChange={(event) => setGenerationConfig((current) => ({ ...current, thinking: event.target.checked }))}
+                  className="h-4 w-4"
+                />
+                启用 thinking
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">temperature</span>
+                <Input type="number" min={0} max={2} step={0.05} value={generationConfig.temperature} onChange={(event) => setGenerationNumber('temperature', event.currentTarget.valueAsNumber)} required />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">top_p</span>
+                <Input type="number" min={0} max={1} step={0.05} value={generationConfig.topP} onChange={(event) => setGenerationNumber('topP', event.currentTarget.valueAsNumber)} required />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">top_k</span>
+                <Input type="number" min={0} max={200} step={1} value={generationConfig.topK} onChange={(event) => setGenerationNumber('topK', event.currentTarget.valueAsNumber)} required />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">单篇提取输出 tokens</span>
+                <Input type="number" min={THEME_TIMELINE_CONFIG_LIMITS.minOutputTokens} max={THEME_TIMELINE_CONFIG_LIMITS.maxOutputTokens} step={64} value={generationConfig.extractionMaxTokens} onChange={(event) => setGenerationNumber('extractionMaxTokens', event.currentTarget.valueAsNumber)} required />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">最终摘要输出 tokens</span>
+                <Input type="number" min={THEME_TIMELINE_CONFIG_LIMITS.minOutputTokens} max={THEME_TIMELINE_CONFIG_LIMITS.maxOutputTokens} step={64} value={generationConfig.summaryMaxTokens} onChange={(event) => setGenerationNumber('summaryMaxTokens', event.currentTarget.valueAsNumber)} required />
+              </label>
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">单篇提取系统提示词</span>
+                <textarea
+                  value={generationConfig.extractionSystemPrompt}
+                  onChange={(event) => setGenerationConfig((current) => ({ ...current, extractionSystemPrompt: event.target.value }))}
+                  maxLength={THEME_TIMELINE_CONFIG_LIMITS.maxSystemPromptLength}
+                  className="min-h-36 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  required
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">最终摘要系统提示词</span>
+                <textarea
+                  value={generationConfig.summarySystemPrompt}
+                  onChange={(event) => setGenerationConfig((current) => ({ ...current, summarySystemPrompt: event.target.value }))}
+                  maxLength={THEME_TIMELINE_CONFIG_LIMITS.maxSystemPromptLength}
+                  className="min-h-36 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  required
+                />
+              </label>
+            </div>
+          </details>
           <Button type="submit" disabled={!localProcessingEnabled || processing || !theme.trim() || !startDate || !endDate}>
             {processing ? <Spinner className="h-4 w-4" /> : null}创建冻结运行
           </Button>
@@ -316,6 +509,51 @@ export function ThemeTimeline({
 
             <Coverage run={selectedRun} />
 
+            {selectedRun.failures.length > 0 && (
+              <div className="space-y-3">
+                <div>
+                  <h3 className="font-semibold">失败来源安全诊断</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">仅管理员可见。日记与模型输出片段均经过凭据脱敏和长度限制，仍可能包含私人日记内容。</p>
+                </div>
+                {selectedRun.failures.map((failure) => (
+                  <Card key={failure.sourceId} className="gap-3 py-4">
+                    <CardHeader className="px-4 sm:px-6">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <CardTitle className="text-base">{failure.sourceTitle || `日记 ${failure.sourceDate}`}</CardTitle>
+                          <CardDescription>
+                            {failure.sourceDate} · {FAILURE_LABELS[failure.category]}
+                            {failure.code ? ` · ${failure.code}` : ''}
+                            {failure.status ? ` · HTTP ${failure.status}` : ''}
+                            {` · 第 ${failure.attempts} 次尝试`}
+                          </CardDescription>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => void onOpenDiary(failure.sourceId)}>打开原日记</Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3 px-4 sm:px-6">
+                      {failure.diary && (
+                        <div>
+                          <div className="text-xs font-medium text-muted-foreground">
+                            日记诊断片段（{failure.diary.originalChars} 字符{failure.diary.truncated ? '，已截断' : ''}）
+                          </div>
+                          <blockquote className="mt-1 whitespace-pre-wrap break-words border-l-2 pl-3 text-sm leading-7 text-muted-foreground">{failure.diary.text}</blockquote>
+                        </div>
+                      )}
+                      {failure.modelOutput && (
+                        <div>
+                          <div className="text-xs font-medium text-muted-foreground">
+                            模型输出片段（{failure.modelOutput.originalChars} 字符{failure.modelOutput.truncated ? '，已截断' : ''}）
+                          </div>
+                          <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 text-xs">{failure.modelOutput.text}</pre>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
             {selectedRun.periodDistribution.length > 0 && (
               <div className="space-y-2">
                 <h3 className="font-semibold">语义提取结果的月份分布</h3>
@@ -332,30 +570,11 @@ export function ThemeTimeline({
             <SummaryReview run={selectedRun} onRun={applyRun} />
 
             {selectedRun.observations.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="font-semibold">逐日记观察与原文证据（{selectedRun.observations.length}）</h3>
-                {selectedRun.observations.map((observation) => (
-                  <Card key={observation.id} className="gap-3 py-4">
-                    <CardHeader className="px-4 sm:px-6">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <CardTitle className="text-base">{observation.sourceTitle || `日记 ${observation.sourceDate}`}</CardTitle>
-                          <CardDescription>{observation.sourceDate} · {observation.classification} · {observation.reviewState}</CardDescription>
-                        </div>
-                        <Button size="sm" variant="outline" onClick={() => void onOpenDiary(observation.sourceId)}>打开原日记</Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3 px-4 sm:px-6">
-                      <p className="text-sm leading-7">{observation.statement}</p>
-                      {observation.evidence.map((evidence) => (
-                        <blockquote key={evidence.id} className="border-l-2 pl-3 text-sm leading-7 text-muted-foreground">
-                          片段 #{evidence.chunkIndex + 1}：{evidence.excerpt}
-                        </blockquote>
-                      ))}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+              <ObservationPager
+                runId={selectedRun.id}
+                observations={selectedRun.observations}
+                onOpenDiary={onOpenDiary}
+              />
             )}
           </div>
         )}

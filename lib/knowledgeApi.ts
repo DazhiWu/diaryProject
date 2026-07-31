@@ -1,3 +1,5 @@
+import type { ThemeTimelineGenerationConfig } from '@/lib/themeTimelineConfig'
+
 export type KnowledgeIndexStatus = {
   executionMode: 'local' | 'status-only'
   totalSources: number
@@ -111,6 +113,26 @@ export type ThemeTimelineSummary = {
   reviewedAt: string | null
 }
 
+export type ThemeTimelineFailure = {
+  sourceId: number
+  sourceDate: string
+  sourceTitle: string | null
+  attempts: number
+  category: 'invalid_input' | 'invalid_response' | 'legacy'
+  code: string | null
+  status: number | null
+  diary: {
+    text: string
+    originalChars: number
+    truncated: boolean
+  } | null
+  modelOutput: {
+    text: string
+    originalChars: number
+    truncated: boolean
+  } | null
+}
+
 export type ThemeTimelineRun = {
   id: string
   analysisType: 'theme_timeline'
@@ -122,6 +144,7 @@ export type ThemeTimelineRun = {
   frozenSourceCount: number
   modelVersion: string
   promptVersion: string
+  generationConfig: ThemeTimelineGenerationConfig
   versionStale: boolean
   resultStale: boolean
   coverage: {
@@ -137,6 +160,7 @@ export type ThemeTimelineRun = {
   firstSupportedDate: string | null
   lastSupportedDate: string | null
   periodDistribution: Array<{ period: string; diaryCount: number }>
+  failures: ThemeTimelineFailure[]
   observations: ThemeTimelineObservation[]
   summaries: ThemeTimelineSummary[]
   createdAt: string
@@ -230,6 +254,7 @@ export function createThemeTimeline(input: {
   theme: string
   startDate: string
   endDate: string
+  generationConfig: ThemeTimelineGenerationConfig
 }): Promise<ThemeTimelineRun> {
   return knowledgeRequest('/api/knowledge/understanding', {
     method: 'POST',
