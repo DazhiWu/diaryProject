@@ -5,7 +5,7 @@ import OpenAI from 'openai'
 import { getRuntimeEnvValue } from '@/lib/runtimeEnv'
 
 export const MODELSCOPE_BASE_URL = 'https://api-inference.modelscope.cn/v1'
-export const MODELSCOPE_CHAT_MODEL = 'deepseek-ai/DeepSeek-V3.2'
+export const MODELSCOPE_CHAT_MODEL = 'deepseek-ai/DeepSeek-V4-Pro'
 export const MODELSCOPE_TIMEOUT_MS = 30_000
 
 export type SafeModelScopeErrorMetadata = {

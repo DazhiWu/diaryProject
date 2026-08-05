@@ -11,12 +11,16 @@ import { KNOWLEDGE_SEARCH_DEFAULT_START_DATE, localDateInputValue } from '@/lib/
 import {
   createThemeTimeline,
   fetchThemeTimelineRuns,
+  generateThemeTimelineComparison,
   processThemeTimeline,
+  regenerateThemeTimelineAggregate,
   regenerateThemeTimelineSummary,
   retryThemeTimeline,
   reviewThemeTimelineObservation,
+  reviewThemeTimelineComparisonFinding,
   reviewThemeTimelineSummary,
   type ThemeTimelineRun,
+  type ThemeTimelineAggregate,
   type ThemeTimelineSummary,
 } from '@/lib/knowledgeApi'
 import {
@@ -24,6 +28,11 @@ import {
   THEME_TIMELINE_CONFIG_LIMITS,
   type ThemeTimelineGenerationConfig,
 } from '@/lib/themeTimelineConfig'
+import {
+  buildDefaultThemeTimelineThemeSpec,
+  parseThemeSpecRules,
+  parseThemeTimelineThemeSpec,
+} from '@/lib/themeTimelineThemeSpec'
 
 const PROCESS_INTERVAL_MS = 2_000
 
@@ -32,6 +41,7 @@ const STATUS_LABELS: Record<ThemeTimelineRun['status'], string> = {
   extracting: '提取中',
   paused: '已暂停',
   ready_for_summary: '待生成摘要',
+  awaiting_review: '待审核观察',
   completed: '已完成',
   failed: '运行失败',
 }
@@ -50,12 +60,39 @@ const FAILURE_LABELS: Record<ThemeTimelineRun['failures'][number]['category'], s
   legacy: '旧格式错误',
 }
 
+const AGGREGATE_STALE_LABELS: Record<string, string> = {
+  aggregate_superseded: '已被后续聚合版本取代',
+  run_metadata_changed: '运行覆盖或版本元数据已变化',
+  source_snapshot_changed: '来源索引快照已变化',
+  observation_snapshot_changed: '审核观察集合或内容已变化',
+  aggregate_generation_config_invalid: '冻结的生成配置无法解析',
+}
+
+const COMPARISON_STALE_LABELS: Record<string, string> = {
+  comparison_superseded: '已被后续比较版本取代',
+  aggregate_changed: '所属聚合已变化或 stale',
+  period_snapshot_changed: '期间统计快照已变化',
+  finding_links_changed: '候选结论的左右证据链接已变化',
+  comparison_analysis_config_invalid: '冻结的比较配置无法解析',
+}
+
+const FINDING_TYPE_LABELS: Record<ThemeTimelineAggregate['comparisons'][number]['findings'][number]['findingType'], string> = {
+  continuity: '连续性',
+  change: '变化',
+  possible_contradiction: '可能矛盾',
+  turning_point: '可能转折点',
+}
+
 function delay(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
 
 function finiteInputValue(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback
+}
+
+function mergeThemeSpecRules(base: string[], additions: string): string[] {
+  return Array.from(new Set([...base, ...parseThemeSpecRules(additions)]))
 }
 
 type GenerationNumberField = {
@@ -65,6 +102,10 @@ type GenerationNumberField = {
 
 function currentSummary(run: ThemeTimelineRun): ThemeTimelineSummary | null {
   return run.summaries.find((summary) => summary.reviewState !== 'superseded') ?? run.summaries[0] ?? null
+}
+
+function currentAggregate(run: ThemeTimelineRun): ThemeTimelineAggregate | null {
+  return run.aggregates.find((aggregate) => aggregate.status === 'current') ?? null
 }
 
 function Coverage({ run }: { run: ThemeTimelineRun }) {
@@ -96,8 +137,382 @@ function Coverage({ run }: { run: ThemeTimelineRun }) {
         提取/摘要输出上限 {run.generationConfig.extractionMaxTokens}/{run.generationConfig.summaryMaxTokens} tokens
       </p>
       <p className="text-xs text-muted-foreground">
-        本主题运行首次完整处理最多调用 {run.coverage.eligible + 1} 次（每篇 eligible 来源 1 次，存在观察时摘要 1 次；无观察不调用摘要，失败重试另计）。
+        本主题运行首次证据处理最多调用 {run.coverage.eligible * 2} 次（每篇 eligible 来源 1 次范围判定，relevant/uncertain 再 1 次观察合成；失败重试另计）。全部观察审核完成后，首个摘要最多再调用 1 次。
       </p>
+    </div>
+  )
+}
+
+function ComparisonFindingCard({
+  finding,
+  aggregate,
+  disabled,
+  onRun,
+  onOpenDiary,
+}: {
+  finding: ThemeTimelineAggregate['comparisons'][number]['findings'][number]
+  aggregate: ThemeTimelineAggregate
+  disabled: boolean
+  onRun: (run: ThemeTimelineRun) => void
+  onOpenDiary: (sourceId: number) => Promise<void>
+}) {
+  const [statement, setStatement] = useState(finding.statement)
+  const [classification, setClassification] = useState(finding.classification)
+  const [reviewing, setReviewing] = useState(false)
+  const contributionById = useMemo(
+    () => new Map(aggregate.contributions.map((item) => [item.observationId, item])),
+    [aggregate.contributions],
+  )
+  const inferenceOnly = finding.findingType === 'possible_contradiction' || finding.findingType === 'turning_point'
+  const changed = statement.trim() !== finding.statement || classification !== finding.classification
+
+  useEffect(() => {
+    setStatement(finding.statement)
+    setClassification(finding.classification)
+  }, [finding.classification, finding.id, finding.statement])
+
+  async function review(reviewAction: 'confirm' | 'edit' | 'reject') {
+    setReviewing(true)
+    try {
+      const updated = await reviewThemeTimelineComparisonFinding({
+        findingId: finding.id,
+        reviewAction,
+        statement: reviewAction === 'edit' ? statement.trim() : undefined,
+        classification: reviewAction === 'edit' ? classification : undefined,
+      })
+      onRun(updated)
+      toast.success(reviewAction === 'confirm' ? '比较结论已确认' : reviewAction === 'edit' ? '比较结论已编辑' : '比较结论已拒绝')
+    } catch (error) {
+      console.error('Failed to review theme timeline comparison finding:', error)
+      toast.error(error instanceof Error ? error.message : '比较结论审核失败')
+    } finally {
+      setReviewing(false)
+    }
+  }
+
+  function evidenceList(side: 'left' | 'right', ids: string[]) {
+    return (
+      <div className="space-y-1 rounded-md border p-2">
+        <div className="text-xs font-medium text-muted-foreground">{side === 'left' ? '较早期间证据' : '较晚期间证据'}</div>
+        {ids.map((id) => {
+          const contribution = contributionById.get(id)
+          if (!contribution) return <div key={id} className="text-xs text-destructive">证据链接缺失：{id}</div>
+          return (
+            <button
+              key={id}
+              type="button"
+              className="block w-full rounded px-1 py-1 text-left text-xs hover:bg-muted"
+              onClick={() => void onOpenDiary(contribution.sourceId)}
+            >
+              {contribution.sourceDate} · {contribution.sourceTitle || `日记 ${contribution.sourceId}`} · {contribution.classification}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium">
+          #{finding.position} {FINDING_TYPE_LABELS[finding.findingType]}
+        </div>
+        <div className="text-xs text-muted-foreground">{finding.classification} · {REVIEW_LABELS[finding.reviewState]}</div>
+      </div>
+      <textarea
+        value={statement}
+        onChange={(event) => setStatement(event.target.value)}
+        maxLength={2_000}
+        className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm leading-6"
+        disabled={disabled || finding.reviewState === 'rejected'}
+      />
+      <select
+        value={classification}
+        onChange={(event) => setClassification(event.target.value as typeof classification)}
+        className="h-9 rounded-md border bg-background px-2 text-sm"
+        disabled={disabled || finding.reviewState === 'rejected' || inferenceOnly}
+      >
+        {inferenceOnly ? <option value="inference">inference</option> : null}
+        {!inferenceOnly ? <option value="fact">fact</option> : null}
+        {!inferenceOnly ? <option value="summary">summary</option> : null}
+        {!inferenceOnly ? <option value="inference">inference</option> : null}
+      </select>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {evidenceList('left', finding.leftObservationIds)}
+        {evidenceList('right', finding.rightObservationIds)}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={() => void review('confirm')} disabled={disabled || reviewing || finding.reviewState === 'confirmed' || finding.reviewState === 'rejected'}>确认</Button>
+        <Button size="sm" variant="outline" onClick={() => void review('edit')} disabled={disabled || reviewing || finding.reviewState === 'rejected' || !statement.trim() || !changed}>保存编辑</Button>
+        <Button size="sm" variant="destructive" onClick={() => void review('reject')} disabled={disabled || reviewing || finding.reviewState === 'rejected'}>拒绝</Button>
+      </div>
+      {finding.reviews.length > 0 && (
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">查看审核历史（{finding.reviews.length}）</summary>
+          <div className="mt-2 space-y-2">
+            {finding.reviews.map((review) => (
+              <div key={review.id} className="rounded-md border p-2">
+                {new Date(review.reviewedAt).toLocaleString()} · {review.action} · {REVIEW_LABELS[review.resultingReviewState]}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
+function PeriodComparison({
+  run,
+  aggregate,
+  localProcessingEnabled,
+  onRun,
+  onOpenDiary,
+}: {
+  run: ThemeTimelineRun
+  aggregate: ThemeTimelineAggregate
+  localProcessingEnabled: boolean
+  onRun: (run: ThemeTimelineRun) => void
+  onOpenDiary: (sourceId: number) => Promise<void>
+}) {
+  const usablePeriods = useMemo(
+    () => aggregate.periods.filter((period) => period.acceptedObservationCount > 0),
+    [aggregate.periods],
+  )
+  const [leftPeriod, setLeftPeriod] = useState(usablePeriods[0]?.period ?? '')
+  const [rightPeriod, setRightPeriod] = useState(usablePeriods[1]?.period ?? '')
+  const [generating, setGenerating] = useState(false)
+  const comparison = aggregate.comparisons.find((item) => (
+    item.status === 'current' && item.leftPeriod === leftPeriod && item.rightPeriod === rightPeriod
+  )) ?? null
+
+  useEffect(() => {
+    setLeftPeriod(usablePeriods[0]?.period ?? '')
+    setRightPeriod(usablePeriods[1]?.period ?? '')
+  }, [aggregate.id, usablePeriods])
+
+  async function generate() {
+    setGenerating(true)
+    try {
+      const updated = await generateThemeTimelineComparison({
+        runId: run.id,
+        aggregateId: aggregate.id,
+        leftPeriod,
+        rightPeriod,
+      })
+      onRun(updated)
+      toast.success(comparison ? '期间比较已重新生成' : '期间比较已生成，所有结论等待审核')
+    } catch (error) {
+      console.error('Failed to generate theme timeline comparison:', error)
+      toast.error(error instanceof Error ? error.message : '期间比较生成失败')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const ready = localProcessingEnabled
+    && !aggregate.resultStale
+    && usablePeriods.length >= 2
+    && leftPeriod < rightPeriod
+
+  return (
+    <div className="space-y-3 rounded-md border p-4">
+      <div>
+        <h4 className="font-semibold">期间变化与可能矛盾（Phase 3D）</h4>
+        <p className="mt-1 text-xs text-muted-foreground">
+          仅比较同一聚合中的两个完整自然月。Ollama 生成的变化、连续性、可能矛盾和转折点全部是待审核解释；精确计数仍来自 PostgreSQL。
+        </p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+        <select value={leftPeriod} onChange={(event) => setLeftPeriod(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+          <option value="">较早期间</option>
+          {usablePeriods.map((period) => <option key={period.period} value={period.period}>{period.period}</option>)}
+        </select>
+        <select value={rightPeriod} onChange={(event) => setRightPeriod(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+          <option value="">较晚期间</option>
+          {usablePeriods.map((period) => <option key={period.period} value={period.period}>{period.period}</option>)}
+        </select>
+        <Button size="sm" onClick={() => void generate()} disabled={!ready || generating}>
+          {generating ? <Spinner className="h-4 w-4" /> : null}
+          {comparison ? '重新生成比较' : '生成比较'}
+        </Button>
+      </div>
+      {!localProcessingEnabled && <p className="text-xs text-muted-foreground">比较生成会调用本地 Ollama，因此生产环境只允许读取和审核，不允许生成。</p>}
+      {usablePeriods.length < 2 && <p className="text-sm text-muted-foreground">当前聚合只有一个含审核观察的月份；至少两个自然月后才能比较，不会跨独立运行拼接。</p>}
+      {leftPeriod && rightPeriod && leftPeriod >= rightPeriod && <p className="text-sm text-destructive">较早期间必须早于较晚期间。</p>}
+      {comparison && (
+        <div className="space-y-3 border-t pt-3">
+          {comparison.resultStale && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+              此比较已 stale：{comparison.staleReasons.map((reason) => COMPARISON_STALE_LABELS[reason] ?? reason).join('；')}。
+            </div>
+          )}
+          <div className="grid gap-2 text-sm sm:grid-cols-2">
+            <div className="rounded-md border p-3">{comparison.leftPeriod}：来源 {comparison.leftProcessedSourceCount} · 观察 {comparison.leftAcceptedObservationCount} · 日记 {comparison.leftDistinctDiaryCount}</div>
+            <div className="rounded-md border p-3">{comparison.rightPeriod}：来源 {comparison.rightProcessedSourceCount} · 观察 {comparison.rightAcceptedObservationCount} · 日记 {comparison.rightDistinctDiaryCount}</div>
+          </div>
+          <div className="space-y-2">
+            {comparison.findings.map((finding) => (
+              <ComparisonFindingCard
+                key={finding.id}
+                finding={finding}
+                aggregate={aggregate}
+                disabled={comparison.resultStale || comparison.status !== 'current'}
+                onRun={onRun}
+                onOpenDiary={onOpenDiary}
+              />
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Model {comparison.analysisModelVersion} · Prompt {comparison.analysisPromptVersion} · {new Date(comparison.createdAt).toLocaleString()}</p>
+        </div>
+      )}
+      {aggregate.comparisons.length > 0 && (
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">比较版本历史（{aggregate.comparisons.length}）</summary>
+          <div className="mt-2 space-y-1">
+            {aggregate.comparisons.map((item) => <div key={item.id}>{item.leftPeriod} → {item.rightPeriod} · {item.status === 'current' ? '当前' : '已取代'} · {item.findings.length} 条候选</div>)}
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
+function CorpusAggregate({
+  run,
+  onRun,
+  onOpenDiary,
+  localProcessingEnabled,
+}: {
+  run: ThemeTimelineRun
+  onRun: (run: ThemeTimelineRun) => void
+  onOpenDiary: (sourceId: number) => Promise<void>
+  localProcessingEnabled: boolean
+}) {
+  const aggregate = currentAggregate(run)
+  const [aggregating, setAggregating] = useState(false)
+  const unreviewedCount = run.observations.filter((observation) => (
+    observation.reviewState !== 'confirmed'
+    && observation.reviewState !== 'edited'
+    && observation.reviewState !== 'rejected'
+  )).length
+  const ready = run.status === 'completed' && !run.resultStale && unreviewedCount === 0
+
+  async function regenerate() {
+    setAggregating(true)
+    try {
+      const updated = await regenerateThemeTimelineAggregate(run.id)
+      onRun(updated)
+      toast.success(aggregate ? '确定性语料聚合已重新生成' : '确定性语料聚合已生成')
+    } catch (error) {
+      console.error('Failed to regenerate theme timeline aggregate:', error)
+      toast.error(error instanceof Error ? error.message : '语料聚合生成失败')
+    } finally {
+      setAggregating(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4 rounded-md border p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold">确定性语料聚合（Phase 3C）</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            PostgreSQL 对单个运行的已确认/已编辑观察生成月度快照；不会合并其他试跑，也不会调用模型或付费服务。
+          </p>
+        </div>
+        <Button size="sm" onClick={() => void regenerate()} disabled={!ready || aggregating}>
+          {aggregating ? <Spinner className="h-4 w-4" /> : null}
+          {aggregate ? '重新生成聚合快照' : '生成聚合快照'}
+        </Button>
+      </div>
+
+      {!ready && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+          {run.resultStale
+            ? '当前运行已 stale，不能生成聚合。'
+            : run.status !== 'completed'
+              ? '运行完成后才能生成聚合。'
+              : `仍有 ${unreviewedCount} 条观察未审核；全部确认、编辑或拒绝后才能生成聚合。`}
+        </p>
+      )}
+
+      {aggregate ? (
+        <>
+          {aggregate.resultStale && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+              此聚合已 stale：{aggregate.staleReasons.map((reason) => AGGREGATE_STALE_LABELS[reason] ?? reason).join('；')}。请显式重新生成，旧版本会保留为历史。
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+            <div className="rounded-md border p-3"><div className="text-muted-foreground">字面来源覆盖</div><div className="mt-1 text-xl font-semibold">{aggregate.processedSourceCount} / {aggregate.eligibleSourceCount}</div></div>
+            <div className="rounded-md border p-3"><div className="text-muted-foreground">审核语义观察</div><div className="mt-1 text-xl font-semibold">{aggregate.acceptedObservationCount}</div></div>
+            <div className="rounded-md border p-3"><div className="text-muted-foreground">支持日记</div><div className="mt-1 text-xl font-semibold">{aggregate.distinctDiaryCount}</div></div>
+            <div className="rounded-md border p-3"><div className="text-muted-foreground">确认 / 编辑</div><div className="mt-1 text-xl font-semibold">{aggregate.confirmedObservationCount} / {aggregate.editedObservationCount}</div></div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            “来源覆盖”是数据库行的字面计数；观察数和支持日记数是语义提取结果的确定性计数，不是主题关键词在原文中的出现次数。
+            支持日期 {aggregate.firstSupportedDate ?? '—'} 至 {aggregate.lastSupportedDate ?? '—'}。
+          </p>
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">月度覆盖与语义结果</h4>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {aggregate.periods.map((period) => (
+                <div key={period.period} className="rounded-md border p-3 text-sm">
+                  <div className="font-medium">{period.period}</div>
+                  <div className="mt-1 text-muted-foreground">
+                    来源 {period.processedSourceCount}/{period.eligibleSourceCount} · 审核观察 {period.acceptedObservationCount} · 支持日记 {period.distinctDiaryCount}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            冻结语料 {aggregate.frozenSourceCount} 篇 · fingerprint {aggregate.corpusFingerprint} · Model {aggregate.modelVersion} · Prompt {aggregate.promptVersion} · 生成于 {new Date(aggregate.createdAt).toLocaleString()}
+          </p>
+          {aggregate.contributions.length > 0 && (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-muted-foreground">查看聚合所冻结的观察与原日记链（{aggregate.contributions.length}）</summary>
+              <div className="mt-3 space-y-2">
+                {aggregate.contributions.map((contribution) => (
+                  <div key={contribution.observationId} className="rounded-md border p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium">{contribution.sourceTitle || `日记 ${contribution.sourceDate}`}</div>
+                        <div className="text-xs text-muted-foreground">{contribution.sourceDate} · {contribution.classification} · {contribution.reviewState} · {contribution.evidenceCount} 条原文证据</div>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => void onOpenDiary(contribution.sourceId)}>打开原日记</Button>
+                    </div>
+                    <p className="mt-2 leading-7">{contribution.statement}</p>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+          {run.aggregates.length > 1 && (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-muted-foreground">查看聚合历史（{run.aggregates.length}）</summary>
+              <div className="mt-3 space-y-2">
+                {run.aggregates.map((item) => (
+                  <div key={item.id} className="rounded-md border p-3 text-muted-foreground">
+                    {new Date(item.createdAt).toLocaleString()} · {item.status === 'current' ? '当前' : '已取代'} · 观察 {item.acceptedObservationCount} · 支持日记 {item.distinctDiaryCount}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+          <PeriodComparison
+            run={run}
+            aggregate={aggregate}
+            localProcessingEnabled={localProcessingEnabled}
+            onRun={onRun}
+            onOpenDiary={onOpenDiary}
+          />
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">尚未生成 Phase 3C 聚合。已审核的月度试跑可以直接作为首个聚合输入，无需处理 pending 日记或重新提取。</p>
+      )}
     </div>
   )
 }
@@ -117,9 +532,19 @@ function SummaryReview({
   const [regenerating, setRegenerating] = useState(false)
 
   useEffect(() => setReplacement(summary?.statement ?? ''), [summary?.id, summary?.statement])
-  if (!summary) return null
+
+  const unreviewedCount = run.observations.filter((observation) => (
+    observation.reviewState !== 'confirmed'
+    && observation.reviewState !== 'edited'
+    && observation.reviewState !== 'rejected'
+  )).length
+  const acceptedCount = run.observations.filter((observation) => (
+    observation.reviewState === 'confirmed' || observation.reviewState === 'edited'
+  )).length
+  const rejectedCount = run.observations.filter((observation) => observation.reviewState === 'rejected').length
 
   async function review(reviewAction: 'confirm' | 'edit' | 'reject' | 'supersede') {
+    if (!summary) return
     if ((reviewAction === 'edit' || reviewAction === 'supersede') && !replacement.trim()) return
     setReviewing(true)
     try {
@@ -157,15 +582,36 @@ function SummaryReview({
     || item.reviewState === 'confirmed'
     || item.reviewState === 'edited'
   ))
-  const unreviewedCount = run.observations.filter((observation) => (
-    observation.reviewState !== 'confirmed'
-    && observation.reviewState !== 'edited'
-    && observation.reviewState !== 'rejected'
-  )).length
-  const acceptedCount = run.observations.filter((observation) => (
-    observation.reviewState === 'confirmed' || observation.reviewState === 'edited'
-  )).length
-  const rejectedCount = run.observations.filter((observation) => observation.reviewState === 'rejected').length
+  if (!summary) {
+    if (run.status !== 'awaiting_review') return null
+    return (
+      <div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+        <h3 className="font-semibold">先审核观察，再生成首个摘要</h3>
+        <p>证据范围判定和逐日记观察已完成。摘要不会直接使用模型的未审核结果，只会读取你已确认或编辑的观察，并排除已拒绝观察。</p>
+        <p className="text-xs text-muted-foreground">
+          已保留 {acceptedCount} 条 · 已拒绝 {rejectedCount} 条 · 待审核 {unreviewedCount} 条
+        </p>
+        {unreviewedCount > 0 && (
+          <p className="text-amber-700 dark:text-amber-300">请先审核剩余 {unreviewedCount} 条观察。</p>
+        )}
+        {!localProcessingEnabled && (
+          <p className="text-amber-700 dark:text-amber-300">首个摘要需要访问本地 Ollama，只能在本地开发服务器执行。</p>
+        )}
+        <div>
+          <Button
+            size="sm"
+            onClick={() => void regenerate()}
+            disabled={!localProcessingEnabled || regenerating || run.resultStale || unreviewedCount > 0}
+          >
+            {regenerating ? <Spinner className="h-4 w-4" /> : null}
+            生成首个待审核摘要
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">有保留观察时只调用一次本地 Ollama；全部拒绝时由服务器生成固定说明，不调用模型。</p>
+      </div>
+    )
+  }
+
   const reviewable = !run.resultStale && summary.reviewState !== 'rejected' && summary.reviewState !== 'superseded'
   return (
     <div className="space-y-3 rounded-md border p-4">
@@ -277,6 +723,13 @@ function ObservationPager({
     && observation.reviewState !== 'superseded'
   const changed = replacement.trim() !== observation.statement
     || classification !== observation.classification
+  const reviewBlockedMessage = run.versionStale
+    ? '本次运行的模型或 Prompt 版本已变化；该观察只能作为历史记录查看，不能审核。'
+    : run.coverage.stale > 0
+      ? `有 ${run.coverage.stale} 篇冻结来源的哈希、索引状态或原文分块已变化；该观察只能作为历史记录查看，不能审核。`
+      : run.status !== 'completed' && run.status !== 'awaiting_review'
+        ? `本次运行尚未完成证据处理（已处理 ${run.coverage.processed}/${run.coverage.eligible}，失败 ${run.coverage.failed}，待处理 ${run.coverage.pending}）。这不是来源内容发生变化。`
+        : '本次运行的处理覆盖不完整；该观察暂时不能审核。'
 
   async function review(reviewAction: 'confirm' | 'edit' | 'reject') {
     if (reviewAction === 'edit' && (!replacement.trim() || !changed)) return
@@ -340,20 +793,35 @@ function ObservationPager({
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <CardTitle className="text-base">{observation.sourceTitle || `日记 ${observation.sourceDate}`}</CardTitle>
-              <CardDescription>{observation.sourceDate} · {observation.classification} · {REVIEW_LABELS[observation.reviewState]}</CardDescription>
+              <CardDescription>
+                {observation.sourceDate} · {observation.classification} · {observation.scopeDecision === 'uncertain' ? '范围不确定' : '范围相关'} · {REVIEW_LABELS[observation.reviewState]}
+              </CardDescription>
             </div>
             <Button size="sm" variant="outline" onClick={() => void onOpenDiary(observation.sourceId)}>打开原日记</Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-3 px-4 sm:px-6">
           <p className="text-sm leading-7">{observation.statement}</p>
+          {observation.scopeReason && (
+            <p className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              范围判定理由：{observation.scopeReason}
+            </p>
+          )}
+          {observation.scopeDecision === 'uncertain' && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+              模型无法确认人物关系或主题边界。该观察在人工确认或编辑前不会进入摘要或 Phase 3C 聚合。
+            </p>
+          )}
           {observation.evidence.map((evidence) => (
             <blockquote key={evidence.id} className="border-l-2 pl-3 text-sm leading-7 text-muted-foreground">
-              片段 #{evidence.chunkIndex + 1}：{evidence.excerpt}
+              {evidence.unitId
+                ? `证据 ${evidence.unitId}（原片段 #${evidence.chunkIndex + 1}，字符 ${evidence.charStart}–${evidence.charEnd}）：`
+                : `旧证据片段 #${evidence.chunkIndex + 1}：`}
+              {evidence.excerpt}
             </blockquote>
           ))}
           {run.resultStale && (
-            <p className="text-sm text-amber-700 dark:text-amber-300">来源、覆盖或模型/Prompt 版本已变化；该观察只能作为历史记录查看，不能审核。</p>
+            <p className="text-sm text-amber-700 dark:text-amber-300">{reviewBlockedMessage}</p>
           )}
           {reviewable && (
             <div className="space-y-3 border-t pt-3">
@@ -442,6 +910,9 @@ export function ThemeTimeline({
   const [runs, setRuns] = useState<ThemeTimelineRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [theme, setTheme] = useState('')
+  const [additionalIncludeRules, setAdditionalIncludeRules] = useState('')
+  const [additionalExcludeRules, setAdditionalExcludeRules] = useState('')
+  const [additionalAmbiguousRules, setAdditionalAmbiguousRules] = useState('')
   const [startDate, setStartDate] = useState(KNOWLEDGE_SEARCH_DEFAULT_START_DATE)
   const [endDate, setEndDate] = useState('')
   const [generationConfig, setGenerationConfig] = useState<ThemeTimelineGenerationConfig>({
@@ -485,7 +956,20 @@ export function ThemeTimeline({
     if (!theme.trim() || !startDate || !endDate) return
     setProcessing(true)
     try {
-      const run = await createThemeTimeline({ theme: theme.trim(), startDate, endDate, generationConfig })
+      const defaultThemeSpec = buildDefaultThemeTimelineThemeSpec(theme.trim())
+      const themeSpec = parseThemeTimelineThemeSpec({
+        ...defaultThemeSpec,
+        include: mergeThemeSpecRules(defaultThemeSpec.include, additionalIncludeRules),
+        exclude: mergeThemeSpecRules(defaultThemeSpec.exclude, additionalExcludeRules),
+        ambiguous: mergeThemeSpecRules(defaultThemeSpec.ambiguous, additionalAmbiguousRules),
+      })
+      const run = await createThemeTimeline({
+        theme: theme.trim(),
+        themeSpec,
+        startDate,
+        endDate,
+        generationConfig,
+      })
       applyRun(run)
       toast.success(`已冻结 ${run.frozenSourceCount} 篇来源，并选出范围内 ${run.coverage.eligible} 篇`)
     } catch (error) {
@@ -503,8 +987,12 @@ export function ThemeTimeline({
       while (true) {
         const response = await processThemeTimeline(runId)
         applyRun(response.run)
+        if (response.run.status === 'awaiting_review') {
+          toast.success('证据筛选和观察生成已完成；请审核观察后生成首个摘要')
+          break
+        }
         if (response.outcome === 'complete') {
-          toast.success('主题时间线提取和待审核摘要已完成')
+          toast.success('主题时间线已完成')
           break
         }
         if (response.outcome === 'failed') {
@@ -542,13 +1030,13 @@ export function ThemeTimeline({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>可审核主题时间线（Phase 3A）</CardTitle>
-        <CardDescription>按冻结语料逐篇提取指定主题，显示完整覆盖率、确定性月份分布、原日记证据和可保留历史的审核状态。</CardDescription>
+        <CardTitle>可审核主题时间线（Phase 3A–3C）</CardTitle>
+        <CardDescription>按冻结语料逐篇提取、审核指定主题，并由 PostgreSQL 生成可追踪、可再生的确定性语料聚合。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className={`rounded-md border px-3 py-2 text-sm ${localProcessingEnabled ? 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-amber-500/40 bg-amber-500/5 text-amber-800 dark:text-amber-300'}`}>
           {localProcessingEnabled
-            ? '本地 Phase 3 提取已启用；每篇 eligible 来源调用一次本地 Ollama，并可中断续跑。存在观察时，最后再调用一次生成待审核摘要。'
+            ? '本地 Phase 3 处理已启用；每篇 eligible 来源先做一次主题范围/句子证据选择，relevant 或 uncertain 时再用所选证据合成观察。所有观察须先人工审核，之后才生成首个摘要。'
             : '线上只读取和审核已存储结果；创建、提取和失败重试必须在本地开发服务器执行。'}
         </div>
 
@@ -561,6 +1049,26 @@ export function ThemeTimeline({
           <p className="text-xs text-muted-foreground">
             每个运行的主题、日期范围、冻结来源和 Ollama 参数创建后不可变。小范围试跑是独立运行，不能扩展为全量运行，也不会自动复用到另一运行。
           </p>
+          <details className="rounded-md border p-3" open>
+            <summary className="cursor-pointer font-medium">主题范围契约（创建后冻结）</summary>
+            <p className="mt-2 text-xs text-muted-foreground">
+              将主题写成“名称：定义”会自动拆分名称与定义，并生成通用排除/不确定规则。“友情/友谊/朋友”会额外排除未明示为朋友的家庭、亲密关系、同事等邻近关系。下方每行可再增加一条本主题的约束。
+            </p>
+            <div className="mt-3 grid gap-3 lg:grid-cols-3">
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">额外纳入规则</span>
+                <textarea value={additionalIncludeRules} onChange={(event) => setAdditionalIncludeRules(event.target.value)} className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="例：明确记录朋友之间的联系或帮助" />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">额外排除规则</span>
+                <textarea value={additionalExcludeRules} onChange={(event) => setAdditionalExcludeRules(event.target.value)} className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="例：只描述行程价格，没有朋友互动" />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="text-muted-foreground">额外边界/不确定规则</span>
+                <textarea value={additionalAmbiguousRules} onChange={(event) => setAdditionalAmbiguousRules(event.target.value)} className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="例：无法确认某人是否为朋友时标记 uncertain" />
+              </label>
+            </div>
+          </details>
           <details className="rounded-md border p-3" open>
             <summary className="cursor-pointer font-medium">Ollama 运行参数（创建后冻结）</summary>
             <p className="mt-2 text-xs text-muted-foreground">
@@ -672,7 +1180,7 @@ export function ThemeTimeline({
                 <Button
                   size="sm"
                   onClick={() => void processAll(selectedRun.id)}
-                  disabled={!localProcessingEnabled || processing || selectedRun.status === 'completed' || selectedRun.coverage.stale > 0}
+                  disabled={!localProcessingEnabled || processing || ['ready_for_summary', 'awaiting_review', 'completed'].includes(selectedRun.status) || selectedRun.coverage.stale > 0}
                 >
                   {processing ? <Spinner className="h-4 w-4" /> : null}
                   {selectedRun.status === 'paused' ? '继续处理' : '处理到完成'}
@@ -689,6 +1197,29 @@ export function ThemeTimeline({
             </div>
 
             <Coverage run={selectedRun} />
+
+            <details className="rounded-md border p-3 text-sm">
+              <summary className="cursor-pointer font-medium">查看本运行冻结的主题范围契约</summary>
+              <div className="mt-3 space-y-3">
+                <p><span className="text-muted-foreground">名称：</span>{selectedRun.themeSpec.name}</p>
+                <p><span className="text-muted-foreground">定义：</span>{selectedRun.themeSpec.definition}</p>
+                {([
+                  ['纳入', selectedRun.themeSpec.include],
+                  ['排除', selectedRun.themeSpec.exclude],
+                  ['不确定边界', selectedRun.themeSpec.ambiguous],
+                ] as const).map(([label, rules]) => (
+                  <div key={label}>
+                    <div className="text-muted-foreground">{label}：</div>
+                    {rules.length > 0 ? (
+                      <ul className="mt-1 list-disc space-y-1 pl-5">
+                        {rules.map((rule) => <li key={rule}>{rule}</li>)}
+                      </ul>
+                    ) : <p className="mt-1 text-muted-foreground">无</p>}
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">Pipeline {selectedRun.pipelineVersion}</p>
+              </div>
+            </details>
 
             {selectedRun.failures.length > 0 && (
               <div className="space-y-3">
@@ -737,8 +1268,8 @@ export function ThemeTimeline({
 
             {selectedRun.periodDistribution.length > 0 && (
               <div className="space-y-2">
-                <h3 className="font-semibold">语义提取结果的月份分布</h3>
-                <p className="text-xs text-muted-foreground">数量由 PostgreSQL 对结构化观察中的 distinct diary 计算；它不是关键词字面出现次数。覆盖与 extractor 版本见上方。</p>
+                <h3 className="font-semibold">语义提取结果的月份预览</h3>
+                <p className="text-xs text-muted-foreground">这是审核界面对当前结构化观察的即时预览，不是关键词字面出现次数；下方 Phase 3C 聚合快照才是 PostgreSQL 生成并冻结的确定性统计。</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedRun.periodDistribution.map((period) => (
                     <span key={period.period} className="rounded-md border px-3 py-2 text-sm">{period.period} · {period.diaryCount} 篇</span>
@@ -751,6 +1282,13 @@ export function ThemeTimeline({
             <SummaryReview
               run={selectedRun}
               onRun={applyRun}
+              localProcessingEnabled={localProcessingEnabled}
+            />
+
+            <CorpusAggregate
+              run={selectedRun}
+              onRun={applyRun}
+              onOpenDiary={onOpenDiary}
               localProcessingEnabled={localProcessingEnabled}
             />
 

@@ -9,21 +9,36 @@ import {
   ThemeTimelineConfigError,
 } from '@/lib/themeTimelineConfig'
 import {
+  parseThemeTimelineThemeSpecForTheme,
+  ThemeTimelineThemeSpecError,
+} from '@/lib/themeTimelineThemeSpec'
+import {
   createThemeTimelineRun,
+  generateThemeTimelinePeriodComparison,
   getThemeTimelineRun,
   listThemeTimelineRuns,
   processNextThemeTimelineSource,
+  regenerateThemeTimelineAggregate,
   regenerateThemeTimelineSummary,
   retryThemeTimelineSources,
   reviewThemeTimelineObservation,
+  reviewThemeTimelineComparisonFinding,
   reviewThemeTimelineSummary,
   ThemeTimelineProviderError,
+  ThemeTimelineComparisonError,
+  ThemeTimelineMigrationRequiredError,
 } from '@/lib/server/themeTimeline'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+const MONTH_PATTERN = /^\d{4}-(?:0[1-9]|1[0-2])$/u
 
 function uuidField(value: unknown, name: string): string {
   if (typeof value !== 'string' || !UUID_PATTERN.test(value)) throw new HttpError(400, `Invalid ${name}`)
+  return value
+}
+
+function monthField(value: unknown, name: string): string {
+  if (typeof value !== 'string' || !MONTH_PATTERN.test(value)) throw new HttpError(400, `Invalid ${name}`)
   return value
 }
 
@@ -31,6 +46,15 @@ function responseFor(error: unknown) {
   if (error instanceof HttpError) return NextResponse.json({ error: error.message }, { status: error.status })
   if (error instanceof ThemeTimelineConfigError) {
     return NextResponse.json({ error: 'Invalid Ollama generation config' }, { status: 400 })
+  }
+  if (error instanceof ThemeTimelineThemeSpecError) {
+    return NextResponse.json({ error: 'Invalid theme scope contract' }, { status: 400 })
+  }
+  if (error instanceof ThemeTimelineComparisonError) {
+    return NextResponse.json({ error: error.message }, { status: 409 })
+  }
+  if (error instanceof ThemeTimelineMigrationRequiredError) {
+    return NextResponse.json({ error: error.message }, { status: 409 })
   }
   if (error instanceof ThemeTimelineProviderError) {
     return NextResponse.json(
@@ -74,10 +98,15 @@ export async function POST(request: Request) {
       action?: unknown
       runId?: unknown
       observationId?: unknown
+      aggregateId?: unknown
+      findingId?: unknown
       summaryId?: unknown
       theme?: unknown
+      themeSpec?: unknown
       startDate?: unknown
       endDate?: unknown
+      leftPeriod?: unknown
+      rightPeriod?: unknown
       generationConfig?: unknown
       reviewAction?: unknown
       statement?: unknown
@@ -92,7 +121,8 @@ export async function POST(request: Request) {
       const endDate = exactDateField(body?.endDate, 'end date')
       if (startDate > endDate) throw new HttpError(400, 'Start date must not be after end date')
       const generationConfig = parseThemeTimelineGenerationConfig(body?.generationConfig)
-      return NextResponse.json(await createThemeTimelineRun({ theme, startDate, endDate, generationConfig }))
+      const themeSpec = parseThemeTimelineThemeSpecForTheme(theme, body?.themeSpec)
+      return NextResponse.json(await createThemeTimelineRun({ theme, themeSpec, startDate, endDate, generationConfig }))
     }
 
     if (action === 'process') {
@@ -114,6 +144,22 @@ export async function POST(request: Request) {
       return NextResponse.json(await regenerateThemeTimelineSummary(
         uuidField(body?.runId, 'theme timeline run id'),
       ))
+    }
+
+    if (action === 'regenerate-aggregate') {
+      return NextResponse.json(await regenerateThemeTimelineAggregate(
+        uuidField(body?.runId, 'theme timeline run id'),
+      ))
+    }
+
+    if (action === 'generate-comparison') {
+      requireLocalProcessing()
+      return NextResponse.json(await generateThemeTimelinePeriodComparison({
+        runId: uuidField(body?.runId, 'theme timeline run id'),
+        aggregateId: uuidField(body?.aggregateId, 'theme timeline aggregate id'),
+        leftPeriod: monthField(body?.leftPeriod, 'theme timeline left period'),
+        rightPeriod: monthField(body?.rightPeriod, 'theme timeline right period'),
+      }))
     }
 
     if (action === 'review') {
@@ -150,6 +196,31 @@ export async function POST(request: Request) {
       }
       return NextResponse.json(await reviewThemeTimelineObservation({
         observationId: uuidField(body?.observationId, 'theme timeline observation id'),
+        action: reviewAction,
+        statement,
+        classification,
+      }))
+    }
+
+    if (action === 'review-comparison') {
+      const reviewAction = stringField(body?.reviewAction, 'theme timeline comparison review action', { min: 1, max: 20, trim: true })
+      if (reviewAction !== 'confirm' && reviewAction !== 'edit' && reviewAction !== 'reject') {
+        throw new HttpError(400, 'Invalid theme timeline comparison review action')
+      }
+      const statement = reviewAction === 'edit'
+        ? stringField(body?.statement, 'theme timeline comparison statement', { min: 1, max: 2_000, trim: true })
+        : undefined
+      const classification = reviewAction === 'edit'
+        ? stringField(body?.classification, 'theme timeline comparison classification', { min: 1, max: 20, trim: true })
+        : undefined
+      if (classification !== undefined
+        && classification !== 'fact'
+        && classification !== 'summary'
+        && classification !== 'inference') {
+        throw new HttpError(400, 'Invalid theme timeline comparison classification')
+      }
+      return NextResponse.json(await reviewThemeTimelineComparisonFinding({
+        findingId: uuidField(body?.findingId, 'theme timeline comparison finding id'),
         action: reviewAction,
         statement,
         classification,

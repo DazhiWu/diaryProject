@@ -10,10 +10,20 @@ export type ThemeTimelineFailureCode =
   | 'invalid_json'
   | 'invalid_object'
   | 'invalid_relevant_flag'
+  | 'invalid_scope_decision'
+  | 'invalid_scope_evidence_ids'
+  | 'invalid_scope_reason'
+  | 'invalid_scope_selection'
   | 'invalid_statement'
+  | 'invalid_observation_synthesis'
   | 'invalid_summary_classification'
   | 'invalid_summary_observation_ids'
   | 'invalid_summary_statement'
+  | 'invalid_comparison_findings'
+  | 'invalid_comparison_finding_type'
+  | 'invalid_comparison_statement'
+  | 'invalid_comparison_classification'
+  | 'invalid_comparison_observation_ids'
   | 'irrelevant_payload_not_empty'
   | 'ollama_payload_invalid'
   | 'prompt_too_large'
@@ -52,10 +62,20 @@ function safeCode(value: unknown): ThemeTimelineFailureCode | undefined {
     'invalid_json',
     'invalid_object',
     'invalid_relevant_flag',
+    'invalid_scope_decision',
+    'invalid_scope_evidence_ids',
+    'invalid_scope_reason',
+    'invalid_scope_selection',
     'invalid_statement',
+    'invalid_observation_synthesis',
     'invalid_summary_classification',
     'invalid_summary_observation_ids',
     'invalid_summary_statement',
+    'invalid_comparison_findings',
+    'invalid_comparison_finding_type',
+    'invalid_comparison_statement',
+    'invalid_comparison_classification',
+    'invalid_comparison_observation_ids',
     'irrelevant_payload_not_empty',
     'ollama_payload_invalid',
     'prompt_too_large',

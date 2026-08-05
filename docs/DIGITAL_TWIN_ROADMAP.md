@@ -12,7 +12,7 @@ It is a roadmap, not a frozen schema or prompt specification. Each phase should 
 |---|---|---|
 | 1 | Shared private knowledge index | Implemented |
 | 2 | Administrator factual question answering with citations | Completed and accepted in production |
-| 3 | Auditable structured understanding | Batches 3A/3B implemented and operator-accepted locally; Batch 3C next, Worker deployment/acceptance pending |
+| 3 | Auditable structured understanding | Batches 3A/3B accepted locally; Batch 3C production pilot accepted; Batch 3D development-complete in source but not deployed; refreshed full-corpus acceptance pending |
 | 4 | Private digital twin | Planned |
 | 5 | Growth analysis and historical versions | Planned |
 | 6 | Public digital twin | Planned; must wait for private boundaries and review workflows to mature |
@@ -66,15 +66,15 @@ Each proposed item should contain:
 - a review state such as `proposed`, `confirmed`, `edited`, `rejected`, or `superseded`;
 - an optional user correction or replacement statement.
 
-The first concrete implementation now uses versioned `understanding_*` runs, frozen sources, observations, immutable evidence, summaries, observation review history, summary impacts, and summary-observation links for the `theme_timeline` slice. Batches 3A/3B and the local operator review/regeneration workflow are complete, so deterministic corpus aggregation is the next batch. Detailed current schema and the Phase 3C handoff belong in [`DATABASE.md`](DATABASE.md) and [`PHASE3_UNDERSTANDING_PLAN.md`](PHASE3_UNDERSTANDING_PLAN.md); later Phase 3 types should reuse the proven provenance/review boundaries without assuming the current schema already covers 3C–3E.
+The first concrete implementation uses versioned `understanding_*` runs, frozen sources, observations, immutable evidence, summaries, observation review history, summary impacts, and summary-observation links for the `theme_timeline` slice. Batches 3A/3B and the local operator review/regeneration workflow are complete. Batch 3C adds versioned, deterministic per-run aggregates, monthly literal/semantic statistics, frozen reviewed-observation contributions, and stale detection while preserving original-diary provenance. Its production migration, Worker, reviewed-pilot regeneration, role matrix, and rollback smoke passed on 2026-08-03. Batch 3D is implemented in source as versioned two-month comparisons within one non-stale aggregate; its migration, deployment, and real cross-month acceptance remain pending because the accepted pilot contains one month. A later Phase 3A v4 hardening is also source-complete after a friendship pilot exposed topic leakage: it freezes structured ThemeSpec boundaries, uses exact sentence/range evidence IDs, validates complete relevant/uncertain/irrelevant partitions, separates evidence selection from observation synthesis on the same 4B model, and requires observation review before the first summary. Its migration and operational gates are not complete, so 3E must not consume legacy v3 observations as if this quality boundary were accepted. Detailed schema and remaining gates belong in [`DATABASE.md`](DATABASE.md) and [`PHASE3_UNDERSTANDING_PLAN.md`](PHASE3_UNDERSTANDING_PLAN.md).
 
 ### Recommended implementation batches
 
 1. Batch 3A: add the versioned derived-record model and evidence links, initially for a small administrator-selected date range. **Completed locally.**
 2. Batch 3B: add administrator confirm, edit, reject, supersede, history, and reviewed-observation-only regeneration. **Completed and operator-accepted locally.**
-3. Batch 3C: add deterministic corpus aggregation and time-bounded summaries over confirmed/edited, non-stale observations while retaining original-diary provenance. **Next.**
-4. Batch 3D: add contradiction and change detection only after aggregate review/stale boundaries are proven.
-5. Batch 3E: allow factual answers to optionally use confirmed understanding, while continuing to cite the original diaries behind it.
+3. Batch 3C: add deterministic corpus aggregation and time-bounded summaries over confirmed/edited, non-stale observations while retaining original-diary provenance. **Production pilot rollout accepted; refreshed full-corpus acceptance pending.**
+4. Batch 3D: add contradiction and change detection only after aggregate review/stale boundaries are proven. **Development-complete in source; production rollout and real two-month acceptance pending.**
+5. Batch 3E: after the v4 theme-scope/evidence pilot is accepted, allow factual answers to optionally use confirmed understanding while continuing to cite the original diaries behind it. Phase 3D acceptance is required only for answer modes that consume change/contradiction findings, not for a narrower confirmed-observation/aggregate path.
 
 Extraction should initially be an explicit administrator operation. Do not automatically process the entire corpus or write model output as confirmed knowledge.
 
