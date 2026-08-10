@@ -8,11 +8,11 @@
 - 每篇日记最多选择 18 张图片；浏览器会把图片压缩为 WebP 后上传到 Supabase Storage。
 - AI 分析生成短标题和情绪标签；翻译同样通过服务端接口完成，ModelScope 密钥不进入浏览器代码。
 - 管理员个人知识库使用本地 `Qwen/Qwen3-Embedding-0.6B` 将日记按原文位置分段并生成 1024 维向量。线上搜索由 Cloudflare `@cf/qwen/qwen3-embedding-0.6b` 生成归一化查询向量，经 Supabase 现有 pgvector/原文融合 RPC 召回 20 个候选，再由 `@cf/baai/bge-reranker-base` 返回前 5 个结果。Embedding 失败返回 503；Reranker 失败时按原始向量相似度降级，并在管理员界面标明未应用重排。可选“诊断模式”会依次展示 RPC 召回候选、Reranker 原始前五和合并/多样化后的最终结果，用于直接检查真实日记语料的召回质量。
-- 管理员事实问答复用同一检索链，将最多 5 个最终片段交给 `deepseek-ai/DeepSeek-V3.2`。服务端预先分配 `S1`–`S5`，只接受结构化、引用标识合法且正文引用一致的模型结果；无候选或证据不足时明确拒答，引用卡片可打开原日记。回答和引用不会写入数据库。
+- 管理员事实问答复用同一检索链，将最多 5 个最终片段交给按运行时优先级配置的 ModelScope 对话模型。服务端预先分配 `S1`–`S5`，只接受结构化、引用标识合法且正文引用一致的模型结果；无候选或证据不足时明确拒答，引用卡片可打开原日记。回答和引用不会写入数据库。
 - Phase 3A/3B 的源码质量加固版把主题从一句宽泛文字升级为每运行冻结的 `ThemeSpec`（名称、定义、纳入、排除、不确定边界）。既有 400–700 字知识分块不变；服务器仅在 Phase 3 处理时把分块确定性切成带绝对字符范围的证据单元 ID。同一 4B Ollama 先将每个 ID 完整分桶为 `relevant/uncertain/irrelevant`，服务器校验三个集合必须无重复且完整覆盖；随后只把 relevant（或纯 uncertain）证据交给第二次观察合成，防止同篇的旅行、消费或情绪内容带偏友情观察。`uncertain` 在人工审核前不进入摘要/聚合。全部来源处理后运行停在 `awaiting_review`，不再自动生成摘要；只有所有观察被确认、编辑或拒绝后，才可用 `confirmed/edited` 观察生成首个待审核摘要。旧 v3 运行保留为历史且因 pipeline/prompt 版本变化显示 stale；本加固迁移尚未应用生产，因此尚不能创建 v4 运行。
 - Phase 3C 为单个已完成、非 stale 运行显式生成版本化语料聚合快照。PostgreSQL 原子计算 eligible/processed 来源覆盖、确认/编辑观察数、distinct 支持日记、首末支持日期和月度分组；来源覆盖是字面数据库行计数，观察/支持日记是带 extractor/model/prompt/语料版本的语义计数，不会伪装成关键词出现次数。每个快照冻结所纳入观察的陈述、审核状态和证据数量，并通过观察 ID 保留到原文证据和来源日记的完整链。观察或来源变化会让当前快照显示为 stale；管理员可显式再生成并保留旧版本。聚合不合并独立试跑、不调用 Ollama/ModelScope，也不需要处理当前 pending 日记。
 - Phase 3D 源码可在同一个 current、非 stale 的 Phase 3C 聚合内选择两个不同自然月，使用两侧全部 confirmed/edited 观察调用一次本地 Ollama，生成 1–12 条连续性、变化、可能矛盾或转折点发现。每条发现必须分别引用两个期间的服务器自有观察 ID，并明确标为 `fact`、`summary` 或 `inference`；可能矛盾和转折点只能是推断。模型结果一律从 `proposed` 开始，管理员可在线确认、编辑或拒绝，历史只追加保留。该功能不会拼接独立运行，不让模型生成统计数字，也不会处理 pending 日记。3D 数据库迁移和 Worker 尚未部署，当前单月试跑也不具备真实跨月生成条件。
-- ModelScope 分析、翻译和事实回答生成共享北京时间自然日 180 次的服务端安全上限；零候选问答、本地知识索引和仅使用 Workers AI 的知识搜索不消耗此额度。
+- ModelScope 分析、翻译和事实回答生成共享北京时间自然日 180 次的服务端安全上限；每个实际尝试的模型各消耗一次额度。模型按 `MODELSCOPE_CHAT_MODEL` 的顺序调用，仅超时、网络或 HTTP 非 2xx 失败会切换；空白或格式/引用无效的成功响应会立即报错。零候选问答、本地知识索引和仅使用 Workers AI 的知识搜索不消耗此额度。
 - 年度总结包含重要事件、AI 读后感、意见和年度照片。
 - 匿名留言支持 1–2000 字内容、HTML 转义和每页 10 条分页；写入通过同源 API 按客户端 IP 限制为每 60 秒 3 条。
 - 健康状况可按日期范围记录并显示在日历中。
@@ -44,7 +44,7 @@
 - Next.js 16 App Router、React 18、严格 TypeScript
 - Tailwind CSS 4、Radix UI、Lucide React
 - Supabase PostgreSQL 和 Storage
-- ModelScope OpenAI-compatible API 与 `deepseek-ai/DeepSeek-V3.2`
+- ModelScope OpenAI-compatible API 与服务端配置的有序对话模型列表
 - Windows Ollama 与本地 `qwen3.5:4b`（仅 Phase 3A 提取/摘要和 Phase 3D 期间比较生成）
 - 本地 Qwen3-Embedding-0.6B FastAPI 服务（`http://127.0.0.1:8000/embeddings`，仅文档索引）
 - OpenNext、Cloudflare Workers、Workers AI、Wrangler
@@ -59,6 +59,7 @@
 ```dotenv
 SUPABASE_URL=
 MODELSCOPE_TOKEN_API_KEY=
+MODELSCOPE_CHAT_MODEL=deepseek-ai/DeepSeek-V4-Pro,ZhipuAI/GLM-5.2,Tencent-Hunyuan/Hy3
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 AUTH_PASSWORD_ADMIN=
 AUTH_PASSWORD_VIEWER=
@@ -73,6 +74,7 @@ APP_ORIGIN=
 | `SUPABASE_URL` | Supabase 项目 URL | 服务端 API 必需；不再注入浏览器构建 |
 | `SUPABASE_ANON_KEY` | Supabase anon 凭据 | 应用运行不需要；仅旧的操作审计脚本/直接访问回归需要 |
 | `MODELSCOPE_TOKEN_API_KEY` | AI 分析、翻译和事实回答生成 | 启用对应功能时必需；仅服务端运行时 |
+| `MODELSCOPE_CHAT_MODEL` | ModelScope 对话模型优先级列表，使用英文逗号分隔 | 启用对应功能时必需；仅服务端运行时，不提供代码默认值 |
 | `OLLAMA_BASE_URL` | Phase 3A/3D 本地 Ollama API 根地址 | 本地 Phase 3A 处理或 Phase 3D 比较生成必需；仅服务端，默认 `http://127.0.0.1:11434` |
 | `AUTH_PASSWORD_ADMIN` | 管理员密码 | 启用管理员模式时必需；仅服务端运行时 |
 | `AUTH_PASSWORD_VIEWER` | 浏览者密码 | 启用浏览者模式时必需；仅服务端运行时 |
@@ -156,7 +158,7 @@ pnpm exec wrangler deploy --dry-run
 pnpm run deploy
 ```
 
-`SUPABASE_URL`、service-role、认证和 ModelScope 配置均由服务端运行时读取，不再通过 `next.config.mjs` 注入浏览器构建。`OLLAMA_BASE_URL` 同样只在本地服务端读取，不配置到生产 Worker。Worker 部署配置声明了 Workers AI `AI` binding，并保留登录、匿名留言和交互式 AI 三个 Rate Limit binding；`AI_RATE_LIMITER` 将分析、翻译、知识搜索和事实问答限制为每客户端 IP 每 60 秒 5 次，ModelScope 请求另有 30 秒超时。当前本地 Embedding 回环地址仅服务管理员文档索引，线上查询使用 Workers AI。Workers AI 免费计划每天提供 10,000 Neurons 免费额度，超过额度的请求会失败并进入既定错误/降级路径；本项目不要求新增模型密钥、Account ID 或 API Token。
+`SUPABASE_URL`、service-role、认证和 ModelScope 配置均由服务端运行时读取，不再通过 `next.config.mjs` 注入浏览器构建。本地 Next.js 从 `.env.local` 读取 `MODELSCOPE_CHAT_MODEL`，部署后的 Worker 从同名 runtime variable 读取；调整模型顺序不需要修改源代码。`OLLAMA_BASE_URL` 同样只在本地服务端读取，不配置到生产 Worker。Worker 部署配置声明了 Workers AI `AI` binding，并保留登录、匿名留言和交互式 AI 三个 Rate Limit binding；`AI_RATE_LIMITER` 将分析、翻译、知识搜索和事实问答限制为每客户端 IP 每 60 秒 5 次，每个 ModelScope 模型尝试各有 30 秒超时。当前本地 Embedding 回环地址仅服务管理员文档索引，线上查询使用 Workers AI。Workers AI 免费计划每天提供 10,000 Neurons 免费额度，超过额度的请求会失败并进入既定错误/降级路径；本项目不要求新增模型密钥、Account ID 或 API Token。
 
 已确认生产 Worker 为 `diaryproject`，自定义域名为 `diary.wuzhizhii.com`，未配置单独的 zone route，并存在可回滚的历史版本。Workers Builds 当前连接 GitHub `DazhiWu/diaryProject` 的 `main` 分支，root directory 为 `/`，build command 为 `pnpm run cf:build`。Deploy command 必须设为 `pnpm run deploy`，不能使用 `opennextjs-cloudflare deploy`。完整流程见 [`docs/DEPLOY.md`](docs/DEPLOY.md)。
 
