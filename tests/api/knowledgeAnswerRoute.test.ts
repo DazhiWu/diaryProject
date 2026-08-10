@@ -20,6 +20,7 @@ vi.mock('@/lib/server/knowledgeAnswer', async (importOriginal) => {
 import { POST as knowledgeAnswer } from '@/app/api/knowledge/answer/route'
 import { KnowledgeAnswerProviderError } from '@/lib/server/knowledgeAnswer'
 import { KnowledgeEmbeddingUnavailableError } from '@/lib/server/knowledgeSearch'
+import { ModelScopeConfigurationError } from '@/lib/server/modelScopeClient'
 import { ModelScopeQuotaStopError } from '@/lib/server/modelScopeQuota'
 import { createSession } from '@/lib/server/session'
 
@@ -129,6 +130,28 @@ describe('knowledge answer route boundary', () => {
     mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeAnswerProviderError('invalid-response'))
     const malformedResponse = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
     expect(malformedResponse.status).toBe(502)
-    await expect(malformedResponse.json()).resolves.toEqual({ error: 'Knowledge answer provider is temporarily unavailable' })
+    await expect(malformedResponse.json()).resolves.toEqual({ error: '模型返回结果格式错误' })
+  })
+
+  it('reports complete ModelScope model exhaustion', async () => {
+    mocks.checkAiRateLimit.mockResolvedValue({ allowed: true, retryAfterSeconds: 60 })
+    mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeAnswerProviderError('all-models-failed'))
+
+    const response = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
+
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toEqual({ error: '所有模型 API 调用失败' })
+  })
+
+  it('reports a missing ModelScope model configuration without claiming API exhaustion', async () => {
+    mocks.checkAiRateLimit.mockResolvedValue({ allowed: true, retryAfterSeconds: 60 })
+    mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new ModelScopeConfigurationError())
+
+    const response = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: 'MODELSCOPE_CHAT_MODEL 未配置或没有有效模型',
+    })
   })
 })

@@ -9,6 +9,7 @@ import {
   type KnowledgeAnswerCitation,
 } from '@/lib/server/knowledgeAnswer'
 import type { KnowledgeSearchResult } from '@/lib/server/knowledgeSearch'
+import { ModelScopeModelsExhaustedError } from '@/lib/server/modelScopeClient'
 import { ModelScopeQuotaStopError } from '@/lib/server/modelScopeQuota'
 
 function result(overrides: Partial<KnowledgeSearchResult> = {}): KnowledgeSearchResult {
@@ -40,19 +41,22 @@ function dependencies(options: {
     evidenceStatus: 'supported',
     citationIds: ['S1'],
   }))
+  const runFallback = vi.fn(async (fallback: {
+    attempt(model: string): Promise<string>
+  }) => fallback.attempt('first/model'))
   return {
     search: vi.fn().mockResolvedValue({
       results: options.results ?? [result()],
       rerankApplied: options.rerankApplied ?? true,
     }),
     prepareCompletion: vi.fn().mockResolvedValue(complete),
-    reserveQuota: vi.fn().mockResolvedValue({ usageDate: '2026-07-30', used: 1, dailyLimit: 180 }),
+    runFallback,
     complete,
   }
 }
 
 describe('knowledge factual answer orchestration', () => {
-  it('returns insufficient evidence without preparing ModelScope or reserving quota when retrieval is empty', async () => {
+  it('returns insufficient evidence without preparing or running ModelScope when retrieval is empty', async () => {
     const deps = dependencies({ results: [], rerankApplied: false })
 
     await expect(answerPrivateKnowledgeQuestion({ question: '没有记录的问题' }, deps)).resolves.toEqual({
@@ -62,11 +66,11 @@ describe('knowledge factual answer orchestration', () => {
       rerankApplied: false,
     })
     expect(deps.prepareCompletion).not.toHaveBeenCalled()
-    expect(deps.reserveQuota).not.toHaveBeenCalled()
+    expect(deps.runFallback).not.toHaveBeenCalled()
     expect(deps.complete).not.toHaveBeenCalled()
   })
 
-  it('assigns trusted server citations, reserves exactly once, and propagates reranker fallback', async () => {
+  it('assigns trusted server citations through the selected model and propagates reranker fallback', async () => {
     const deps = dependencies({
       rerankApplied: false,
       results: [
@@ -100,8 +104,9 @@ describe('knowledge factual answer orchestration', () => {
       endDate: '2026-07-30',
     })
     expect(deps.prepareCompletion).toHaveBeenCalledOnce()
-    expect(deps.reserveQuota).toHaveBeenCalledOnce()
+    expect(deps.runFallback).toHaveBeenCalledOnce()
     expect(deps.complete).toHaveBeenCalledOnce()
+    expect(deps.complete.mock.calls[0]?.[0]).toBe('first/model')
     expect(response).toEqual({
       answer: '计划先实现事实层。[S1] 第二天又确认了边界。[S2]',
       evidenceStatus: 'supported',
@@ -138,7 +143,7 @@ describe('knowledge factual answer orchestration', () => {
       citations: [],
       rerankApplied: true,
     })
-    expect(deps.reserveQuota).toHaveBeenCalledOnce()
+    expect(deps.runFallback).toHaveBeenCalledOnce()
     expect(deps.complete).toHaveBeenCalledOnce()
   })
 
@@ -164,28 +169,27 @@ describe('knowledge factual answer orchestration', () => {
 
     await expect(answerPrivateKnowledgeQuestion({ question: '问题' }, deps))
       .rejects.toBeInstanceOf(KnowledgeAnswerProviderError)
-    expect(deps.reserveQuota).toHaveBeenCalledOnce()
+    expect(deps.runFallback).toHaveBeenCalledOnce()
+    expect(deps.complete).toHaveBeenCalledOnce()
     consoleError.mockRestore()
   })
 
-  it.each([429, 503])('does not attempt generation when quota reservation stops the request with %s', async (status) => {
+  it.each([429, 503])('does not invoke a completion when fallback orchestration stops on quota status %s', async (status) => {
     const deps = dependencies({})
-    deps.reserveQuota.mockRejectedValue(new ModelScopeQuotaStopError(status, 'quota stopped'))
+    deps.runFallback.mockRejectedValue(new ModelScopeQuotaStopError(status, 'quota stopped'))
 
     await expect(answerPrivateKnowledgeQuestion({ question: '问题' }, deps))
       .rejects.toMatchObject({ status })
     expect(deps.complete).not.toHaveBeenCalled()
   })
 
-  it('turns provider timeouts into a safe typed error without logging private provider detail', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  it('maps complete model-list exhaustion to a distinct provider reason', async () => {
     const deps = dependencies({})
-    deps.complete.mockRejectedValue(Object.assign(new Error('private upstream response'), { name: 'APIConnectionTimeoutError' }))
+    deps.runFallback.mockRejectedValue(new ModelScopeModelsExhaustedError())
 
     await expect(answerPrivateKnowledgeQuestion({ question: '问题' }, deps))
-      .rejects.toMatchObject({ reason: 'timeout' })
-    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('private upstream response')
-    consoleError.mockRestore()
+      .rejects.toMatchObject({ reason: 'all-models-failed' })
+    expect(deps.complete).not.toHaveBeenCalled()
   })
 })
 

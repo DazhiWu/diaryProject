@@ -6,11 +6,12 @@ import {
 } from '@/lib/server/knowledgeSearch'
 import {
   createModelScopeClient,
-  MODELSCOPE_CHAT_MODEL,
   MODELSCOPE_TIMEOUT_MS,
+  type ModelScopeFallbackOptions,
+  ModelScopeModelsExhaustedError,
+  runModelScopeChatFallback,
   safeModelScopeErrorMetadata,
 } from '@/lib/server/modelScopeClient'
-import { reserveModelScopeApiCall } from '@/lib/server/modelScopeQuota'
 
 export const INSUFFICIENT_KNOWLEDGE_ANSWER = '当前日记语料中没有足够证据回答这个问题。'
 
@@ -38,12 +39,12 @@ type KnowledgeAnswerPrompts = {
   user: string
 }
 
-type KnowledgeAnswerCompletion = (prompts: KnowledgeAnswerPrompts) => Promise<string>
+type KnowledgeAnswerCompletion = (model: string, prompts: KnowledgeAnswerPrompts) => Promise<string>
 
 type KnowledgeAnswerDependencies = {
   search: typeof searchPrivateKnowledge
   prepareCompletion(): Promise<KnowledgeAnswerCompletion>
-  reserveQuota: typeof reserveModelScopeApiCall
+  runFallback(options: ModelScopeFallbackOptions<string>): Promise<string>
 }
 
 type ModelScopeCompletionResponse = {
@@ -65,9 +66,9 @@ async function prepareModelScopeCompletion(): Promise<KnowledgeAnswerCompletion>
   const client = await createModelScopeClient()
   const createCompletion = client.chat.completions.create.bind(client.chat.completions) as unknown as ModelScopeCompletionCreate
 
-  return async (prompts) => {
+  return async (model, prompts) => {
     const response = await createCompletion({
-      model: MODELSCOPE_CHAT_MODEL,
+      model,
       messages: [
         { role: 'system', content: prompts.system },
         { role: 'user', content: prompts.user },
@@ -86,11 +87,11 @@ async function prepareModelScopeCompletion(): Promise<KnowledgeAnswerCompletion>
 const DEFAULT_DEPENDENCIES: KnowledgeAnswerDependencies = {
   search: searchPrivateKnowledge,
   prepareCompletion: prepareModelScopeCompletion,
-  reserveQuota: reserveModelScopeApiCall,
+  runFallback: runModelScopeChatFallback,
 }
 
 export class KnowledgeAnswerProviderError extends Error {
-  constructor(public readonly reason: 'timeout' | 'invalid-response' | 'unavailable') {
+  constructor(public readonly reason: 'timeout' | 'invalid-response' | 'unavailable' | 'all-models-failed') {
     super('Knowledge answer provider failed')
     this.name = 'KnowledgeAnswerProviderError'
   }
@@ -210,19 +211,10 @@ function parseKnowledgeAnswer(
   }
 }
 
-function isTimeoutError(error: unknown): boolean {
-  const metadata = safeModelScopeErrorMetadata(error)
-  return metadata.name === 'TimeoutError'
-    || metadata.name === 'AbortError'
-    || metadata.name === 'APIConnectionTimeoutError'
-    || metadata.code === 'ETIMEDOUT'
-}
-
 function logProviderFailure(operation: 'prepare' | 'generate' | 'parse', error: unknown, reason: KnowledgeAnswerProviderError['reason']) {
   console.error('[knowledge-answer]', {
     operation,
     outcome: 'failed',
-    model: MODELSCOPE_CHAT_MODEL,
     reason,
     ...safeModelScopeErrorMetadata(error),
   })
@@ -259,15 +251,18 @@ export async function answerPrivateKnowledgeQuestion(
     throw new KnowledgeAnswerProviderError('unavailable')
   }
 
-  await dependencies.reserveQuota()
-
   let raw: string
   try {
-    raw = await complete(prompts)
+    raw = await dependencies.runFallback({
+      operation: 'knowledge-answer',
+      attempt: (model) => complete(model, prompts),
+    })
   } catch (error) {
-    const reason = isTimeoutError(error) ? 'timeout' : 'unavailable'
-    logProviderFailure('generate', error, reason)
-    throw new KnowledgeAnswerProviderError(reason)
+    if (error instanceof ModelScopeModelsExhaustedError) {
+      logProviderFailure('generate', error, 'all-models-failed')
+      throw new KnowledgeAnswerProviderError('all-models-failed')
+    }
+    throw error
   }
 
   try {

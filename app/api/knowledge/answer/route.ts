@@ -6,6 +6,10 @@ import {
   KnowledgeAnswerProviderError,
 } from '@/lib/server/knowledgeAnswer'
 import { KnowledgeEmbeddingUnavailableError } from '@/lib/server/knowledgeSearch'
+import {
+  MODELSCOPE_ALL_MODELS_FAILED_MESSAGE,
+  ModelScopeConfigurationError,
+} from '@/lib/server/modelScopeClient'
 import { assertAllowedOrigin } from '@/lib/server/origin'
 import { exactDateField, readJsonBody, REQUEST_LIMITS, stringField } from '@/lib/server/requestLimits'
 import { HttpError, readSession, requireAdmin } from '@/lib/server/session'
@@ -16,8 +20,17 @@ function responseFor(error: unknown) {
     return NextResponse.json({ error: 'Knowledge answer is temporarily unavailable' }, { status: 503 })
   }
   if (error instanceof KnowledgeAnswerProviderError) {
+    if (error.reason === 'all-models-failed') {
+      return NextResponse.json({ error: MODELSCOPE_ALL_MODELS_FAILED_MESSAGE }, { status: 502 })
+    }
+    if (error.reason === 'invalid-response') {
+      return NextResponse.json({ error: '模型返回结果格式错误' }, { status: 502 })
+    }
     const status = error.reason === 'timeout' ? 504 : 502
     return NextResponse.json({ error: 'Knowledge answer provider is temporarily unavailable' }, { status })
+  }
+  if (error instanceof ModelScopeConfigurationError) {
+    return NextResponse.json({ error: error.message }, { status: 503 })
   }
   console.error('[knowledge-answer]', {
     operation: 'route',
