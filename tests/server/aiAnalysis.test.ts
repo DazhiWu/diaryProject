@@ -57,6 +57,28 @@ describe('diary ModelScope analysis', () => {
     expect(mocks.runFallback).toHaveBeenCalledOnce()
     expect(mocks.completionCreate).toHaveBeenCalledOnce()
   })
+
+  it('returns a terminal empty-result error when a successful response omits choices', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    mocks.completionCreate.mockResolvedValue({
+      id: 'chatcmpl-missing-choices',
+      object: 'chat.completion',
+      created: 1,
+      model: 'first/model',
+    })
+
+    await expect(analyzeDiaryWithAI('日记正文')).rejects.toMatchObject({
+      status: 502,
+      message: '模型返回结果为空',
+    })
+    expect(mocks.completionCreate).toHaveBeenCalledOnce()
+    expect(consoleError).toHaveBeenCalledWith('[modelscope]', {
+      operation: 'analyze',
+      outcome: 'invalid-success-response',
+      model: 'first/model',
+      reason: 'missing-choices',
+    })
+  })
 })
 
 describe('diary ModelScope translation', () => {
@@ -71,6 +93,22 @@ describe('diary ModelScope translation', () => {
 
   it('returns a terminal response error for blank successful content', async () => {
     mocks.completionCreate.mockResolvedValue({ choices: [{ message: { content: '   ' } }] })
+
+    await expect(translateDiaryContent('日记正文')).rejects.toMatchObject({
+      status: 502,
+      message: '模型返回结果为空',
+    })
+    expect(mocks.completionCreate).toHaveBeenCalledOnce()
+  })
+
+  it('returns a terminal empty-result error when a successful response omits choices', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    mocks.completionCreate.mockResolvedValue({
+      id: 'chatcmpl-missing-choices',
+      object: 'chat.completion',
+      created: 1,
+      model: 'first/model',
+    })
 
     await expect(translateDiaryContent('日记正文')).rejects.toMatchObject({
       status: 502,

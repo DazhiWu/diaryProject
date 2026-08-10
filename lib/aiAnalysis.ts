@@ -14,6 +14,40 @@ export type AIAnalysisResult = {
   emotion: string;
 };
 
+type DiaryModelScopeOperation = 'analyze' | 'translate';
+
+type ModelScopeChatResponse = {
+  choices?: Array<{
+    message?: {
+      content?: unknown;
+    };
+  }>;
+};
+
+function readModelScopeResponseContent(
+  response: unknown,
+  operation: DiaryModelScopeOperation,
+  model: string,
+): string {
+  const choices = response && typeof response === 'object'
+    ? (response as ModelScopeChatResponse).choices
+    : undefined;
+
+  if (!Array.isArray(choices) || choices.length === 0) {
+    console.error('[modelscope]', {
+      operation,
+      outcome: 'invalid-success-response',
+      model,
+      reason: 'missing-choices',
+    });
+  }
+
+  const content = choices?.[0]?.message?.content;
+  const trimmed = typeof content === 'string' ? content.trim() : '';
+  if (!trimmed) throw new HttpError(502, '模型返回结果为空');
+  return trimmed;
+}
+
 export async function analyzeDiaryWithAI(content: string): Promise<AIAnalysisResult> {
   try {
     const client = await createModelScopeClient();
@@ -54,9 +88,7 @@ ${content}
           },
         }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
 
-        const responseContent = response.choices[0]?.message?.content?.trim();
-        if (!responseContent) throw new HttpError(502, '模型返回结果为空');
-        return responseContent;
+        return readModelScopeResponseContent(response, 'analyze', model);
       },
     });
 
@@ -102,9 +134,7 @@ ${content}
           },
         }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
 
-        const responseContent = response.choices[0]?.message?.content?.trim();
-        if (!responseContent) throw new HttpError(502, '模型返回结果为空');
-        return responseContent;
+        return readModelScopeResponseContent(response, 'translate', model);
       },
     });
   } catch (error: unknown) {
