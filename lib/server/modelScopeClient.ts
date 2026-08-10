@@ -4,6 +4,7 @@ import OpenAI from 'openai'
 
 import { getRuntimeEnvValue } from '@/lib/runtimeEnv'
 import { reserveModelScopeApiCall } from '@/lib/server/modelScopeQuota'
+import { HttpError } from '@/lib/server/session'
 
 export const MODELSCOPE_BASE_URL = 'https://api-inference.modelscope.cn/v1'
 export const MODELSCOPE_TIMEOUT_MS = 30_000
@@ -72,6 +73,7 @@ export async function getModelScopeChatModels(): Promise<string[]> {
 }
 
 export function isRetryableModelScopeRequestError(error: unknown): boolean {
+  if (error instanceof HttpError) return false
   const metadata = safeModelScopeErrorMetadata(error)
   return metadata.status !== undefined
     || RETRYABLE_ERROR_NAMES.has(metadata.name)

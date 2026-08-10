@@ -7,6 +7,7 @@ import {
   parseModelScopeChatModels,
   runModelScopeChatFallback,
 } from '@/lib/server/modelScopeClient'
+import { HttpError } from '@/lib/server/session'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -52,6 +53,10 @@ describe('ModelScope retryable request errors', () => {
 
   it('keeps an ordinary response-validation error terminal', () => {
     expect(isRetryableModelScopeRequestError(new Error('invalid response'))).toBe(false)
+  })
+
+  it('keeps a local HTTP response-validation error terminal', () => {
+    expect(isRetryableModelScopeRequestError(new HttpError(502, '模型返回结果格式错误'))).toBe(false)
   })
 })
 

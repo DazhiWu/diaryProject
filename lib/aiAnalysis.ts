@@ -1,10 +1,12 @@
 import {
   createModelScopeClient,
-  MODELSCOPE_CHAT_MODEL,
+  MODELSCOPE_ALL_MODELS_FAILED_MESSAGE,
   MODELSCOPE_TIMEOUT_MS,
+  ModelScopeConfigurationError,
+  ModelScopeModelsExhaustedError,
+  runModelScopeChatFallback,
   safeModelScopeErrorMetadata,
 } from '@/lib/server/modelScopeClient';
-import { reserveModelScopeApiCall } from '@/lib/server/modelScopeQuota';
 import { HttpError } from '@/lib/server/session';
 
 export type AIAnalysisResult = {
@@ -15,7 +17,6 @@ export type AIAnalysisResult = {
 export async function analyzeDiaryWithAI(content: string): Promise<AIAnalysisResult> {
   try {
     const client = await createModelScopeClient();
-    await reserveModelScopeApiCall();
 
     const prompt = `请仔细分析以下日记内容，先进行深度思考，然后提供两个输出：
 1. 标题：根据内容生成一个30字以内的简洁标题
@@ -36,58 +37,46 @@ ${content}
   "emotion": "情绪分析结果"
 }`;
 
-    const response = await (client.chat.completions.create as any)({
-      model: MODELSCOPE_CHAT_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      stream: false,
-      extra_body: {
-        enable_thinking: true,
-      },
-    }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
+    const aiResponse = await runModelScopeChatFallback({
+      operation: 'analyze',
+      attempt: async (model) => {
+        const response = await (client.chat.completions.create as any)({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          stream: false,
+          extra_body: {
+            enable_thinking: true,
+          },
+        }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
 
-    const aiResponse = response.choices[0]?.message?.content;
-    if (!aiResponse) {
-      throw new Error('AI分析未返回有效结果');
-    }
+        const responseContent = response.choices[0]?.message?.content?.trim();
+        if (!responseContent) throw new HttpError(502, '模型返回结果为空');
+        return responseContent;
+      },
+    });
 
     return parseAIAnalysisResult(aiResponse);
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof HttpError) throw error;
+    if (error instanceof ModelScopeModelsExhaustedError) {
+      throw new HttpError(502, MODELSCOPE_ALL_MODELS_FAILED_MESSAGE);
+    }
+    if (error instanceof ModelScopeConfigurationError) {
+      throw new HttpError(503, error.message);
+    }
     console.error('[modelscope]', { operation: 'analyze', outcome: 'failed', ...safeModelScopeErrorMetadata(error) });
-
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
-      throw new Error('网络连接错误，请检查网络连接或稍后重试');
-    }
-
-    if ((error.response && error.response.status === 401) || error.status === 401) {
-      throw new Error('API认证失败，请检查API密钥是否正确');
-    }
-
-    if ((error.response && error.response.status === 429) || error.status === 429) {
-      throw new Error('API调用次数超限，请稍后重试');
-    }
-
-    if (error.response) {
-      throw new Error(`API调用失败，状态码: ${error.response.status}`);
-    }
-
-    if (error.status) {
-      throw new Error(`API调用失败，状态码: ${error.status}`);
-    }
-
-    throw new Error(error.message || 'AI分析失败，请稍后重试');
+    throw new Error(error instanceof Error ? error.message : 'AI分析失败，请稍后重试');
   }
 }
 
 export async function translateDiaryContent(content: string): Promise<string> {
   try {
     const client = await createModelScopeClient();
-    await reserveModelScopeApiCall();
 
     const prompt = `请将以下中文日记内容准确、流畅地翻译成英文。保持原文的语气和情感，确保翻译质量。
 
@@ -96,40 +85,38 @@ ${content}
 
 请直接返回英文翻译结果，不要添加任何额外的解释或说明。`;
 
-    const response = await (client.chat.completions.create as any)({
-      model: MODELSCOPE_CHAT_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      stream: false,
-      extra_body: {
-        enable_thinking: true,
+    return await runModelScopeChatFallback({
+      operation: 'translate',
+      attempt: async (model) => {
+        const response = await (client.chat.completions.create as any)({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          stream: false,
+          extra_body: {
+            enable_thinking: true,
+          },
+        }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
+
+        const responseContent = response.choices[0]?.message?.content?.trim();
+        if (!responseContent) throw new HttpError(502, '模型返回结果为空');
+        return responseContent;
       },
-    }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
-
-    const aiResponse = response.choices[0]?.message?.content;
-
-    if (!aiResponse) {
-      throw new Error('翻译未返回有效结果');
-    }
-
-    return aiResponse.trim();
-  } catch (error: any) {
+    });
+  } catch (error: unknown) {
     if (error instanceof HttpError) throw error;
+    if (error instanceof ModelScopeModelsExhaustedError) {
+      throw new HttpError(502, MODELSCOPE_ALL_MODELS_FAILED_MESSAGE);
+    }
+    if (error instanceof ModelScopeConfigurationError) {
+      throw new HttpError(503, error.message);
+    }
     console.error('[modelscope]', { operation: 'translate', outcome: 'failed', ...safeModelScopeErrorMetadata(error) });
-
-    if ((error.response && error.response.status === 401) || error.status === 401) {
-      throw new Error('API认证失败，请检查API密钥是否正确');
-    }
-
-    if ((error.response && error.response.status === 429) || error.status === 429) {
-      throw new Error('API调用次数超限，请稍后重试');
-    }
-
-    throw new Error(error.message || '翻译失败，请稍后重试');
+    throw new Error(error instanceof Error ? error.message : '翻译失败，请稍后重试');
   }
 }
 
@@ -139,40 +126,21 @@ function parseAIAnalysisResult(text: string): AIAnalysisResult {
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '');
 
+  let value: unknown;
   try {
-    const result = JSON.parse(cleaned) as Partial<AIAnalysisResult>;
-
-    if (result.summary && result.emotion) {
-      return {
-        summary: result.summary,
-        emotion: result.emotion,
-      };
-    }
+    value = JSON.parse(cleaned);
   } catch {
-    console.warn('[modelscope]', { operation: 'parse-analysis', outcome: 'fallback' });
+    throw new HttpError(502, '模型返回结果格式错误');
   }
 
-  return extractInfoFromText(text);
-}
-
-function extractInfoFromText(text: string): AIAnalysisResult {
-  let summary = '无法生成摘要';
-  let emotion = '未知情绪';
-
-  const summaryMatch = text.match(/(?:标题|summary)[:：]?\s*(.+?)(?:\n|$)/i);
-  const emotionMatch = text.match(/(?:情绪|emotion)[:：]?\s*(.+?)(?:\n|$)/i);
-
-  if (summaryMatch?.[1]) {
-    summary = summaryMatch[1].trim();
-
-    if (summary.length > 30) {
-      summary = `${summary.substring(0, 30)}...`;
-    }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(502, '模型返回结果格式错误');
   }
 
-  if (emotionMatch?.[1]) {
-    emotion = emotionMatch[1].trim();
-  }
+  const result = value as Partial<AIAnalysisResult>;
+  const summary = typeof result.summary === 'string' ? result.summary.trim() : '';
+  const emotion = typeof result.emotion === 'string' ? result.emotion.trim() : '';
+  if (!summary || !emotion) throw new HttpError(502, '模型返回结果格式错误');
 
   return { summary, emotion };
 }
