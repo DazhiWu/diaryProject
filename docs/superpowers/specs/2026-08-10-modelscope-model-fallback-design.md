@@ -1,5 +1,7 @@
 # ModelScope Ordered Model Fallback Design
 
+> **Superseded behavior note (2026-08-10):** This file records the original fallback design. Its successful-response validation rules are historical. The approved current allowlist and terminal-default design are in [`2026-08-10-modelscope-success-response-hardening-design.md`](2026-08-10-modelscope-success-response-hardening-design.md).
+
 ## Goal
 
 Replace the source-code `MODELSCOPE_CHAT_MODEL` constant with a server-only runtime configuration that accepts an ordered list of ModelScope chat models. Analysis, translation, and grounded knowledge answers try the configured models in order and return as soon as one usable upstream request succeeds.

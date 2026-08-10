@@ -3,7 +3,10 @@ import {
   MODELSCOPE_ALL_MODELS_FAILED_MESSAGE,
   MODELSCOPE_TIMEOUT_MS,
   ModelScopeConfigurationError,
+  ModelScopeInvalidAnalysisError,
   ModelScopeModelsExhaustedError,
+  modelScopeTerminalHttpError,
+  readModelScopeChatContent,
   runModelScopeChatFallback,
   safeModelScopeErrorMetadata,
 } from '@/lib/server/modelScopeClient';
@@ -13,40 +16,6 @@ export type AIAnalysisResult = {
   summary: string;
   emotion: string;
 };
-
-type DiaryModelScopeOperation = 'analyze' | 'translate';
-
-type ModelScopeChatResponse = {
-  choices?: Array<{
-    message?: {
-      content?: unknown;
-    };
-  }>;
-};
-
-function readModelScopeResponseContent(
-  response: unknown,
-  operation: DiaryModelScopeOperation,
-  model: string,
-): string {
-  const choices = response && typeof response === 'object'
-    ? (response as ModelScopeChatResponse).choices
-    : undefined;
-
-  if (!Array.isArray(choices) || choices.length === 0) {
-    console.error('[modelscope]', {
-      operation,
-      outcome: 'invalid-success-response',
-      model,
-      reason: 'missing-choices',
-    });
-  }
-
-  const content = choices?.[0]?.message?.content;
-  const trimmed = typeof content === 'string' ? content.trim() : '';
-  if (!trimmed) throw new HttpError(502, '模型返回结果为空');
-  return trimmed;
-}
 
 export async function analyzeDiaryWithAI(content: string): Promise<AIAnalysisResult> {
   try {
@@ -71,7 +40,7 @@ ${content}
   "emotion": "情绪分析结果"
 }`;
 
-    const aiResponse = await runModelScopeChatFallback({
+    return await runModelScopeChatFallback({
       operation: 'analyze',
       attempt: async (model) => {
         const response = await (client.chat.completions.create as any)({
@@ -88,11 +57,9 @@ ${content}
           },
         }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
 
-        return readModelScopeResponseContent(response, 'analyze', model);
+        return parseAIAnalysisResult(readModelScopeChatContent(response));
       },
     });
-
-    return parseAIAnalysisResult(aiResponse);
   } catch (error: unknown) {
     if (error instanceof HttpError) throw error;
     if (error instanceof ModelScopeModelsExhaustedError) {
@@ -102,7 +69,9 @@ ${content}
       throw new HttpError(503, error.message);
     }
     console.error('[modelscope]', { operation: 'analyze', outcome: 'failed', ...safeModelScopeErrorMetadata(error) });
-    throw new Error(error instanceof Error ? error.message : 'AI分析失败，请稍后重试');
+    const terminalHttpError = modelScopeTerminalHttpError(error, 'AI分析');
+    if (terminalHttpError) throw terminalHttpError;
+    throw new HttpError(500, 'AI分析项目处理异常，请稍后重试');
   }
 }
 
@@ -134,7 +103,7 @@ ${content}
           },
         }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
 
-        return readModelScopeResponseContent(response, 'translate', model);
+        return readModelScopeChatContent(response);
       },
     });
   } catch (error: unknown) {
@@ -146,7 +115,9 @@ ${content}
       throw new HttpError(503, error.message);
     }
     console.error('[modelscope]', { operation: 'translate', outcome: 'failed', ...safeModelScopeErrorMetadata(error) });
-    throw new Error(error instanceof Error ? error.message : '翻译失败，请稍后重试');
+    const terminalHttpError = modelScopeTerminalHttpError(error, '翻译');
+    if (terminalHttpError) throw terminalHttpError;
+    throw new HttpError(500, '翻译项目处理异常，请稍后重试');
   }
 }
 
@@ -160,17 +131,17 @@ function parseAIAnalysisResult(text: string): AIAnalysisResult {
   try {
     value = JSON.parse(cleaned);
   } catch {
-    throw new HttpError(502, '模型返回结果格式错误');
+    throw new ModelScopeInvalidAnalysisError();
   }
 
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new HttpError(502, '模型返回结果格式错误');
+    throw new ModelScopeInvalidAnalysisError();
   }
 
   const result = value as Partial<AIAnalysisResult>;
   const summary = typeof result.summary === 'string' ? result.summary.trim() : '';
   const emotion = typeof result.emotion === 'string' ? result.emotion.trim() : '';
-  if (!summary || !emotion) throw new HttpError(502, '模型返回结果格式错误');
+  if (!summary || !emotion) throw new ModelScopeInvalidAnalysisError();
 
   return { summary, emotion };
 }

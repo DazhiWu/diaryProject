@@ -1,5 +1,7 @@
 # ModelScope Ordered Model Fallback Implementation Plan
 
+> **Superseded behavior note (2026-08-10):** This file records the original fallback implementation plan. Its response-validation and HTTP-status classification rules are historical and must not be used as current requirements. The approved current allowlist, terminal-default policy, and regression plan are in [`2026-08-10-modelscope-success-response-hardening.md`](2026-08-10-modelscope-success-response-hardening.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Read an ordered comma-separated ModelScope chat-model list from `MODELSCOPE_CHAT_MODEL` and fall through only on timeout, network, or HTTP failures across analysis, translation, and factual-answer generation.

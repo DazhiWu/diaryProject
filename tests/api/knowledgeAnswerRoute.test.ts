@@ -127,10 +127,10 @@ describe('knowledge answer route boundary', () => {
     expect(timeoutResponse.status).toBe(504)
     await expect(timeoutResponse.json()).resolves.toEqual({ error: 'Knowledge answer provider is temporarily unavailable' })
 
-    mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeAnswerProviderError('invalid-response'))
-    const malformedResponse = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
-    expect(malformedResponse.status).toBe(502)
-    await expect(malformedResponse.json()).resolves.toEqual({ error: '模型返回结果格式错误' })
+    mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeAnswerProviderError('project-error'))
+    const projectResponse = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
+    expect(projectResponse.status).toBe(500)
+    await expect(projectResponse.json()).resolves.toEqual({ error: '事实问答项目处理异常，请稍后重试' })
   })
 
   it('reports complete ModelScope model exhaustion', async () => {

@@ -23,8 +23,8 @@ function responseFor(error: unknown) {
     if (error.reason === 'all-models-failed') {
       return NextResponse.json({ error: MODELSCOPE_ALL_MODELS_FAILED_MESSAGE }, { status: 502 })
     }
-    if (error.reason === 'invalid-response') {
-      return NextResponse.json({ error: '模型返回结果格式错误' }, { status: 502 })
+    if (error.reason === 'project-error') {
+      return NextResponse.json({ error: '事实问答项目处理异常，请稍后重试' }, { status: 500 })
     }
     const status = error.reason === 'timeout' ? 504 : 502
     return NextResponse.json({ error: 'Knowledge answer provider is temporarily unavailable' }, { status })

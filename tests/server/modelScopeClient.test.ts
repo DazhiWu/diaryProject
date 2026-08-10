@@ -35,7 +35,10 @@ describe('ModelScope model configuration', () => {
 
 describe('ModelScope retryable request errors', () => {
   it.each([
-    [{ status: 401 }],
+    [{ status: 404 }],
+    [{ status: 408 }],
+    [{ status: 410 }],
+    [{ status: 425 }],
     [{ response: { status: 429 } }],
     [{ status: 503 }],
     [{ name: 'TimeoutError' }],
@@ -48,6 +51,29 @@ describe('ModelScope retryable request errors', () => {
     [{ code: 'ETIMEDOUT' }],
     [{ code: 'EAI_AGAIN' }],
   ])('classifies an upstream request failure as retryable: %j', (error) => {
+    expect(isRetryableModelScopeRequestError(error)).toBe(true)
+  })
+
+  it.each([
+    [{ status: 400 }],
+    [{ status: 401 }],
+    [{ status: 401, code: 'model_access_denied' }],
+    [{ status: 403 }],
+    [{ status: 405 }],
+    [{ status: 409 }],
+    [{ status: 415 }],
+    [{ status: 422 }],
+    [{ status: 418 }],
+  ])('keeps an ambiguous project/request HTTP failure terminal: %j', (error) => {
+    expect(isRetryableModelScopeRequestError(error)).toBe(false)
+  })
+
+  it.each([
+    [{ status: 400, code: 'model_not_found' }],
+    [{ status: 403, code: 'MODEL_ACCESS_DENIED' }],
+    [{ status: 409, code: 'model_unavailable' }],
+    [{ status: 422, code: 'model_not_supported' }],
+  ])('switches on an explicit model-level provider error: %j', (error) => {
     expect(isRetryableModelScopeRequestError(error)).toBe(true)
   })
 

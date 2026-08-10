@@ -5,7 +5,6 @@ import {
   answerPrivateKnowledgeQuestion,
   buildKnowledgeAnswerPrompts,
   INSUFFICIENT_KNOWLEDGE_ANSWER,
-  KnowledgeAnswerProviderError,
   type KnowledgeAnswerCitation,
 } from '@/lib/server/knowledgeAnswer'
 import type { KnowledgeSearchResult } from '@/lib/server/knowledgeSearch'
@@ -53,6 +52,21 @@ function dependencies(options: {
     runFallback,
     complete,
   }
+}
+
+async function useActualFallback(
+  deps: ReturnType<typeof dependencies>,
+  models: string[] = ['first/model'],
+) {
+  const actual = await vi.importActual<typeof import('@/lib/server/modelScopeClient')>(
+    '@/lib/server/modelScopeClient',
+  )
+  const reserveQuota = vi.fn().mockResolvedValue({})
+  deps.runFallback.mockImplementation((options) => actual.runModelScopeChatFallback(
+    options,
+    { loadModels: async () => models, reserveQuota },
+  ))
+  return reserveQuota
 }
 
 describe('knowledge factual answer orchestration', () => {
@@ -156,9 +170,10 @@ describe('knowledge factual answer orchestration', () => {
   ])('rejects malformed structured output: %s', async (_name, output) => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const deps = dependencies({ completion: JSON.stringify(output) })
+    await useActualFallback(deps)
 
     await expect(answerPrivateKnowledgeQuestion({ question: '问题' }, deps))
-      .rejects.toMatchObject({ reason: 'invalid-response' })
+      .rejects.toMatchObject({ reason: 'all-models-failed' })
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain(JSON.stringify(output))
     consoleError.mockRestore()
   })
@@ -166,11 +181,51 @@ describe('knowledge factual answer orchestration', () => {
   it('rejects non-JSON provider output instead of displaying free-form text', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const deps = dependencies({ completion: '根据日记，我认为答案是…… [S1]' })
+    await useActualFallback(deps)
 
     await expect(answerPrivateKnowledgeQuestion({ question: '问题' }, deps))
-      .rejects.toBeInstanceOf(KnowledgeAnswerProviderError)
+      .rejects.toMatchObject({ reason: 'all-models-failed' })
     expect(deps.runFallback).toHaveBeenCalledOnce()
     expect(deps.complete).toHaveBeenCalledOnce()
+    consoleError.mockRestore()
+  })
+
+  it('switches models after an explicit citation-contract validation failure', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const actual = await vi.importActual<typeof import('@/lib/server/modelScopeClient')>(
+      '@/lib/server/modelScopeClient',
+    )
+    const reserveQuota = vi.fn().mockResolvedValue({})
+    const deps = dependencies({})
+    deps.complete
+      .mockResolvedValueOnce(JSON.stringify({
+        answer: '回答引用了不存在的证据。[S9]',
+        evidenceStatus: 'supported',
+        citationIds: ['S9'],
+      }))
+      .mockResolvedValueOnce(JSON.stringify({
+        answer: '日记记录了先建立事实检索层的决定。[S1]',
+        evidenceStatus: 'supported',
+        citationIds: ['S1'],
+      }))
+    deps.runFallback.mockImplementation((options) => actual.runModelScopeChatFallback(
+      options,
+      {
+        loadModels: async () => ['first/model', 'second/model'],
+        reserveQuota,
+      },
+    ))
+
+    await expect(answerPrivateKnowledgeQuestion({ question: '问题' }, deps)).resolves.toMatchObject({
+      answer: '日记记录了先建立事实检索层的决定。[S1]',
+      evidenceStatus: 'supported',
+    })
+    expect(deps.complete.mock.calls.map(([model]) => model)).toEqual([
+      'first/model',
+      'second/model',
+    ])
+    expect(reserveQuota).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('回答引用了不存在的证据')
     consoleError.mockRestore()
   })
 
@@ -181,6 +236,17 @@ describe('knowledge factual answer orchestration', () => {
     await expect(answerPrivateKnowledgeQuestion({ question: '问题' }, deps))
       .rejects.toMatchObject({ status })
     expect(deps.complete).not.toHaveBeenCalled()
+  })
+
+  it('reports an unexpected generation error as a project-side failure', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const deps = dependencies({})
+    deps.runFallback.mockRejectedValue(new TypeError('private internal detail'))
+
+    await expect(answerPrivateKnowledgeQuestion({ question: '问题' }, deps))
+      .rejects.toMatchObject({ reason: 'project-error' })
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('private internal detail')
+    consoleError.mockRestore()
   })
 
   it('maps complete model-list exhaustion to a distinct provider reason', async () => {

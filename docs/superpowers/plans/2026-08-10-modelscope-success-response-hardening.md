@@ -1,80 +1,65 @@
-# ModelScope Successful-Response Hardening Implementation Plan
+# ModelScope Fallback Classification Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Return an explicit terminal 502 when ModelScope returns HTTP success without usable `choices`, instead of leaking a `TypeError` as generic 500.
+**Goal:** Switch models only for explicitly identified provider/model failures and return safe reasons for configuration, request, database, and unexpected project-side failures.
 
-**Architecture:** Keep fallback classification unchanged. Add one private response-content reader in `lib/aiAnalysis.ts` and use it for analysis and translation so HTTP-success response validation remains terminal and consistent.
+**Architecture:** Centralize the allowlist and typed model-response failures in `lib/server/modelScopeClient.ts`. Validate analysis and factual-answer contracts inside each model attempt so expected provider-output failures can advance without making unknown program errors retryable.
 
 **Tech Stack:** TypeScript, OpenAI-compatible ModelScope responses, Next.js App Router, Vitest
 
 ## Global Constraints
 
-- Only timeouts, network failures, and HTTP non-2xx responses may advance to the next configured model.
-- Missing, empty, or content-less `choices` must return `HttpError(502, '模型返回结果为空')` without another model attempt.
-- Logs must not contain diary text, translation text, model output, credentials, or raw provider responses.
-- Do not change database, quota, environment-variable, or deployment behavior.
+- Every model attempt reserves one daily quota slot; quota failure stops before the next HTTP call.
+- Unknown errors default to terminal.
+- Never log diary text, prompts, provider output, credentials, or database content.
+- Do not change the database schema, environment-variable names, quota limit, or deployment mechanism.
 
 ---
 
-### Task 1: Harden successful ModelScope response handling
+### Task 1: Classify request and response failures
 
 **Files:**
-- Modify: `tests/server/aiAnalysis.test.ts`
+- Modify: `lib/server/modelScopeClient.ts`
+- Test: `tests/server/modelScopeClient.test.ts`
+
+- [ ] Add RED tests for retryable HTTP/model codes and terminal ambiguous request statuses.
+- [ ] Add typed retryable errors for missing/blank content and invalid analysis/factual-answer contracts.
+- [ ] Implement the allowlist and safe terminal HTTP feedback.
+- [ ] Run `TMPDIR=/tmp pnpm exec vitest run tests/server/modelScopeClient.test.ts` and verify GREEN.
+
+### Task 2: Validate each model attempt
+
+**Files:**
 - Modify: `lib/aiAnalysis.ts`
+- Modify: `lib/server/knowledgeAnswer.ts`
+- Test: `tests/server/aiAnalysis.test.ts`
+- Test: `tests/server/knowledgeAnswer.test.ts`
 
-**Interfaces:**
-- Consumes: the OpenAI-compatible completion result returned by `client.chat.completions.create`.
-- Produces: private `readModelScopeResponseContent(response, operation, model): string`, which returns trimmed content or throws the existing terminal empty-result `HttpError`.
+- [ ] Add RED tests proving empty/invalid analysis output and invalid factual citations advance to a second model and reserve twice.
+- [ ] Move analysis parsing and factual-answer parsing/citation validation inside fallback attempts.
+- [ ] Preserve valid output and valid `insufficient` behavior.
+- [ ] Run both focused test files and verify GREEN.
 
-- [ ] **Step 1: Write the failing regression tests**
+### Task 3: Surface terminal project-side failures
 
-Add analysis and translation cases whose completion mock resolves to `{ id, object, created, model }` without `choices`. Assert rejection with status `502` and message `模型返回结果为空`. Preserve the existing fallback double and assert the completion is called once, proving no second model is tried.
+**Files:**
+- Modify: `app/api/diaries/[id]/analysis/route.ts`
+- Modify: `app/api/knowledge/answer/route.ts`
+- Test: `tests/api/diaryAnalysisRoute.test.ts`
+- Test: `tests/api/knowledgeAnswerRoute.test.ts`
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [ ] Add RED tests for safe request-contract, unexpected program, and database persistence feedback.
+- [ ] Map known terminal failures to bounded `HttpError`/provider reasons without exposing internal messages.
+- [ ] Verify terminal failures do not make another model attempt.
 
-Run: `pnpm exec vitest run tests/server/aiAnalysis.test.ts`
+### Task 4: Document and verify
 
-Expected: both new cases fail because the current direct `response.choices[0]` access becomes a `TypeError` without status 502.
+**Files:**
+- Modify: `README.md`
+- Modify: `AGENTS.md`
+- Modify: `docs/DEPLOY.md`
 
-- [ ] **Step 3: Implement the minimal shared reader**
-
-Use a bounded structural type with optional `choices`, safely read `response?.choices?.[0]?.message?.content`, and trim only strings. For missing `choices`, log fixed metadata:
-
-```ts
-console.error('[modelscope]', {
-  operation,
-  outcome: 'invalid-success-response',
-  model,
-  reason: 'missing-choices',
-})
-```
-
-Throw `new HttpError(502, '模型返回结果为空')` for absent or blank content. Replace both unsafe analysis and translation reads with the helper.
-
-- [ ] **Step 4: Run the focused tests and verify GREEN**
-
-Run: `pnpm exec vitest run tests/server/aiAnalysis.test.ts`
-
-Expected: all cases pass with no unexpected warnings or errors.
-
-- [ ] **Step 5: Run complete verification**
-
-Run in order:
-
-```bash
-pnpm test
-pnpm lint
-pnpm build
-pnpm cf:build
-git diff --check
-```
-
-Expected: every command exits 0. Inspect `git diff` and confirm only the plan, regression tests, and response hardening code changed.
-
-- [ ] **Step 6: Commit the implementation**
-
-```bash
-git add docs/superpowers/plans/2026-08-10-modelscope-success-response-hardening.md tests/server/aiAnalysis.test.ts lib/aiAnalysis.ts
-git commit -m "fix: handle malformed ModelScope success responses"
-```
+- [ ] Replace broad HTTP fallback wording with the explicit allowlist and terminal default.
+- [ ] Run `TMPDIR=/tmp pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm cf:build`.
+- [ ] Run `git diff --check`, inspect the final diff, and commit the verified change.

@@ -1,27 +1,33 @@
-# ModelScope Successful-Response Hardening Design
+# ModelScope Fallback Classification Design
 
 ## Problem
 
-ModelScope can return an HTTP-success response that does not contain the OpenAI-compatible `choices` array. Diary analysis and translation currently read `response.choices[0]`, so this response shape throws a `TypeError`. The fallback executor treats that `TypeError` as terminal, and the route hides it behind a generic `500 Request failed` response.
+ModelScope failures come from different ownership boundaries. Provider/model failures can be recovered by trying the next configured model, while configuration, quota, request-construction, database, and unexpected program errors will normally affect every model and must be surfaced without consuming more quota. HTTP status alone is not sufficient: some non-2xx responses are model availability failures, while others indicate authentication or a possibly incorrect project request.
 
-## Required behavior
+## Decision
 
-- Treat a successful HTTP response with a missing, empty, or content-less `choices` value as the existing terminal `502 模型返回结果为空` condition.
-- Do not try the next configured model for this condition.
-- Continue trying the next model only for timeouts, network failures, and HTTP non-2xx responses.
-- Preserve the existing terminal `502 模型返回结果格式错误` behavior for non-empty analysis output that fails JSON validation.
-- Never log diary text, translation text, model output, credentials, or raw provider responses.
+Fallback uses an explicit allowlist and defaults unknown errors to terminal.
+
+The next model is allowed for network/timeout errors, HTTP 404/408/410/425/429/5xx, safe provider codes that explicitly identify model-level availability/support/access failures, missing or blank completion content, invalid analysis JSON/fields, and invalid factual-answer JSON/citations.
+
+The request stops for authentication/configuration/quota failures, ambiguous request-contract HTTP responses, local request/auth/input `HttpError`, database persistence failures, and unexpected exceptions such as an unclassified `TypeError`. HTTP 400/403/405/409/415/422 advances only when its safe provider code is in the model-level allowlist.
+
+Every attempted model reserves one daily quota slot. Complete allowlisted exhaustion returns `所有模型 API 调用失败`. A valid factual-answer `insufficient` result is a successful business result and never advances.
 
 ## Implementation
 
-Add a small response-content reader in `lib/aiAnalysis.ts`. It safely traverses `choices?.[0]?.message?.content`, trims string content, and throws the existing `HttpError(502, '模型返回结果为空')` for every absent or blank value. Analysis and translation will share this reader so their response handling cannot drift.
+`lib/server/modelScopeClient.ts` owns the shared classification, bounded response-content reader, retryable response-error classes/codes, and safe terminal HTTP feedback. OpenAI SDK automatic retries remain disabled.
 
-When the response is structurally missing `choices`, emit bounded metadata containing only the operation, selected model, outcome, and a fixed reason such as `missing-choices`. The `HttpError` remains terminal under the existing fallback classifier.
+Analysis parsing happens inside each fallback attempt so expected empty/invalid model output can advance. Factual-answer parsing and server-owned `S1`–`S5` citation validation also happen inside each attempt. Expected contract errors use retryable typed errors; unexpected parser exceptions remain terminal.
+
+Routes return bounded reasons for terminal request-contract, configuration, project-processing, and analysis-persistence failures. Logs contain only operation, model, category/name, safe status, and safe code. They never contain diary text, prompts, raw provider output, credentials, or database content.
 
 ## Verification
 
-- Add regression coverage for analysis and translation responses with no `choices` field.
-- Assert the returned error is the explicit terminal 502 and that only one model attempt occurs.
-- Run the focused tests, the full test suite, lint, the Next.js build, and the Cloudflare/OpenNext build.
+- Verify retryable and terminal HTTP/status-code matrices.
+- Verify missing/blank content, invalid analysis output, and invalid factual citations advance in order and reserve once per attempt.
+- Verify valid output and valid insufficient-evidence output stop immediately.
+- Verify configuration, quota, request-contract, database, and unexpected program errors do not advance and return safe feedback.
+- Run focused tests, the full suite, lint, Next.js build, and Cloudflare/OpenNext build.
 
-No database, environment-variable, quota, or deployment documentation changes are required.
+No database schema, environment-variable name, quota limit, or deployment mechanism changes are required.

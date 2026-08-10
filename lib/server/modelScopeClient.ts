@@ -11,8 +11,8 @@ export const MODELSCOPE_TIMEOUT_MS = 30_000
 export const MODELSCOPE_ALL_MODELS_FAILED_MESSAGE = '所有模型 API 调用失败'
 
 export class ModelScopeConfigurationError extends Error {
-  constructor() {
-    super('MODELSCOPE_CHAT_MODEL 未配置或没有有效模型')
+  constructor(message = 'MODELSCOPE_CHAT_MODEL 未配置或没有有效模型') {
+    super(message)
     this.name = 'ModelScopeConfigurationError'
   }
 }
@@ -21,6 +21,44 @@ export class ModelScopeModelsExhaustedError extends Error {
   constructor() {
     super(MODELSCOPE_ALL_MODELS_FAILED_MESSAGE)
     this.name = 'ModelScopeModelsExhaustedError'
+  }
+}
+
+export class ModelScopeRetryableResponseError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+  ) {
+    super(message)
+    this.name = 'ModelScopeRetryableResponseError'
+  }
+}
+
+export class ModelScopeMissingChoicesError extends ModelScopeRetryableResponseError {
+  constructor() {
+    super('ModelScope successful response did not include choices', 'MISSING_CHOICES')
+    this.name = 'ModelScopeMissingChoicesError'
+  }
+}
+
+export class ModelScopeEmptyContentError extends ModelScopeRetryableResponseError {
+  constructor() {
+    super('ModelScope successful response did not include usable content', 'EMPTY_CONTENT')
+    this.name = 'ModelScopeEmptyContentError'
+  }
+}
+
+export class ModelScopeInvalidAnalysisError extends ModelScopeRetryableResponseError {
+  constructor() {
+    super('ModelScope analysis response did not match the required contract', 'INVALID_ANALYSIS')
+    this.name = 'ModelScopeInvalidAnalysisError'
+  }
+}
+
+export class ModelScopeInvalidKnowledgeAnswerError extends ModelScopeRetryableResponseError {
+  constructor() {
+    super('ModelScope knowledge answer did not match the required contract', 'INVALID_KNOWLEDGE_ANSWER')
+    this.name = 'ModelScopeInvalidKnowledgeAnswerError'
   }
 }
 
@@ -59,6 +97,16 @@ const RETRYABLE_ERROR_CODES = new Set([
   'EAI_AGAIN',
 ])
 
+const RETRYABLE_HTTP_STATUSES = new Set([404, 408, 410, 425, 429])
+
+const RETRYABLE_PROVIDER_ERROR_CODES = new Set([
+  'MODEL_ACCESS_DENIED',
+  'MODEL_NOT_FOUND',
+  'MODEL_NOT_SUPPORTED',
+  'MODEL_OVERLOADED',
+  'MODEL_UNAVAILABLE',
+])
+
 export function parseModelScopeChatModels(raw: string | undefined): string[] {
   return (raw ?? '')
     .split(',')
@@ -74,10 +122,48 @@ export async function getModelScopeChatModels(): Promise<string[]> {
 
 export function isRetryableModelScopeRequestError(error: unknown): boolean {
   if (error instanceof HttpError) return false
+  if (error instanceof ModelScopeRetryableResponseError) return true
   const metadata = safeModelScopeErrorMetadata(error)
-  return metadata.status !== undefined
+  if (metadata.status === 401) return false
+  const normalizedCode = metadata.code?.toUpperCase()
+  const retryableStatus = metadata.status !== undefined
+    && (RETRYABLE_HTTP_STATUSES.has(metadata.status) || metadata.status >= 500)
+  return retryableStatus
     || RETRYABLE_ERROR_NAMES.has(metadata.name)
     || (metadata.code !== undefined && RETRYABLE_ERROR_CODES.has(metadata.code))
+    || (normalizedCode !== undefined && RETRYABLE_PROVIDER_ERROR_CODES.has(normalizedCode))
+}
+
+type ModelScopeChatResponse = {
+  choices?: Array<{
+    message?: {
+      content?: unknown
+    }
+  }>
+}
+
+export function readModelScopeChatContent(response: unknown): string {
+  const choices = response && typeof response === 'object'
+    ? (response as ModelScopeChatResponse).choices
+    : undefined
+  if (!Array.isArray(choices) || choices.length === 0) {
+    throw new ModelScopeMissingChoicesError()
+  }
+
+  const content = choices[0]?.message?.content
+  const trimmed = typeof content === 'string' ? content.trim() : ''
+  if (!trimmed) throw new ModelScopeEmptyContentError()
+  return trimmed
+}
+
+export function modelScopeTerminalHttpError(error: unknown, operationLabel: string): HttpError | null {
+  const { status } = safeModelScopeErrorMetadata(error)
+  if (status === undefined) return null
+  if (status === 401) return new HttpError(503, '模型服务认证失败，未切换模型')
+  if ([400, 405, 415, 422].includes(status)) {
+    return new HttpError(500, `${operationLabel}请求参数或接口不兼容，未切换模型`)
+  }
+  return new HttpError(502, `${operationLabel}模型请求失败（HTTP ${status}），未切换模型`)
 }
 
 export type ModelScopeFallbackOptions<T> = {
@@ -123,7 +209,7 @@ export async function runModelScopeChatFallback<T>(
 
 export async function createModelScopeClient(): Promise<OpenAI> {
   const apiKey = await getRuntimeEnvValue('MODELSCOPE_TOKEN_API_KEY')
-  if (!apiKey) throw new Error('MODELSCOPE_TOKEN_API_KEY is not configured')
+  if (!apiKey) throw new ModelScopeConfigurationError('MODELSCOPE_TOKEN_API_KEY 未配置')
 
   return new OpenAI({
     baseURL: MODELSCOPE_BASE_URL,

@@ -8,10 +8,15 @@ import {
   createModelScopeClient,
   MODELSCOPE_TIMEOUT_MS,
   type ModelScopeFallbackOptions,
+  ModelScopeConfigurationError,
+  ModelScopeInvalidKnowledgeAnswerError,
   ModelScopeModelsExhaustedError,
+  modelScopeTerminalHttpError,
+  readModelScopeChatContent,
   runModelScopeChatFallback,
   safeModelScopeErrorMetadata,
 } from '@/lib/server/modelScopeClient'
+import { HttpError } from '@/lib/server/session'
 
 export const INSUFFICIENT_KNOWLEDGE_ANSWER = '当前日记语料中没有足够证据回答这个问题。'
 
@@ -34,6 +39,8 @@ export type KnowledgeAnswerResponse = {
   rerankApplied: boolean
 }
 
+type ParsedKnowledgeAnswer = Omit<KnowledgeAnswerResponse, 'rerankApplied'>
+
 type KnowledgeAnswerPrompts = {
   system: string
   user: string
@@ -44,7 +51,7 @@ type KnowledgeAnswerCompletion = (model: string, prompts: KnowledgeAnswerPrompts
 type KnowledgeAnswerDependencies = {
   search: typeof searchPrivateKnowledge
   prepareCompletion(): Promise<KnowledgeAnswerCompletion>
-  runFallback(options: ModelScopeFallbackOptions<string>): Promise<string>
+  runFallback(options: ModelScopeFallbackOptions<ParsedKnowledgeAnswer>): Promise<ParsedKnowledgeAnswer>
 }
 
 type ModelScopeCompletionResponse = {
@@ -80,7 +87,7 @@ async function prepareModelScopeCompletion(): Promise<KnowledgeAnswerCompletion>
       },
     }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) })
 
-    return response.choices?.[0]?.message?.content ?? ''
+    return readModelScopeChatContent(response)
   }
 }
 
@@ -91,7 +98,7 @@ const DEFAULT_DEPENDENCIES: KnowledgeAnswerDependencies = {
 }
 
 export class KnowledgeAnswerProviderError extends Error {
-  constructor(public readonly reason: 'timeout' | 'invalid-response' | 'unavailable' | 'all-models-failed') {
+  constructor(public readonly reason: 'timeout' | 'unavailable' | 'all-models-failed' | 'project-error') {
     super('Knowledge answer provider failed')
     this.name = 'KnowledgeAnswerProviderError'
   }
@@ -157,16 +164,16 @@ function cleanStructuredResponse(raw: string): string {
 function parseKnowledgeAnswer(
   raw: string,
   citationsById: ReadonlyMap<string, KnowledgeAnswerCitation>,
-): Omit<KnowledgeAnswerResponse, 'rerankApplied'> {
+): ParsedKnowledgeAnswer {
   let value: unknown
   try {
     value = JSON.parse(cleanStructuredResponse(raw))
   } catch {
-    throw new KnowledgeAnswerProviderError('invalid-response')
+    throw new ModelScopeInvalidKnowledgeAnswerError()
   }
 
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new KnowledgeAnswerProviderError('invalid-response')
+    throw new ModelScopeInvalidKnowledgeAnswerError()
   }
 
   const object = value as Record<string, unknown>
@@ -180,28 +187,28 @@ function parseKnowledgeAnswer(
     || !Array.isArray(citationIds)
     || citationIds.some((citationId) => typeof citationId !== 'string')
   ) {
-    throw new KnowledgeAnswerProviderError('invalid-response')
+    throw new ModelScopeInvalidKnowledgeAnswerError()
   }
 
   const ids = citationIds as string[]
   const uniqueIds = new Set(ids)
   if (uniqueIds.size !== ids.length || ids.some((citationId) => !citationsById.has(citationId))) {
-    throw new KnowledgeAnswerProviderError('invalid-response')
+    throw new ModelScopeInvalidKnowledgeAnswerError()
   }
 
   const inlineIds = [...answer.matchAll(/\[(S\d+)\]/gu)].map((match) => match[1]!)
   if (inlineIds.some((citationId) => !citationsById.has(citationId))) {
-    throw new KnowledgeAnswerProviderError('invalid-response')
+    throw new ModelScopeInvalidKnowledgeAnswerError()
   }
   const inlineIdSet = new Set(inlineIds)
 
   if (evidenceStatus === 'supported') {
-    if (ids.length === 0 || inlineIdSet.size === 0) throw new KnowledgeAnswerProviderError('invalid-response')
+    if (ids.length === 0 || inlineIdSet.size === 0) throw new ModelScopeInvalidKnowledgeAnswerError()
     if (ids.some((citationId) => !inlineIdSet.has(citationId)) || [...inlineIdSet].some((citationId) => !uniqueIds.has(citationId))) {
-      throw new KnowledgeAnswerProviderError('invalid-response')
+      throw new ModelScopeInvalidKnowledgeAnswerError()
     }
   } else if (ids.length > 0 || inlineIds.length > 0) {
-    throw new KnowledgeAnswerProviderError('invalid-response')
+    throw new ModelScopeInvalidKnowledgeAnswerError()
   }
 
   return {
@@ -211,7 +218,7 @@ function parseKnowledgeAnswer(
   }
 }
 
-function logProviderFailure(operation: 'prepare' | 'generate' | 'parse', error: unknown, reason: KnowledgeAnswerProviderError['reason']) {
+function logProviderFailure(operation: 'prepare' | 'generate', error: unknown, reason: KnowledgeAnswerProviderError['reason']) {
   console.error('[knowledge-answer]', {
     operation,
     outcome: 'failed',
@@ -247,35 +254,36 @@ export async function answerPrivateKnowledgeQuestion(
   try {
     complete = await dependencies.prepareCompletion()
   } catch (error) {
+    if (error instanceof HttpError || error instanceof ModelScopeConfigurationError) throw error
     logProviderFailure('prepare', error, 'unavailable')
-    throw new KnowledgeAnswerProviderError('unavailable')
+    const terminalHttpError = modelScopeTerminalHttpError(error, '事实问答')
+    if (terminalHttpError) throw terminalHttpError
+    throw new KnowledgeAnswerProviderError('project-error')
   }
 
-  let raw: string
+  let parsed: ParsedKnowledgeAnswer
   try {
-    raw = await dependencies.runFallback({
+    parsed = await dependencies.runFallback({
       operation: 'knowledge-answer',
-      attempt: (model) => complete(model, prompts),
+      attempt: async (model) => parseKnowledgeAnswer(
+        await complete(model, prompts),
+        citationsById,
+      ),
     })
   } catch (error) {
     if (error instanceof ModelScopeModelsExhaustedError) {
       logProviderFailure('generate', error, 'all-models-failed')
       throw new KnowledgeAnswerProviderError('all-models-failed')
     }
-    throw error
+    if (error instanceof HttpError || error instanceof ModelScopeConfigurationError) throw error
+    const terminalHttpError = modelScopeTerminalHttpError(error, '事实问答')
+    if (terminalHttpError) throw terminalHttpError
+    logProviderFailure('generate', error, 'project-error')
+    throw new KnowledgeAnswerProviderError('project-error')
   }
 
-  try {
-    const parsed = parseKnowledgeAnswer(raw, citationsById)
-    return {
-      ...parsed,
-      rerankApplied: searchResponse.rerankApplied,
-    }
-  } catch (error) {
-    if (error instanceof KnowledgeAnswerProviderError) {
-      logProviderFailure('parse', error, error.reason)
-      throw error
-    }
-    throw error
+  return {
+    ...parsed,
+    rerankApplied: searchResponse.rerankApplied,
   }
 }
