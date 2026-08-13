@@ -61,7 +61,7 @@ Read [`docs/DATABASE.md`](docs/DATABASE.md) before changing queries, tables, RLS
 
 ## Deployment
 
-Production targets Cloudflare Workers through OpenNext. Worker `diaryproject` uses custom domain `diary.wuzhizhii.com`, no separate zone route, `.open-next/worker.js`, `.open-next/assets`, and `nodejs_compat`. Historical versions support rollback. Workers Builds is confirmed on GitHub `DazhiWu/diaryProject`, branch `main`, root `/`, with `pnpm run cf:build` and `pnpm run deploy`.
+Production targets Cloudflare Workers through OpenNext. Worker `diaryproject` uses custom domain `diary.wuzhizhii.com`, no separate zone route, `.open-next/worker.js`, `.open-next/assets`, and `nodejs_compat`. Historical versions support rollback. Workers Builds is confirmed on GitHub `DazhiWu/diaryProject`, branch `main`, root `/`, with build command `pnpm run cf:build` and deploy command `node scripts/deploy-worker.mjs`; the direct wrapper deployment reuses the completed OpenNext artifact instead of triggering the package `predeploy` build again.
 
 Read [`docs/DEPLOY.md`](docs/DEPLOY.md) before changing builds, variables, API runtime behavior, OpenNext, Wrangler, Workers Builds, or domains.
 
@@ -129,7 +129,7 @@ pnpm run deploy
 - Supabase security advisors intentionally report `rls_enabled_no_policy` information for deny-by-default application tables; the former anonymous INSERT and public SECURITY DEFINER execution warnings are resolved.
 - `diaryInfo` is a preserved legacy keepsake with no browser-direct grant or policy; any future viewer/admin display must use a Cookie-authorized service-role API. `rss_articles` belongs to another project and is out of scope.
 - The `diary_image_paths.diary_id` foreign key has a covering index. Its immediate post-creation `unused_index` advisor item is informational until production query statistics record use.
-- Cloudflare Workers Builds API reads confirm GitHub `DazhiWu/diaryProject`, branch `main`, root `/`, build command `pnpm run cf:build`, and production deploy command `pnpm run deploy`.
+- Cloudflare Workers Builds API reads confirm GitHub `DazhiWu/diaryProject`, branch `main`, root `/`, build command `pnpm run cf:build`, and production deploy command `node scripts/deploy-worker.mjs`.
 
 ## Documentation map
 

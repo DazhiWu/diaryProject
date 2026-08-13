@@ -41,7 +41,7 @@ As of 2026-07-30:
 - No database schema, migration, RPC signature, stored vector, environment-variable name, or Wrangler binding changed for Phase 2.
 - The 2026-07-30 read-only production checkpoint reported 605 diary sources, 605 source settings, 773 chunks, 598 completed jobs, 7 pending jobs, and no processing, failed, or excluded sources. The seven pending sources had neither chunks nor an indexed-content hash.
 - The deployed Phase 2 Worker version is `b258ef8d-e303-42f2-941b-2dd72a2391ea`; the immediate pre-Phase-2 rollback version is `b897c9f4-0e65-41d9-b5ae-2aafc0245b89`.
-- Cloudflare Workers Builds is already confirmed on GitHub `DazhiWu/diaryProject`, branch `main`, root `/`, build command `pnpm run cf:build`, and deploy command `pnpm run deploy`.
+- Cloudflare Workers Builds is confirmed on GitHub `DazhiWu/diaryProject`, branch `main`, root `/`. Its current build command is `pnpm run cf:build`, and its deploy command is `node scripts/deploy-worker.mjs` so deployment reuses the completed OpenNext artifact without triggering the package `predeploy` build again.
 
 Phase 2 production acceptance is complete. Phase 3 may begin under the operator-approved development baseline below:
 

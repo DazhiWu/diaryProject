@@ -21,11 +21,11 @@ Required automated path:
 GitHub `main`
 → Cloudflare Workers Builds (Linux, Node.js 22+)
 → `pnpm run cf:build`
-→ `pnpm run deploy`
+→ `node scripts/deploy-worker.mjs`
 → Worker `diaryproject`
 ```
 
-Cloudflare was inspected read-only on 2026-07-12, directly deployed again on 2026-07-23, and deployed with the accepted Fact Layer on 2026-07-30. Worker identity, runtime bindings, custom domain, routes, versions, OAuth Workers write scope, and rollback capability are confirmed below. A later read-only Workers Builds API check confirmed GitHub repository `DazhiWu/diaryProject`, branch `main`, root `/`, build command `pnpm run cf:build`, and the corrected production deploy command `pnpm run deploy`.
+Cloudflare was inspected read-only on 2026-07-12, directly deployed again on 2026-07-23, and deployed with the accepted Fact Layer on 2026-07-30. Worker identity, runtime bindings, custom domain, routes, versions, OAuth Workers write scope, and rollback capability are confirmed below. A 2026-08-13 read-only Workers Builds API check confirmed GitHub repository `DazhiWu/diaryProject`, branch `main`, root `/`, build command `pnpm run cf:build`, and production deploy command `node scripts/deploy-worker.mjs`.
 
 ## Prerequisites
 
@@ -121,7 +121,7 @@ Rules:
 - `next.config.mjs` calls `initOpenNextCloudflareForDev()` only for Next.js `PHASE_DEVELOPMENT_SERVER`. Keep this phase guard: Workers AI development bindings are remote, while production builds only need to bundle the runtime binding. Removing the guard makes `next build` open a remote proxy and causes non-interactive Workers Builds to fail when `workers.dev` is protected by Cloudflare Access.
 - `lib/runtimeEnv.ts` checks `process.env` first outside production and returns immediately when `.env.local` supplied the value. Only a missing local value may call `getCloudflareContext({ async: true })`; production checks Cloudflare bindings first and uses `process.env` only as fallback. Do not reverse this order: session verification reads both `SESSION_SECRET` and `SESSION_VERSION`, and summary regeneration additionally reads `OLLAMA_BASE_URL`, so binding-first local lookup caused exactly two or three unnecessary remote proxy connections per request.
 - `cloudflare-env.d.ts` remains generated and ignored rather than hand-maintained. The package `prebuild` lifecycle runs the existing `pnpm cf-typegen` command before `next build`, so local builds, OpenNext, and clean Workers Builds all derive `CloudflareEnv` from the checked-in Wrangler configuration before TypeScript runs.
-- Actual deployment uses `scripts/deploy-worker.mjs` rather than `opennextjs-cloudflare deploy`. OpenNext 1.20.1 loads the entire Wrangler environment through `getPlatformProxy()` before its cache-population step, which connects the Workers AI binding to the Access-protected `workers.dev` hostname and fails in non-interactive builds. This project uses the default OpenNext configuration and has no remote R2/KV/DO cache binding, so the wrapper safely deploys the generated Worker/assets with Wrangler while setting `OPEN_NEXT_DEPLOY=true` to prevent Wrangler from delegating back to OpenNext.
+- Actual deployment uses `scripts/deploy-worker.mjs` rather than `opennextjs-cloudflare deploy`. Workers Builds runs `pnpm run cf:build` once, then calls the wrapper directly so the deploy stage reuses the generated `.open-next` artifact instead of invoking the package `predeploy` lifecycle and rebuilding it. OpenNext 1.20.1 loads the entire Wrangler environment through `getPlatformProxy()` before its cache-population step, which connects the Workers AI binding to the Access-protected `workers.dev` hostname and fails in non-interactive builds. This project uses the default OpenNext configuration and has no remote R2/KV/DO cache binding, so the wrapper safely deploys the generated Worker/assets with Wrangler while setting `OPEN_NEXT_DEPLOY=true` to prevent Wrangler from delegating back to OpenNext.
 - Use ignored `.dev.vars` for local workerd preview runtime values; `.env.local` supplies local Next.js runtime values but is not a substitute for Worker runtime bindings.
 - Configure `MODELSCOPE_CHAT_MODEL` as a deployed Worker runtime **Variable** and ModelScope/password credentials as runtime **Secrets**. Use English commas and list models in attempt order; changing the deployed order is a runtime-variable operation after this source feature is deployed.
 - ModelScope analysis, translation, and factual-answer generation share a Supabase-backed limit of 180 upstream HTTP attempts per Beijing calendar day. Every attempted model reserves one slot immediately before its HTTP request; quota denial/unavailability stops fallback. The retry allowlist is network/timeout, HTTP 404/408/410/425/429/5xx, explicit model-level codes (`MODEL_NOT_FOUND`, `MODEL_UNAVAILABLE`, `MODEL_OVERLOADED`, `MODEL_NOT_SUPPORTED`, `MODEL_ACCESS_DENIED`), missing/blank completion content, invalid analysis output, and invalid factual-answer JSON/citations. HTTP 401 and ambiguous request-contract statuses such as 400/403/405/409/415/422 are terminal unless a listed model-level code is present. Configuration/quota failures, local `HttpError`, database failures, and unknown program errors never advance. Zero-candidate answers, local document Embedding, and Workers-AI-only knowledge search do not consume this counter.
@@ -192,7 +192,7 @@ Cloudflare variables are plain configuration values; secrets are encrypted runti
    ```
 
 7. Push the intended commit to the connected branch.
-8. Confirm build command `pnpm run cf:build` and deploy command `pnpm run deploy`. Do not configure `opennextjs-cloudflare deploy` for this project.
+8. Confirm build command `pnpm run cf:build` and deploy command `node scripts/deploy-worker.mjs`. This separation builds the OpenNext artifact once and deploys that existing artifact; do not configure `pnpm run deploy` or `opennextjs-cloudflare deploy` as the Workers Builds deploy command.
 9. Inspect build/deploy logs; plain Next.js success is not Worker verification.
 10. Complete the checks below on the Worker URL and any custom domain.
 
@@ -205,7 +205,7 @@ Cloudflare variables are plain configuration values; secrets are encrypted runti
 5. Run `pnpm run deploy`. For an already-built bundle, run `node scripts/deploy-worker.mjs`; do not use `opennextjs-cloudflare deploy`.
 6. Verify Worker behavior, variables, logs, routes, and domain.
 
-The direct-deployment identity and Workers write scope were confirmed again on 2026-07-23. The repository, branch, root, build command, and corrected production deploy command are API-confirmed.
+The direct-deployment identity and Workers write scope were confirmed again on 2026-07-23. The repository, branch, root, build command, and current production deploy command were API-confirmed again on 2026-08-13.
 
 ## Post-deployment verification
 
