@@ -18,7 +18,7 @@ import {
 } from '@/lib/diaryApi'
 
 export type DiaryView = 'list' | 'calendar' | 'new' | 'detail' | 'edit' | 'download' | 'yearly-summary' | 'message-board' | 'anonymous-message-board' | 'knowledge'
-export type Entry = { id: number; date: Date; subtitle: string; content: string; images: string[]; modifiedAt: Date | null | undefined }
+export type Entry = { id: number; date: Date; subtitle: string; content: string; images: string[]; imagePaths: string[]; modifiedAt: Date | null | undefined }
 
 const entriesPerPage = 5
 const minimumCalendarDate = new Date(2024, 10, 1)
@@ -29,7 +29,8 @@ function diaryImageUrls(paths: string[] | null | undefined, modifiedAt: Date | n
 }
 
 export function convertToEntry(entry: DiaryEntry): Entry {
-  return { id: entry.id, date: entry.date, subtitle: entry.subtitle || `日记 ${entry.date.toLocaleDateString()}`, content: entry.content, images: diaryImageUrls(entry.images, entry.modifiedAt), modifiedAt: entry.modifiedAt }
+  const imagePaths = entry.images ?? []
+  return { id: entry.id, date: entry.date, subtitle: entry.subtitle || `日记 ${entry.date.toLocaleDateString()}`, content: entry.content, images: diaryImageUrls(imagePaths, entry.modifiedAt), imagePaths, modifiedAt: entry.modifiedAt }
 }
 
 export function useDiaryController() {
@@ -66,7 +67,7 @@ export function useDiaryController() {
   const loadCalendarEntries = useCallback(async () => {
     try {
       const calendar = await fetchCalendarEntries()
-      setAllEntries(calendar.map((item) => ({ id: item.id, date: item.date, subtitle: item.subtitle || `日记 ${item.date.toLocaleDateString()}`, content: '', images: [], modifiedAt: new Date() })))
+      setAllEntries(calendar.map((item) => ({ id: item.id, date: item.date, subtitle: item.subtitle || `日记 ${item.date.toLocaleDateString()}`, content: '', images: [], imagePaths: [], modifiedAt: new Date() })))
       const firstPage = await fetchDiaryEntriesWithPagination(1, isGuest ? 5 : entriesPerPage, '')
       setEntries(firstPage.entries.map(convertToEntry))
       setTotalEntriesCount(isGuest ? Math.min(5, firstPage.totalCount) : firstPage.totalCount)
@@ -97,8 +98,8 @@ export function useDiaryController() {
 
   async function updateEntry(id: number, content: string, subtitle: string, date: Date, files: File[]): Promise<boolean> {
     try {
-      let imagePaths = selectedEntry?.id === id ? selectedEntry.images : entries.find((entry) => entry.id === id)?.images || []
-      if (files.length > 0) imagePaths = await uploadDiaryImages(files, id)
+      let imagePaths = selectedEntry?.id === id ? selectedEntry.imagePaths : entries.find((entry) => entry.id === id)?.imagePaths || []
+      if (files.length > 0) imagePaths = [...imagePaths, ...await uploadDiaryImages(files, id)]
       const converted = convertToEntry(await updateDiaryEntry(id, { content, subtitle, date, images: imagePaths }))
       setEntries((current) => current.map((entry) => entry.id === id ? converted : entry))
       setSelectedEntry(converted); setView('detail'); toast.success('日记更新成功')

@@ -37,7 +37,7 @@ export default function DiaryApp() {
         <div className="flex items-center justify-center py-12"><Spinner className="mr-2 h-6 w-6" /><span className="text-muted-foreground">正在加载日记...</span></div>
       ) : view === 'new' ? (
         <DiaryEntryComponent
-          entry={selectedDate ? { id: 0, date: selectedDate, subtitle: '', content: '', images: [], modifiedAt: new Date() } : undefined}
+          entry={selectedDate ? { id: 0, date: selectedDate, subtitle: '', content: '', images: [], imagePaths: [], modifiedAt: new Date() } : undefined}
           onSave={addEntry}
           onCancel={() => setView('list')}
         />
