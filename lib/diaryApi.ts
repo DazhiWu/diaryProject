@@ -10,22 +10,22 @@ export type HealthCondition = {
   created_at?: Date
 }
 
-export type SupabaseHealthCondition = {
+export type HealthConditionResponse = {
   id: string
   condition: string
-  start_date: string
-  end_date: string
+  startDate: string
+  endDate: string
   color: string
   created_at: string
 }
 
-// 健康状况数据转换函数
-function convertHealthConditionFromSupabase(item: SupabaseHealthCondition): HealthCondition {
+// `/api/health` maps database snake_case dates to the browser-facing camelCase contract.
+function convertHealthConditionFromResponse(item: HealthConditionResponse): HealthCondition {
   return {
     id: item.id,
     condition: item.condition,
-    startDate: new Date(item.start_date),
-    endDate: new Date(item.end_date),
+    startDate: new Date(item.startDate),
+    endDate: new Date(item.endDate),
     color: item.color,
     created_at: new Date(item.created_at)
   }
@@ -37,7 +37,7 @@ export async function fetchHealthConditions(): Promise<HealthCondition[]> {
     const response = await fetch('/api/health')
     if (response.status === 401 || response.status === 403) return []
     if (!response.ok) throw new Error('Health request failed')
-    return (await response.json() as SupabaseHealthCondition[]).map(convertHealthConditionFromSupabase)
+    return (await response.json() as HealthConditionResponse[]).map(convertHealthConditionFromResponse)
   } catch (error) {
     console.error('Failed to fetch health conditions:', error)
     return []
@@ -49,7 +49,7 @@ export async function insertHealthCondition(condition: Omit<HealthCondition, 'id
   try {
     const response = await fetch('/api/health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...condition, startDate: condition.startDate.toISOString().slice(0, 10), endDate: condition.endDate.toISOString().slice(0, 10) }) })
     if (!response.ok) throw new Error('Health request failed')
-    return convertHealthConditionFromSupabase(await response.json())
+    return convertHealthConditionFromResponse(await response.json())
   } catch (error) {
     console.error('Failed to insert health condition:', error)
     throw error
@@ -61,7 +61,7 @@ export async function updateHealthCondition(id: string, condition: Omit<HealthCo
   try {
     const response = await fetch(`/api/health/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...condition, startDate: condition.startDate.toISOString().slice(0, 10), endDate: condition.endDate.toISOString().slice(0, 10) }) })
     if (!response.ok) throw new Error('Health request failed')
-    return convertHealthConditionFromSupabase(await response.json())
+    return convertHealthConditionFromResponse(await response.json())
   } catch (error) {
     console.error('Failed to update health condition:', error)
     throw error

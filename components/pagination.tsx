@@ -92,6 +92,7 @@ export function Pagination({
       buttons.push(
         <Button
           key={i}
+          data-liquid-active={i === currentPage}
           variant={i === currentPage ? "default" : "outline"}
           size="sm"
           onClick={() => onPageChange(i)}
@@ -132,7 +133,7 @@ export function Pagination({
   }
   
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4">
+    <div data-liquid-surface data-liquid-controls className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-xl py-4 backdrop-blur-sm">
       <div className="text-sm text-muted-foreground">
         显示第 {startIndex} 到 {endIndex} 条，共 {totalEntries} 条记录
       </div>

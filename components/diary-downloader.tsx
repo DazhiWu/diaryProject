@@ -2,10 +2,10 @@
 
 import React, { useState } from 'react';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
-import { format } from 'date-fns';
+import { HealthDateRangePicker } from './health-date-range-picker';
+import { localDateInputValue } from '@/lib/dateInput';
 
 
 interface DiaryDownloaderProps {
@@ -13,16 +13,12 @@ interface DiaryDownloaderProps {
 }
 
 const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
-  const minDate = new Date('2024-11-01');
+  const minDate = new Date(2024, 10, 1);
   const today = new Date();
 
-  const formatDateString = (date: Date) => {
-    return format(date, 'yyyy-MM-dd');
-  };
-
   const defaultStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const [startDate, setStartDate] = useState<string>(formatDateString(defaultStartDate < minDate ? minDate : defaultStartDate));
-  const [endDate, setEndDate] = useState<string>(formatDateString(today));
+  const [startDate, setStartDate] = useState<string>(localDateInputValue(defaultStartDate < minDate ? minDate : defaultStartDate));
+  const [endDate, setEndDate] = useState<string>(localDateInputValue(today));
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,29 +93,18 @@ const DiaryDownloader: React.FC<DiaryDownloaderProps> = ({ className }) => {
         <CardDescription>选择日期范围，将日记导出为CSV文件</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="start-date">开始日期</Label>
-            <Input
-              id="start-date"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              min={formatDateString(minDate)}
-              max={formatDateString(today)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="end-date">结束日期</Label>
-            <Input
-              id="end-date"
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              min={formatDateString(minDate)}
-              max={formatDateString(today)}
-            />
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="download-date-range">日期范围</Label>
+          <HealthDateRangePicker
+            id="download-date-range"
+            startDate={startDate}
+            endDate={endDate}
+            maxDate={today}
+            onChange={({ startDate: nextStartDate, endDate: nextEndDate }) => {
+              setStartDate(nextStartDate)
+              setEndDate(nextEndDate)
+            }}
+          />
         </div>
         {error && (
           <div className="rounded-md bg-destructive/10 p-3 text-destructive">

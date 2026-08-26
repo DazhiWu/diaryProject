@@ -35,7 +35,7 @@ function ConditionIndicators({ conditions }: { conditions: HealthCondition[] }) 
 
 export function CalendarView({ entries, currentDate, onDateChange, onDateSelect }: CalendarViewProps) {
 
-  const { conditions, getAllConditionsForDate } = useHealthConditions()
+  const { getAllConditionsForDate, getAllConditionsForMonth } = useHealthConditions()
   
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
@@ -45,6 +45,7 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
 
   const firstDayOfMonth = new Date(year, month, 1)
   const lastDayOfMonth = new Date(year, month + 1, 0)
+  const monthConditions = getAllConditionsForMonth(firstDayOfMonth)
   const startingDayOfWeek = firstDayOfMonth.getDay()
   const daysInMonth = lastDayOfMonth.getDate()
 
@@ -183,7 +184,7 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
   }
 
   return (
-    <Card className="p-6">
+    <Card data-liquid-card data-liquid-calendar className="p-6 backdrop-blur-sm">
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           <h2 className="text-lg font-semibold text-foreground sm:hidden">
@@ -230,10 +231,10 @@ export function CalendarView({ entries, currentDate, onDateChange, onDateSelect 
       </div>
 
       {/* 图例区域 */}
-      {conditions.length > 0 && (
+      {monthConditions.length > 0 && (
         <div className="mb-4 p-3 bg-muted/20 rounded-lg">
           <div className="flex flex-wrap gap-3">
-            {conditions.map((condition) => (
+            {monthConditions.map((condition) => (
               <div key={condition.id} className="flex items-center gap-2">
                 <div
                   className="w-4 h-4 rounded-full border"

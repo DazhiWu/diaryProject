@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { XIcon, PlusIcon, EditIcon } from "@/components/icons"
+import { HealthDateRangePicker, parseHealthDate } from "@/components/health-date-range-picker"
 import { useHealthConditions } from "@/hooks/useHealthConditions"
+import { localDateInputValue } from "@/lib/dateInput"
 import { toast } from "sonner"
 
 interface HealthConditionDialogProps {
@@ -27,14 +29,16 @@ export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDia
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const handleAddCondition = async () => {
-    if (!conditionName || !startDate || !endDate) return
+    const selectedStartDate = parseHealthDate(startDate)
+    const selectedEndDate = parseHealthDate(endDate)
+    if (!conditionName || !selectedStartDate || !selectedEndDate) return
     
     setIsAdding(true)
     try {
       const nextCondition = {
         condition: conditionName,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        startDate: selectedStartDate,
+        endDate: selectedEndDate,
         color: color
       }
       if (editingId) await updateCondition(editingId, nextCondition)
@@ -57,8 +61,8 @@ export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDia
   const handleEditCondition = (condition: typeof conditions[number]) => {
     setEditingId(condition.id)
     setConditionName(condition.condition)
-    setStartDate(condition.startDate.toISOString().slice(0, 10))
-    setEndDate(condition.endDate.toISOString().slice(0, 10))
+    setStartDate(localDateInputValue(condition.startDate))
+    setEndDate(localDateInputValue(condition.endDate))
     setColor(condition.color)
   }
 
@@ -121,29 +125,18 @@ export function HealthConditionDialog({ open, onOpenChange }: HealthConditionDia
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="start-date">开始日期</Label>
-                <Input
-                  id="start-date"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  disabled={isAdding}
-                  min="2024-11-01"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="end-date">结束日期</Label>
-                <Input
-                  id="end-date"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  disabled={isAdding}
-                  min="2024-11-01"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="health-date-range">日期范围</Label>
+              <HealthDateRangePicker
+                id="health-date-range"
+                startDate={startDate}
+                endDate={endDate}
+                onChange={({ startDate: nextStartDate, endDate: nextEndDate }) => {
+                  setStartDate(nextStartDate)
+                  setEndDate(nextEndDate)
+                }}
+                disabled={isAdding}
+              />
             </div>
             <div className="flex gap-2">
               <Button onClick={handleAddCondition} className="flex-1 gap-2" disabled={isAdding}>

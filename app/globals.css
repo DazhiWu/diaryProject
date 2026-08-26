@@ -145,6 +145,222 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Global visual mode: translucent, refractive surfaces without changing layout or behavior. */
+.liquid-glass {
+  background:
+    radial-gradient(circle at 8% 10%, rgba(255, 177, 138, 0.46), transparent 27rem),
+    radial-gradient(circle at 92% 4%, rgba(127, 192, 255, 0.42), transparent 25rem),
+    radial-gradient(circle at 75% 78%, rgba(196, 156, 255, 0.32), transparent 30rem),
+    linear-gradient(145deg, #fff7ee 0%, #eef7ff 52%, #f9f0ff 100%);
+}
+
+.liquid-glass body {
+  min-height: 100vh;
+  background: transparent;
+}
+
+.dark.liquid-glass,
+.dark .liquid-glass {
+  background:
+    radial-gradient(circle at 8% 10%, rgba(215, 111, 75, 0.3), transparent 27rem),
+    radial-gradient(circle at 92% 4%, rgba(72, 136, 222, 0.32), transparent 25rem),
+    radial-gradient(circle at 75% 78%, rgba(147, 93, 207, 0.24), transparent 30rem),
+    linear-gradient(145deg, #17151d 0%, #101b2a 52%, #201421 100%);
+}
+
+.liquid-glass [data-liquid-surface],
+.liquid-glass [data-liquid-card] {
+  border-color: rgba(255, 255, 255, 0.62);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.26));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.18),
+    0 18px 42px rgba(98, 104, 139, 0.16);
+  --tw-backdrop-blur: blur(22px);
+  --tw-backdrop-saturate: saturate(1.35);
+}
+
+.dark .liquid-glass [data-liquid-surface],
+.dark .liquid-glass [data-liquid-card] {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(135deg, rgba(37, 40, 56, 0.72), rgba(27, 29, 43, 0.4));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 18px 42px rgba(0, 0, 0, 0.28);
+}
+
+/* Apply the glass surface to shared UI primitives so every view, including Portal content, uses the active visual mode. */
+.liquid-glass :is(
+  [data-slot='card'],
+  [data-slot='dialog-content'],
+  [data-slot='alert-dialog-content'],
+  [data-slot='select-content'],
+  [data-sonner-toast],
+  [role='dialog']
+) {
+  border-color: rgba(255, 255, 255, 0.62);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.3));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.16),
+    0 18px 42px rgba(98, 104, 139, 0.18);
+}
+
+.liquid-glass :is(
+  [data-slot='input'],
+  [data-slot='textarea'],
+  [data-slot='select-trigger'],
+  input:not([type='file']):not([type='range']):not([type='checkbox']):not([type='radio']),
+  textarea,
+  select
+) {
+  border-color: rgba(255, 255, 255, 0.6);
+  background-color: rgba(255, 255, 255, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+}
+
+.liquid-glass [data-slot='button'] {
+  border-color: rgba(255, 255, 255, 0.54);
+  background-color: rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56), 0 5px 14px rgba(95, 103, 135, 0.1);
+}
+
+.liquid-glass [data-slot='button'][class*='bg-primary'] {
+  border-color: #a44758;
+  background: linear-gradient(135deg, #c85c58, #9a639c);
+  color: white;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 8px 18px rgba(126, 67, 107, 0.3);
+}
+
+.liquid-glass [data-slot='button'][class*='bg-destructive'] {
+  border-color: #b13a42;
+  background: #c84d52;
+  color: white;
+}
+
+.liquid-glass button:not([data-slot='button']) {
+  border-color: rgba(255, 255, 255, 0.54);
+  background-color: rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56), 0 5px 14px rgba(95, 103, 135, 0.1);
+}
+
+.liquid-glass button:not([data-slot='button']):is([aria-pressed='true'], [class*='bg-primary']) {
+  border-color: #a44758;
+  background: linear-gradient(135deg, #c85c58, #9a639c);
+  color: white;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 8px 18px rgba(126, 67, 107, 0.3);
+}
+
+.liquid-glass :is([data-slot='dialog-overlay'], [data-slot='alert-dialog-overlay']) {
+  background: rgba(43, 42, 61, 0.32);
+}
+
+.dark.liquid-glass :is(
+  [data-slot='card'],
+  [data-slot='dialog-content'],
+  [data-slot='alert-dialog-content'],
+  [data-slot='select-content'],
+  [data-sonner-toast],
+  [role='dialog']
+),
+.dark .liquid-glass :is(
+  [data-slot='card'],
+  [data-slot='dialog-content'],
+  [data-slot='alert-dialog-content'],
+  [data-slot='select-content'],
+  [data-sonner-toast],
+  [role='dialog']
+) {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(135deg, rgba(37, 40, 56, 0.76), rgba(27, 29, 43, 0.48));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 18px 42px rgba(0, 0, 0, 0.3);
+}
+
+.dark.liquid-glass :is(
+  [data-slot='input'],
+  [data-slot='textarea'],
+  [data-slot='select-trigger'],
+  input:not([type='file']):not([type='range']):not([type='checkbox']):not([type='radio']),
+  textarea,
+  select
+),
+.dark .liquid-glass :is(
+  [data-slot='input'],
+  [data-slot='textarea'],
+  [data-slot='select-trigger'],
+  input:not([type='file']):not([type='range']):not([type='checkbox']):not([type='radio']),
+  textarea,
+  select
+) {
+  border-color: rgba(255, 255, 255, 0.2);
+  background-color: rgba(28, 31, 45, 0.48);
+}
+
+.liquid-glass [data-liquid-surface] {
+  padding: 0.5rem;
+}
+
+.liquid-glass [data-liquid-search] [data-slot='input'] {
+  border-color: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58);
+  --tw-backdrop-blur: blur(12px);
+}
+
+.liquid-glass [data-liquid-controls] [data-slot='button']:not([class*='bg-primary']):not([class*='bg-destructive']) {
+  border-color: rgba(255, 255, 255, 0.54);
+  background-color: rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56), 0 5px 14px rgba(95, 103, 135, 0.1);
+  backdrop-filter: blur(12px) saturate(1.25);
+  -webkit-backdrop-filter: blur(12px) saturate(1.25);
+}
+
+.liquid-glass [data-liquid-controls] [data-liquid-active='true'],
+.liquid-glass [data-liquid-controls] [data-slot='button'][aria-pressed='true'] {
+  border-color: #a44758;
+  background: linear-gradient(135deg, #c85c58, #9a639c);
+  color: white;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 8px 18px rgba(126, 67, 107, 0.3);
+}
+
+.liquid-glass [data-liquid-controls] [data-liquid-active='true']:hover,
+.liquid-glass [data-liquid-controls] [data-slot='button'][aria-pressed='true']:hover {
+  border-color: #8f3c4b;
+  background: linear-gradient(135deg, #b74d4d, #89528b);
+}
+
+.liquid-glass [data-liquid-controls] [data-slot='button']:hover,
+.liquid-glass [data-liquid-card]:hover {
+  border-color: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88), 0 14px 28px rgba(95, 103, 135, 0.18);
+}
+
+.liquid-glass [data-liquid-calendar] button:not([disabled]) {
+  border-color: rgba(255, 255, 255, 0.45);
+  background-color: rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.liquid-glass-toggle-orb {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 9999px;
+  background: radial-gradient(circle at 30% 28%, #ffffff 0 13%, #ffc2a1 30%, #8fbfff 64%, #c58cf0 100%);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.9), 0 2px 5px rgba(86, 87, 137, 0.32);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .liquid-glass [data-liquid-surface],
+  .liquid-glass [data-liquid-card] {
+    background: rgba(250, 250, 255, 0.92);
+  }
+}
+
 /* 添加一些过渡效果 */
 * {
   transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;

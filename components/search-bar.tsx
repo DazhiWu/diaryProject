@@ -12,14 +12,14 @@ type SearchBarProps = {
 
 export function SearchBar({ value, onChange, onClear }: SearchBarProps) {
   return (
-    <div className="relative">
+    <div data-liquid-surface data-liquid-search className="relative rounded-xl backdrop-blur-sm">
       <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         type="text"
         placeholder="Search diary entries..."
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="pl-10 pr-10"
+        className="pl-10 pr-10 backdrop-blur-sm"
       />
       {value && (
         <Button

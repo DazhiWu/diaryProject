@@ -3,6 +3,17 @@ import { fetchHealthConditions, insertHealthCondition, updateHealthCondition, de
 
 export type { HealthCondition }
 
+export function getHealthConditionsForMonth(conditions: HealthCondition[], month: Date): HealthCondition[] {
+  const monthStart = new Date(month.getFullYear(), month.getMonth(), 1)
+  const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0)
+
+  return conditions.filter((condition) => {
+    const startDate = new Date(condition.startDate.getFullYear(), condition.startDate.getMonth(), condition.startDate.getDate())
+    const endDate = new Date(condition.endDate.getFullYear(), condition.endDate.getMonth(), condition.endDate.getDate())
+    return startDate <= monthEnd && endDate >= monthStart
+  })
+}
+
 export const useHealthConditions = () => {
   const [conditions, setConditions] = useState<HealthCondition[]>([])
   const [loading, setLoading] = useState(true)
@@ -73,6 +84,10 @@ export const useHealthConditions = () => {
     })
   }, [conditions])
 
+  const getAllConditionsForMonth = useCallback((month: Date) => {
+    return getHealthConditionsForMonth(conditions, month)
+  }, [conditions])
+
   return {
     conditions,
     loading,
@@ -81,6 +96,7 @@ export const useHealthConditions = () => {
     deleteCondition: deleteConditionById,
     getConditionForDate,
     getAllConditionsForDate,
+    getAllConditionsForMonth,
     refresh: loadConditions
   }
 }

@@ -80,7 +80,7 @@ export function DiaryList({ entries, onViewDetail, onDelete, emptyMessage, onNew
   return (
     <div className="space-y-4">
       {entries.map((entry) => (
-        <Card key={entry.id} className="overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-gradient-to-br from-card to-card/90 border-border/80">
+        <Card data-liquid-card key={entry.id} className="overflow-hidden backdrop-blur-sm transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-gradient-to-br from-card to-card/90 border-border/80">
           <div 
             onClick={() => onViewDetail(entry)} 
             className="w-full text-left cursor-pointer"
