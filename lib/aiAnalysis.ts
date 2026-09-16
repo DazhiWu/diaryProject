@@ -6,6 +6,7 @@ import {
   ModelScopeInvalidAnalysisError,
   ModelScopeModelsExhaustedError,
   modelScopeTerminalHttpError,
+  normalizeModelScopeSdkError,
   readModelScopeChatContent,
   runModelScopeChatFallback,
   safeModelScopeErrorMetadata,
@@ -43,16 +44,21 @@ ${content}
     return await runModelScopeChatFallback({
       operation: 'analyze',
       attempt: async (model) => {
-        const response = await (client.chat.completions.create as any)({
-          model,
-          messages: [
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          stream: false,
-        }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
+        let response: unknown;
+        try {
+          response = await (client.chat.completions.create as any)({
+            model,
+            messages: [
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            stream: false,
+          }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
+        } catch (error) {
+          throw normalizeModelScopeSdkError(error);
+        }
 
         return parseAIAnalysisResult(readModelScopeChatContent(response));
       },
@@ -86,16 +92,21 @@ ${content}
     return await runModelScopeChatFallback({
       operation: 'translate',
       attempt: async (model) => {
-        const response = await (client.chat.completions.create as any)({
-          model,
-          messages: [
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          stream: false,
-        }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
+        let response: unknown;
+        try {
+          response = await (client.chat.completions.create as any)({
+            model,
+            messages: [
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            stream: false,
+          }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
+        } catch (error) {
+          throw normalizeModelScopeSdkError(error);
+        }
 
         return readModelScopeChatContent(response);
       },

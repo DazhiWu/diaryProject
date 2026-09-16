@@ -4,7 +4,9 @@ import OpenAI from 'openai'
 import {
   isRetryableModelScopeRequestError,
   ModelScopeConfigurationError,
+  ModelScopeMalformedHttpResponseError,
   ModelScopeModelsExhaustedError,
+  normalizeModelScopeSdkError,
   parseModelScopeChatModels,
   runModelScopeChatFallback,
   safeModelScopeErrorMetadata,
@@ -93,10 +95,27 @@ describe('ModelScope retryable request errors', () => {
   it('keeps a local HTTP response-validation error terminal', () => {
     expect(isRetryableModelScopeRequestError(new HttpError(502, '模型返回结果格式错误'))).toBe(false)
   })
+
+  it('normalizes a malformed SDK success body into a retryable provider response error', () => {
+    const normalized = normalizeModelScopeSdkError(new SyntaxError('private malformed response detail'))
+
+    expect(normalized).toBeInstanceOf(ModelScopeMalformedHttpResponseError)
+    expect(safeModelScopeErrorMetadata(normalized)).toMatchObject({
+      name: 'ModelScopeMalformedHttpResponseError',
+      code: 'MALFORMED_HTTP_RESPONSE',
+    })
+    expect(isRetryableModelScopeRequestError(normalized)).toBe(true)
+  })
+
+  it('does not rewrite an ordinary project error at the SDK boundary', () => {
+    const error = new TypeError('project bug')
+    expect(normalizeModelScopeSdkError(error)).toBe(error)
+  })
 })
 
 describe('ModelScope ordered fallback', () => {
   it('reserves once per attempted model and returns the first successful result', async () => {
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => undefined)
     const reserveQuota = vi.fn().mockResolvedValue({})
     const attempt = vi.fn()
       .mockRejectedValueOnce(Object.assign(new Error('private upstream body'), { status: 503 }))
@@ -111,6 +130,10 @@ describe('ModelScope ordered fallback', () => {
     )).resolves.toBe('second result')
     expect(attempt.mock.calls.map(([model]) => model)).toEqual(['first/model', 'second/model'])
     expect(reserveQuota).toHaveBeenCalledTimes(2)
+    expect(consoleInfo).toHaveBeenCalledWith('[modelscope]', expect.objectContaining({
+      operation: 'test', outcome: 'succeeded', model: 'second/model', elapsedMs: expect.any(Number),
+    }))
+    expect(JSON.stringify(consoleInfo.mock.calls)).not.toContain('second result')
   })
 
   it('does not switch models after an HTTP-successful response-validation error', async () => {

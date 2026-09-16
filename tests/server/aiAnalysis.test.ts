@@ -107,13 +107,14 @@ describe('diary ModelScope analysis', () => {
       'second/model',
     ])
     expect(reserveQuota).toHaveBeenCalledTimes(2)
-    expect(consoleError).toHaveBeenCalledWith('[modelscope]', {
+    expect(consoleError).toHaveBeenCalledWith('[modelscope]', expect.objectContaining({
       operation: 'analyze',
       outcome: 'failed',
       model: 'first/model',
+      elapsedMs: expect.any(Number),
       name: 'ModelScopeMissingChoicesError',
       code: 'MISSING_CHOICES',
-    })
+    }))
   })
 
   it('reports a terminal request-contract failure without exposing the provider body', async () => {

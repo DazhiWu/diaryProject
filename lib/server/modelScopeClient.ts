@@ -62,6 +62,13 @@ export class ModelScopeInvalidKnowledgeAnswerError extends ModelScopeRetryableRe
   }
 }
 
+export class ModelScopeMalformedHttpResponseError extends ModelScopeRetryableResponseError {
+  constructor() {
+    super('ModelScope HTTP success response was not valid JSON', 'MALFORMED_HTTP_RESPONSE')
+    this.name = 'ModelScopeMalformedHttpResponseError'
+  }
+}
+
 export type SafeModelScopeErrorMetadata = {
   name: string
   status?: number
@@ -88,6 +95,17 @@ export function safeModelScopeErrorMetadata(error: unknown): SafeModelScopeError
         : undefined,
     code: typeof value.code === 'string' ? value.code : undefined,
   }
+}
+
+/**
+ * The OpenAI SDK parses successful JSON responses after fetch resolves. A
+ * truncated or otherwise malformed upstream body escapes as SyntaxError, so
+ * normalize it at the SDK boundary before the shared fallback classifier runs.
+ */
+export function normalizeModelScopeSdkError(error: unknown): unknown {
+  return error instanceof SyntaxError || safeModelScopeErrorMetadata(error).name === 'SyntaxError'
+    ? new ModelScopeMalformedHttpResponseError()
+    : error
 }
 
 const RETRYABLE_ERROR_NAMES = new Set([
@@ -199,15 +217,24 @@ export async function runModelScopeChatFallback<T>(
 
   for (const model of models) {
     await dependencies.reserveQuota()
+    const started = Date.now()
 
     try {
-      return await options.attempt(model)
+      const result = await options.attempt(model)
+      console.info('[modelscope]', {
+        operation: options.operation,
+        outcome: 'succeeded',
+        model,
+        elapsedMs: Date.now() - started,
+      })
+      return result
     } catch (error) {
       if (!isRetryableModelScopeRequestError(error)) throw error
       console.error('[modelscope]', {
         operation: options.operation,
         outcome: 'failed',
         model,
+        elapsedMs: Date.now() - started,
         ...safeModelScopeErrorMetadata(error),
       })
     }

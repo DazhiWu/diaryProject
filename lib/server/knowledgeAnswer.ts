@@ -15,6 +15,7 @@ import {
   ModelScopeInvalidKnowledgeAnswerError,
   ModelScopeModelsExhaustedError,
   modelScopeTerminalHttpError,
+  normalizeModelScopeSdkError,
   readModelScopeChatContent,
   runModelScopeChatFallback,
   safeModelScopeErrorMetadata,
@@ -78,15 +79,20 @@ async function prepareModelScopeCompletion(): Promise<KnowledgeAnswerCompletion>
   const createCompletion = client.chat.completions.create.bind(client.chat.completions) as unknown as ModelScopeCompletionCreate
 
   return async (model, prompts) => {
-    const response = await createCompletion({
-      model,
-      messages: [
-        { role: 'system', content: prompts.system },
-        { role: 'user', content: prompts.user },
-      ],
-      stream: false,
-      max_tokens: 1_500,
-    }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) })
+    let response: ModelScopeCompletionResponse
+    try {
+      response = await createCompletion({
+        model,
+        messages: [
+          { role: 'system', content: prompts.system },
+          { role: 'user', content: prompts.user },
+        ],
+        stream: false,
+        max_tokens: 1_500,
+      }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) })
+    } catch (error) {
+      throw normalizeModelScopeSdkError(error)
+    }
 
     return readModelScopeChatContent(response)
   }
