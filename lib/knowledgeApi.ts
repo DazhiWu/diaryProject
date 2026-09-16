@@ -147,10 +147,50 @@ export function answerKnowledgeQuestion(input: {
   startDate?: string
   endDate?: string
 }): Promise<KnowledgeAnswerResponse> {
-  return knowledgeRequest('/api/knowledge/answer', {
+  return fetch('/api/knowledge/answer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
+  }).then(async (response) => {
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as { error?: string } | null
+      throw new Error(body?.error ?? 'Knowledge request failed')
+    }
+
+    if (!response.headers.get('Content-Type')?.includes('application/x-ndjson')) {
+      return response.json() as Promise<KnowledgeAnswerResponse>
+    }
+    if (!response.body) throw new Error('Knowledge answer stream was unavailable')
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let result: KnowledgeAnswerResponse | undefined
+
+    function processLine(line: string) {
+      if (!line.trim()) return
+      const event = JSON.parse(line) as {
+        type?: unknown
+        data?: KnowledgeAnswerResponse
+        error?: unknown
+      }
+      if (event.type === 'result' && event.data) result = event.data
+      if (event.type === 'error') {
+        throw new Error(typeof event.error === 'string' ? event.error : 'Knowledge answer failed')
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) processLine(line)
+      if (done) break
+    }
+    processLine(buffer)
+    if (!result) throw new Error('Knowledge answer stream ended without a result')
+    return result
   })
 }
 

@@ -17,7 +17,7 @@ vi.mock('@/lib/server/knowledgeAnswer', async (importOriginal) => {
   }
 })
 
-import { POST as knowledgeAnswer } from '@/app/api/knowledge/answer/route'
+import { POST as knowledgeAnswer, streamAnswer } from '@/app/api/knowledge/answer/route'
 import { KnowledgeAnswerProviderError } from '@/lib/server/knowledgeAnswer'
 import { KnowledgeEmbeddingUnavailableError } from '@/lib/server/knowledgeSearch'
 import { ModelScopeConfigurationError } from '@/lib/server/modelScopeClient'
@@ -41,12 +41,41 @@ async function request(body: unknown, role?: 'viewer' | 'admin', origin = 'http:
   })
 }
 
+async function streamEvents(response: Response) {
+  return (await response.text()).trim().split('\n').map((line) => JSON.parse(line) as {
+    type: string
+    code?: string
+    data?: unknown
+    error?: string
+    status?: number
+  })
+}
+
 afterEach(() => {
+  vi.useRealTimers()
   process.env = { ...originalEnv }
   vi.clearAllMocks()
 })
 
 describe('knowledge answer route boundary', () => {
+  it('emits padded heartbeats while a long answer remains pending', async () => {
+    vi.useFakeTimers()
+    const response = streamAnswer(new Promise<never>(() => undefined))
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+
+    const started = JSON.parse(decoder.decode((await reader.read()).value)) as { type: string; padding: string }
+    expect(started).toMatchObject({ type: 'started' })
+    expect(started.padding.length).toBeGreaterThanOrEqual(1_024)
+
+    const next = reader.read()
+    await vi.advanceTimersByTimeAsync(10_000)
+    const heartbeat = JSON.parse(decoder.decode((await next).value)) as { type: string; padding: string }
+    expect(heartbeat).toMatchObject({ type: 'heartbeat' })
+    expect(heartbeat.padding.length).toBeGreaterThanOrEqual(1_024)
+    await reader.cancel()
+  })
+
   it('denies guests and viewers before rate limiting or retrieval', async () => {
     expect((await knowledgeAnswer(await request({ question: '问题' }))).status).toBe(401)
     expect((await knowledgeAnswer(await request({ question: '问题' }, 'viewer'))).status).toBe(403)
@@ -100,6 +129,11 @@ describe('knowledge answer route boundary', () => {
     }, 'admin'))
 
     expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toContain('application/x-ndjson')
+    await expect(streamEvents(response)).resolves.toEqual([
+      expect.objectContaining({ type: 'started' }),
+      expect.objectContaining({ type: 'result', data: expect.objectContaining({ answer: '回答。[S1]' }) }),
+    ])
     expect(mocks.answerPrivateKnowledgeQuestion).toHaveBeenCalledWith({
       question: '发生了什么？',
       context: '面试没有通过',
@@ -111,11 +145,14 @@ describe('knowledge answer route boundary', () => {
   it.each([
     [new ModelScopeQuotaStopError(429, 'daily limit'), 429],
     [new ModelScopeQuotaStopError(503, 'quota unavailable'), 503],
-  ])('preserves quota stop status without exposing provider calls', async (error, status) => {
+  ])('streams quota stops without exposing provider calls', async (error, status) => {
     mocks.checkAiRateLimit.mockResolvedValue({ allowed: true, retryAfterSeconds: 60 })
     mocks.answerPrivateKnowledgeQuestion.mockRejectedValue(error)
     const response = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
-    expect(response.status).toBe(status)
+    expect(response.status).toBe(200)
+    await expect(streamEvents(response)).resolves.toContainEqual(expect.objectContaining({
+      type: 'error', status, error: error.message,
+    }))
   })
 
   it('returns generic provider and embedding failures', async () => {
@@ -123,26 +160,33 @@ describe('knowledge answer route boundary', () => {
 
     mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeEmbeddingUnavailableError())
     const embeddingResponse = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
-    expect(embeddingResponse.status).toBe(503)
-    await expect(embeddingResponse.json()).resolves.toMatchObject({ code: 'unknown', error: expect.any(String) })
+    expect(embeddingResponse.status).toBe(200)
+    await expect(streamEvents(embeddingResponse)).resolves.toContainEqual(expect.objectContaining({
+      type: 'error', status: 503, code: 'unknown', error: expect.any(String),
+    }))
 
     mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeAnswerProviderError('timeout'))
     const timeoutResponse = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
-    expect(timeoutResponse.status).toBe(504)
-    await expect(timeoutResponse.json()).resolves.toEqual({ error: 'Knowledge answer provider is temporarily unavailable' })
+    expect(timeoutResponse.status).toBe(200)
+    await expect(streamEvents(timeoutResponse)).resolves.toContainEqual(expect.objectContaining({
+      type: 'error', status: 504, error: 'Knowledge answer provider is temporarily unavailable',
+    }))
 
     mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeAnswerProviderError('project-error'))
     const projectResponse = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
-    expect(projectResponse.status).toBe(500)
-    await expect(projectResponse.json()).resolves.toEqual({ error: '事实问答项目处理异常，请稍后重试' })
+    expect(projectResponse.status).toBe(200)
+    await expect(streamEvents(projectResponse)).resolves.toContainEqual(expect.objectContaining({
+      type: 'error', status: 500, error: '事实问答项目处理异常，请稍后重试',
+    }))
   })
 
   it('returns a classified Access failure with safe user guidance', async () => {
     mocks.checkAiRateLimit.mockResolvedValue({ allowed: true, retryAfterSeconds: 60 })
     mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeEmbeddingUnavailableError('access'))
     const response = await knowledgeAnswer(await request({ question: '怎么度过低落' }, 'admin'))
-    expect(response.status).toBe(503)
-    const body = await response.json()
+    expect(response.status).toBe(200)
+    const body = (await streamEvents(response)).find((event) => event.type === 'error')!
+    expect(body.status).toBe(503)
     expect(body).toMatchObject({ code: 'access', error: expect.stringContaining('Access') })
     expect(body.error).not.toMatch(/workers\.dev|Bearer|CLIENT_SECRET/u)
   })
@@ -153,8 +197,10 @@ describe('knowledge answer route boundary', () => {
 
     const response = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
 
-    expect(response.status).toBe(502)
-    await expect(response.json()).resolves.toEqual({ error: '所有模型 API 调用失败' })
+    expect(response.status).toBe(200)
+    await expect(streamEvents(response)).resolves.toContainEqual(expect.objectContaining({
+      type: 'error', status: 502, error: '所有模型 API 调用失败',
+    }))
   })
 
   it('reports a missing ModelScope model configuration without claiming API exhaustion', async () => {
@@ -163,9 +209,9 @@ describe('knowledge answer route boundary', () => {
 
     const response = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
 
-    expect(response.status).toBe(503)
-    await expect(response.json()).resolves.toEqual({
-      error: 'MODELSCOPE_CHAT_MODEL 未配置或没有有效模型',
-    })
+    expect(response.status).toBe(200)
+    await expect(streamEvents(response)).resolves.toContainEqual(expect.objectContaining({
+      type: 'error', status: 503, error: 'MODELSCOPE_CHAT_MODEL 未配置或没有有效模型',
+    }))
   })
 })

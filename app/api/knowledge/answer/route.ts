@@ -14,30 +14,82 @@ import { assertAllowedOrigin } from '@/lib/server/origin'
 import { exactDateField, readJsonBody, REQUEST_LIMITS, stringField } from '@/lib/server/requestLimits'
 import { HttpError, readSession, requireAdmin } from '@/lib/server/session'
 
-function responseFor(error: unknown) {
-  if (error instanceof HttpError) return NextResponse.json({ error: error.message }, { status: error.status })
+const ANSWER_HEARTBEAT_INTERVAL_MS = 10_000
+const ANSWER_HEARTBEAT_PADDING = ' '.repeat(1_024)
+
+type ErrorDetails = {
+  body: { error: string; code?: string }
+  status: number
+}
+
+function detailsFor(error: unknown): ErrorDetails {
+  if (error instanceof HttpError) return { body: { error: error.message }, status: error.status }
   if (error instanceof KnowledgeEmbeddingUnavailableError) {
-    return NextResponse.json({ error: error.message, code: error.reason }, { status: 503 })
+    return { body: { error: error.message, code: error.reason }, status: 503 }
   }
   if (error instanceof KnowledgeAnswerProviderError) {
     if (error.reason === 'all-models-failed') {
-      return NextResponse.json({ error: MODELSCOPE_ALL_MODELS_FAILED_MESSAGE }, { status: 502 })
+      return { body: { error: MODELSCOPE_ALL_MODELS_FAILED_MESSAGE }, status: 502 }
     }
     if (error.reason === 'project-error') {
-      return NextResponse.json({ error: '事实问答项目处理异常，请稍后重试' }, { status: 500 })
+      return { body: { error: '事实问答项目处理异常，请稍后重试' }, status: 500 }
     }
     const status = error.reason === 'timeout' ? 504 : 502
-    return NextResponse.json({ error: 'Knowledge answer provider is temporarily unavailable' }, { status })
+    return { body: { error: 'Knowledge answer provider is temporarily unavailable' }, status }
   }
   if (error instanceof ModelScopeConfigurationError) {
-    return NextResponse.json({ error: error.message }, { status: 503 })
+    return { body: { error: error.message }, status: 503 }
   }
   console.error('[knowledge-answer]', {
     operation: 'route',
     outcome: 'failed',
     name: error instanceof Error ? error.name : 'UnknownError',
   })
-  return NextResponse.json({ error: 'Knowledge answer failed' }, { status: 500 })
+  return { body: { error: 'Knowledge answer failed' }, status: 500 }
+}
+
+function responseFor(error: unknown) {
+  const details = detailsFor(error)
+  return NextResponse.json(details.body, { status: details.status })
+}
+
+export function streamAnswer(answer: ReturnType<typeof answerPrivateKnowledgeQuestion>): Response {
+  const encoder = new TextEncoder()
+  let heartbeat: ReturnType<typeof setInterval> | undefined
+  let canceled = false
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (event: unknown) => {
+        if (!canceled) controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`))
+      }
+      send({ type: 'started', padding: ANSWER_HEARTBEAT_PADDING })
+      heartbeat = setInterval(() => send({ type: 'heartbeat', padding: ANSWER_HEARTBEAT_PADDING }), ANSWER_HEARTBEAT_INTERVAL_MS)
+
+      void answer
+        .then((data) => send({ type: 'result', data }))
+        .catch((error: unknown) => {
+          const details = detailsFor(error)
+          send({ type: 'error', ...details.body, status: details.status })
+        })
+        .finally(() => {
+          clearInterval(heartbeat)
+          if (!canceled) controller.close()
+        })
+    },
+    cancel() {
+      canceled = true
+      clearInterval(heartbeat)
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Cache-Control': 'no-store, no-transform',
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  })
 }
 
 export async function POST(request: Request) {
@@ -69,7 +121,7 @@ export async function POST(request: Request) {
       )
     }
 
-    return NextResponse.json(await answerPrivateKnowledgeQuestion({ question, startDate, endDate, ...(context ? { context } : {}) }))
+    return streamAnswer(answerPrivateKnowledgeQuestion({ question, startDate, endDate, ...(context ? { context } : {}) }))
   } catch (error) {
     return responseFor(error)
   }

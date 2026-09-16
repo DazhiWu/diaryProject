@@ -45,6 +45,39 @@ describe('knowledge API client', () => {
     }))
   })
 
+  it('keeps a long answer request alive with heartbeats and returns the final result', async () => {
+    const result = {
+      answer: '回答。[S1]',
+      evidenceStatus: 'supported' as const,
+      citations: [],
+      rerankApplied: true,
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response([
+      JSON.stringify({ type: 'started', padding: ' ' }),
+      JSON.stringify({ type: 'heartbeat', padding: ' ' }),
+      JSON.stringify({ type: 'result', data: result }),
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' },
+    }))
+
+    await expect(answerKnowledgeQuestion({ question: '问题' })).resolves.toEqual(result)
+  })
+
+  it('surfaces a safe error from an answer stream', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response([
+      JSON.stringify({ type: 'started', padding: ' ' }),
+      JSON.stringify({ type: 'error', status: 504, error: '模型请求超时' }),
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' },
+    }))
+
+    await expect(answerKnowledgeQuestion({ question: '问题' })).rejects.toThrow('模型请求超时')
+  })
+
   it('opens a citation through its trusted source diary id', async () => {
     const onOpenDiary = vi.fn().mockResolvedValue(undefined)
     await openKnowledgeCitation({ sourceId: 604 }, onOpenDiary)
