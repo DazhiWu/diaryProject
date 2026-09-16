@@ -5,6 +5,7 @@ import {
   answerPrivateKnowledgeQuestion,
   buildKnowledgeAnswerPrompts,
   INSUFFICIENT_KNOWLEDGE_ANSWER,
+  MODELSCOPE_KNOWLEDGE_ANSWER_MAX_TOKENS,
   type KnowledgeAnswerCitation,
   type KnowledgeAnswerResponse,
 } from '@/lib/server/knowledgeAnswer'
@@ -284,6 +285,10 @@ describe('knowledge factual answer orchestration', () => {
 })
 
 describe('knowledge answer prompt and persistence boundary', () => {
+  it('leaves enough completion budget for reasoning models to emit final content', () => {
+    expect(MODELSCOPE_KNOWLEDGE_ANSWER_MAX_TOKENS).toBe(8_000)
+  })
+
   it('does not add provider-specific thinking fields to ModelScope requests', () => {
     const sources = [
       readFileSync('lib/server/knowledgeAnswer.ts', 'utf8'),

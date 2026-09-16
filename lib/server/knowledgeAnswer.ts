@@ -23,6 +23,7 @@ import {
 import { HttpError } from '@/lib/server/session'
 
 export const INSUFFICIENT_KNOWLEDGE_ANSWER = '当前日记语料中没有足够证据回答这个问题。'
+export const MODELSCOPE_KNOWLEDGE_ANSWER_MAX_TOKENS = 8_000
 
 export type KnowledgeAnswerCitation = {
   citationId: string
@@ -88,7 +89,7 @@ async function prepareModelScopeCompletion(): Promise<KnowledgeAnswerCompletion>
           { role: 'user', content: prompts.user },
         ],
         stream: false,
-        max_tokens: 1_500,
+        max_tokens: MODELSCOPE_KNOWLEDGE_ANSWER_MAX_TOKENS,
       }, { signal: AbortSignal.timeout(MODELSCOPE_KNOWLEDGE_ANSWER_TIMEOUT_MS) })
     } catch (error) {
       throw normalizeModelScopeSdkError(error)
