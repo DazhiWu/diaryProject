@@ -23,7 +23,14 @@ import {
 import { HttpError } from '@/lib/server/session'
 
 export const INSUFFICIENT_KNOWLEDGE_ANSWER = '当前日记语料中没有足够证据回答这个问题。'
-export const MODELSCOPE_KNOWLEDGE_ANSWER_MAX_TOKENS = 8_000
+export const MODELSCOPE_KNOWLEDGE_ANSWER_MAX_TOKENS = 2_000
+export const MODELSCOPE_KNOWLEDGE_ANSWER_REASONING_MAX_TOKENS = 8_000
+
+export function knowledgeAnswerMaxTokens(model: string): number {
+  return model.startsWith('deepseek-ai/')
+    ? MODELSCOPE_KNOWLEDGE_ANSWER_REASONING_MAX_TOKENS
+    : MODELSCOPE_KNOWLEDGE_ANSWER_MAX_TOKENS
+}
 
 export type KnowledgeAnswerCitation = {
   citationId: string
@@ -89,7 +96,7 @@ async function prepareModelScopeCompletion(): Promise<KnowledgeAnswerCompletion>
           { role: 'user', content: prompts.user },
         ],
         stream: false,
-        max_tokens: MODELSCOPE_KNOWLEDGE_ANSWER_MAX_TOKENS,
+        max_tokens: knowledgeAnswerMaxTokens(model),
       }, { signal: AbortSignal.timeout(MODELSCOPE_KNOWLEDGE_ANSWER_TIMEOUT_MS) })
     } catch (error) {
       throw normalizeModelScopeSdkError(error)
@@ -153,6 +160,7 @@ export function buildKnowledgeAnswerPrompts(
 - 不得编造日期、事件、人物、动机、因果关系或用户观点。
 - 明确区分日记直接记录的事实与根据证据作出的有限推断。
 - 每个事实陈述都必须紧跟一个或多个允许的引用标识，格式为 [S1][S2]。
+- 回答不超过 800 个中文字符，只保留直接回答问题所需的事实、有限推断和引用。
 - 如果证据不能充分回答问题，evidenceStatus 必须为 "insufficient"，不得猜测。
 - 不得声称你就是用户，也不得代表用户作出承诺、决定或正式表态。
 
