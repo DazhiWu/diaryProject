@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 
 import {
   isRetryableModelScopeRequestError,
+  MODELSCOPE_KNOWLEDGE_ANSWER_TIMEOUT_MS,
   ModelScopeConfigurationError,
   ModelScopeUnreadableHttpResponseError,
   ModelScopeModelsExhaustedError,
@@ -18,6 +19,10 @@ afterEach(() => {
 })
 
 describe('ModelScope model configuration', () => {
+  it('allows grounded answers to outlast variable cross-region latency', () => {
+    expect(MODELSCOPE_KNOWLEDGE_ANSWER_TIMEOUT_MS).toBe(75_000)
+  })
+
   it('preserves the configured model order while trimming empty entries', () => {
     expect(parseModelScopeChatModels(' first/model, ,second/model,first/model ')).toEqual([
       'first/model',

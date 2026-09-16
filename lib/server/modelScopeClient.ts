@@ -8,7 +8,7 @@ import { HttpError } from '@/lib/server/session'
 
 export const MODELSCOPE_BASE_URL = 'https://api-inference.modelscope.cn/v1'
 export const MODELSCOPE_TIMEOUT_MS = 30_000
-export const MODELSCOPE_KNOWLEDGE_ANSWER_TIMEOUT_MS = 45_000
+export const MODELSCOPE_KNOWLEDGE_ANSWER_TIMEOUT_MS = 75_000
 export const MODELSCOPE_ALL_MODELS_FAILED_MESSAGE = '所有模型 API 调用失败'
 
 export class ModelScopeConfigurationError extends Error {
