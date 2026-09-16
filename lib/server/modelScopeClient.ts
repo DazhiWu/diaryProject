@@ -8,6 +8,7 @@ import { HttpError } from '@/lib/server/session'
 
 export const MODELSCOPE_BASE_URL = 'https://api-inference.modelscope.cn/v1'
 export const MODELSCOPE_TIMEOUT_MS = 30_000
+export const MODELSCOPE_KNOWLEDGE_ANSWER_TIMEOUT_MS = 45_000
 export const MODELSCOPE_ALL_MODELS_FAILED_MESSAGE = '所有模型 API 调用失败'
 
 export class ModelScopeConfigurationError extends Error {
@@ -75,6 +76,13 @@ export type SafeModelScopeErrorMetadata = {
   code?: string
 }
 
+function modelScopeSdkErrorName(error: unknown): string | undefined {
+  if (error instanceof OpenAI.APIUserAbortError) return 'APIUserAbortError'
+  if (error instanceof OpenAI.APIConnectionTimeoutError) return 'APIConnectionTimeoutError'
+  if (error instanceof OpenAI.APIConnectionError) return 'APIConnectionError'
+  return undefined
+}
+
 export function safeModelScopeErrorMetadata(error: unknown): SafeModelScopeErrorMetadata {
   if (!error || typeof error !== 'object') return { name: 'UnknownError' }
   const value = error as {
@@ -84,10 +92,11 @@ export function safeModelScopeErrorMetadata(error: unknown): SafeModelScopeError
     response?: { status?: unknown }
     constructor?: { name?: unknown }
   }
+  const sdkName = modelScopeSdkErrorName(error)
   const publicName = typeof value.name === 'string' ? value.name : undefined
   const constructorName = typeof value.constructor?.name === 'string' ? value.constructor.name : undefined
   return {
-    name: publicName && publicName !== 'Error' ? publicName : constructorName ?? publicName ?? 'Error',
+    name: sdkName ?? (publicName && publicName !== 'Error' ? publicName : constructorName ?? publicName ?? 'Error'),
     status: typeof value.status === 'number'
       ? value.status
       : typeof value.response?.status === 'number'
@@ -152,6 +161,7 @@ export async function getModelScopeChatModels(): Promise<string[]> {
 export function isRetryableModelScopeRequestError(error: unknown): boolean {
   if (error instanceof HttpError) return false
   if (error instanceof ModelScopeRetryableResponseError) return true
+  if (modelScopeSdkErrorName(error)) return true
   const metadata = safeModelScopeErrorMetadata(error)
   if (metadata.status === 401) return false
   const normalizedCode = metadata.code?.toUpperCase()

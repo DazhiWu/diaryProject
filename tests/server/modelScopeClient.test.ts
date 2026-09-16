@@ -66,6 +66,15 @@ describe('ModelScope retryable request errors', () => {
   })
 
   it.each([
+    [new (class d extends OpenAI.APIUserAbortError {})(), 'APIUserAbortError'],
+    [new (class d extends OpenAI.APIConnectionTimeoutError {})(), 'APIConnectionTimeoutError'],
+    [new (class d extends OpenAI.APIConnectionError {})({ cause: new Error('private connection failure') }), 'APIConnectionError'],
+  ])('classifies SDK instances independently of minified constructor names', (error, name) => {
+    expect(safeModelScopeErrorMetadata(error)).toMatchObject({ name })
+    expect(isRetryableModelScopeRequestError(error)).toBe(true)
+  })
+
+  it.each([
     [{ status: 400 }],
     [{ status: 401 }],
     [{ status: 401, code: 'model_access_denied' }],

@@ -129,7 +129,7 @@ If retrieval returns no candidate, return `evidenceStatus: "insufficient"` witho
 - Put answer orchestration in a server-only module, for example `lib/server/knowledgeAnswer.ts`.
 - Reuse `searchPrivateKnowledge()` directly; do not make an internal HTTP request to `/api/knowledge/search`.
 - Reuse or extract the existing ModelScope client construction without changing analysis/translation behavior.
-- Keep OpenAI SDK retries disabled and retain the 30-second upstream timeout.
+- Keep OpenAI SDK retries disabled. Factual-answer generation uses a 45-second timeout per configured model; analysis and translation retain 30 seconds.
 - Apply `assertAllowedOrigin`, admin Cookie authorization, request limits, and `AI_RATE_LIMITER` once at the answer route.
 - A single answer request may call Workers AI Embedding, the Supabase RPC, Workers AI reranking, and ModelScope generation. It must reserve only the ModelScope generation attempt in `modelscope_daily_usage`.
 - Do not log the question together with diary excerpts, the full prompt, the generated answer, the query vector, credentials, or provider response bodies.

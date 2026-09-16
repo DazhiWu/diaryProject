@@ -9,7 +9,7 @@ import {
 } from '@/lib/server/knowledgeSearch'
 import {
   createModelScopeClient,
-  MODELSCOPE_TIMEOUT_MS,
+  MODELSCOPE_KNOWLEDGE_ANSWER_TIMEOUT_MS,
   type ModelScopeFallbackOptions,
   ModelScopeConfigurationError,
   ModelScopeInvalidKnowledgeAnswerError,
@@ -89,7 +89,7 @@ async function prepareModelScopeCompletion(): Promise<KnowledgeAnswerCompletion>
         ],
         stream: false,
         max_tokens: 1_500,
-      }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) })
+      }, { signal: AbortSignal.timeout(MODELSCOPE_KNOWLEDGE_ANSWER_TIMEOUT_MS) })
     } catch (error) {
       throw normalizeModelScopeSdkError(error)
     }
