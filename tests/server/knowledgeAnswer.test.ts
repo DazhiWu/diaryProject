@@ -6,9 +6,10 @@ import {
   buildKnowledgeAnswerPrompts,
   INSUFFICIENT_KNOWLEDGE_ANSWER,
   type KnowledgeAnswerCitation,
+  type KnowledgeAnswerResponse,
 } from '@/lib/server/knowledgeAnswer'
 import type { KnowledgeSearchResult } from '@/lib/server/knowledgeSearch'
-import { ModelScopeModelsExhaustedError } from '@/lib/server/modelScopeClient'
+import { ModelScopeModelsExhaustedError, type ModelScopeFallbackOptions } from '@/lib/server/modelScopeClient'
 import { ModelScopeQuotaStopError } from '@/lib/server/modelScopeQuota'
 
 function result(overrides: Partial<KnowledgeSearchResult> = {}): KnowledgeSearchResult {
@@ -40,9 +41,7 @@ function dependencies(options: {
     evidenceStatus: 'supported',
     citationIds: ['S1'],
   }))
-  const runFallback = vi.fn(async (fallback: {
-    attempt(model: string): Promise<string>
-  }) => fallback.attempt('first/model'))
+  const runFallback = vi.fn(async (fallback: ModelScopeFallbackOptions<Omit<KnowledgeAnswerResponse, 'rerankApplied'>>) => fallback.attempt('first/model'))
   return {
     search: vi.fn().mockResolvedValue({
       results: options.results ?? [result()],
@@ -73,7 +72,7 @@ describe('knowledge factual answer orchestration', () => {
   it('returns insufficient evidence without preparing or running ModelScope when retrieval is empty', async () => {
     const deps = dependencies({ results: [], rerankApplied: false })
 
-    await expect(answerPrivateKnowledgeQuestion({ question: '没有记录的问题' }, deps)).resolves.toEqual({
+    await expect(answerPrivateKnowledgeQuestion({ question: '没有记录的问题' }, deps)).resolves.toMatchObject({
       answer: INSUFFICIENT_KNOWLEDGE_ANSWER,
       evidenceStatus: 'insufficient',
       citations: [],
@@ -82,6 +81,31 @@ describe('knowledge factual answer orchestration', () => {
     expect(deps.prepareCompletion).not.toHaveBeenCalled()
     expect(deps.runFallback).not.toHaveBeenCalled()
     expect(deps.complete).not.toHaveBeenCalled()
+  })
+
+  it('asks for context without searching or reserving a model attempt', async () => {
+    const deps = dependencies({})
+    const response = await answerPrivateKnowledgeQuestion({ question: '这件事情让我想起以前的哪些经历？' }, deps)
+    expect(response.clarification).toBeTruthy()
+    expect(deps.search).not.toHaveBeenCalled()
+    expect(deps.prepareCompletion).not.toHaveBeenCalled()
+    expect(deps.runFallback).not.toHaveBeenCalled()
+  })
+
+  it('keeps all selected recall citations server-owned, including S8', async () => {
+    const deps = dependencies({ completion: JSON.stringify({
+      answer: '记录中有一次应对经历。[S8]', evidenceStatus: 'supported', citationIds: ['S8'],
+    }) })
+    let source = 0
+    deps.search.mockImplementation(async () => ({
+      results: Array.from({ length: 5 }, () => result({ sourceId: ++source, chunkId: source })),
+      rerankApplied: true,
+    }))
+    const response = await answerPrivateKnowledgeQuestion({ question: '我怎么度过低落的时候', endDate: '2026-07-20' }, deps)
+    expect(response.retrieval?.readExcerptCount).toBe(8)
+    expect(response.citations).toHaveLength(1)
+    expect(response.citations[0].citationId).toBe('S8')
+    expect(deps.runFallback).toHaveBeenCalledOnce()
   })
 
   it('assigns trusted server citations through the selected model and propagates reranker fallback', async () => {
@@ -121,7 +145,7 @@ describe('knowledge factual answer orchestration', () => {
     expect(deps.runFallback).toHaveBeenCalledOnce()
     expect(deps.complete).toHaveBeenCalledOnce()
     expect(deps.complete.mock.calls[0]?.[0]).toBe('first/model')
-    expect(response).toEqual({
+    expect(response).toMatchObject({
       answer: '计划先实现事实层。[S1] 第二天又确认了边界。[S2]',
       evidenceStatus: 'supported',
       rerankApplied: false,
@@ -260,6 +284,15 @@ describe('knowledge factual answer orchestration', () => {
 })
 
 describe('knowledge answer prompt and persistence boundary', () => {
+  it('does not add provider-specific thinking fields to ModelScope requests', () => {
+    const sources = [
+      readFileSync('lib/server/knowledgeAnswer.ts', 'utf8'),
+      readFileSync('lib/aiAnalysis.ts', 'utf8'),
+    ].join('\n')
+    expect(sources).not.toContain('enable_thinking')
+    expect(sources).not.toContain('extra_body')
+  })
+
   it('marks diary excerpts as untrusted evidence and constrains output citations', () => {
     const citation: KnowledgeAnswerCitation = {
       citationId: 'S1',

@@ -210,6 +210,26 @@ describe('knowledge search Workers AI pipeline', () => {
     expect(rerank).not.toHaveBeenCalled()
   })
 
+  it('uses vector order without contacting a reranker in local mode', async () => {
+    const response = await searchPrivateKnowledge({ query: '目标', diagnostics: true }, {
+      embedQuery: vi.fn().mockResolvedValue(Array.from({ length: 1024 }, () => 0.03125)),
+      searchCandidates: vi.fn().mockResolvedValue({
+        data: [
+          row({ chunk_id: 1, source_id: 1, similarity: 0.4 }),
+          row({ chunk_id: 2, source_id: 2, similarity: 0.9 }),
+        ],
+        error: null,
+      }),
+      rerank: null,
+      embeddingModel: 'Qwen/Qwen3-Embedding-0.6B',
+      embeddingProvider: 'local',
+    })
+
+    expect(response.rerankApplied).toBe(false)
+    expect(response.results.map((item) => item.chunkId)).toEqual([2, 1])
+    expect(response.diagnostics?.reranked).toEqual([])
+  })
+
   it('turns embedding failures into a service-unavailable error without logging provider detail', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     await expect(searchPrivateKnowledge({ query: '目标' }, {

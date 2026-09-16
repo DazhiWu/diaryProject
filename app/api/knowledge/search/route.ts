@@ -9,7 +9,7 @@ import { HttpError, readSession, requireAdmin } from '@/lib/server/session'
 function responseFor(error: unknown) {
   if (error instanceof HttpError) return NextResponse.json({ error: error.message }, { status: error.status })
   if (error instanceof KnowledgeEmbeddingUnavailableError) {
-    return NextResponse.json({ error: 'Knowledge search is temporarily unavailable' }, { status: 503 })
+    return NextResponse.json({ error: error.message, code: error.reason }, { status: 503 })
   }
   console.error('[knowledge-search]', { operation: 'route', outcome: 'failed', name: error instanceof Error ? error.name : 'UnknownError' })
   return NextResponse.json({ error: 'Knowledge search failed' }, { status: 500 })

@@ -1,5 +1,7 @@
 # 长期日记主题时间线主题目录
 
+> Historical / paused: the active product is now the [Private Diary Recall Assistant](../../PRIVATE_RECALL_ASSISTANT.md). Do not execute the rollout or development sequence below without a new explicit decision to resume it. Runtime code has been removed; applied Phase 3A–3C data remains dormant, and never-applied 3D/v4 SQL is archived outside the migration runner.
+
 本文为“可审核主题时间线（Phase 3A）”提供可直接复制的主题写法。主题应帮助模型从长期日记中识别有原文证据的经历、行为和变化，而不是要求模型诊断人格、疾病，或猜测日记中没有表达的动机。
 
 ## 使用原则

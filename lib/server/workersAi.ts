@@ -1,5 +1,7 @@
 import 'server-only'
 
+import { WorkersAiCallError, workersAiFailureDetails, type WorkersAiStage } from '@/lib/server/workersAiFailure'
+
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 
 export const QUERY_EMBEDDING_MODEL = '@cf/qwen/qwen3-embedding-0.6b'
@@ -139,21 +141,69 @@ export function createWorkersAiClient(runner: WorkersAiRunner) {
   }
 }
 
+export const WORKERS_AI_EMBEDDING_TIMEOUT_MS = 20_000
+export const WORKERS_AI_RERANK_TIMEOUT_MS = 8_000
+
+// Covers context acquisition as well as inference. The race also bounds local
+// proxy initialization, which has no AbortSignal API. A late binding never runs AI.
+export async function runWorkersAiWithDeadline<T>(
+  resolveAi: () => Promise<CloudflareEnv['AI']>,
+  run: (ai: CloudflareEnv['AI'], signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  const started = Date.now()
+  let stage: WorkersAiStage = 'binding'
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new WorkersAiCallError('timeout', stage, Date.now() - started)
+      reject(error)
+      controller.abort(error)
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([
+      (async () => {
+        const ai = await resolveAi()
+        controller.signal.throwIfAborted()
+        stage = 'inference'
+        return run(ai, controller.signal)
+      })(),
+      deadline,
+    ])
+  } catch (error) {
+    if (error instanceof WorkersAiCallError) throw error
+    const details = workersAiFailureDetails(error)
+    throw new WorkersAiCallError(details.reason, stage, Date.now() - started, details.status)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function workersAi(): Promise<CloudflareEnv['AI']> {
   const { env } = await getCloudflareContext({ async: true })
   return env.AI
 }
 
+// Miniflare's Node binding proxy cannot serialize AbortSignal. In local dev,
+// bound the wait only; production binding calls receive a cancellable signal.
+function bindingOptions(signal: AbortSignal) {
+  return process.env.NODE_ENV === 'production' ? { signal } : undefined
+}
+
 const productionClient = createWorkersAiClient({
-  async runEmbedding(query) {
-    return (await workersAi()).run(QUERY_EMBEDDING_MODEL, {
+  runEmbedding(query) {
+    return runWorkersAiWithDeadline(workersAi, (ai, signal) => ai.run(QUERY_EMBEDDING_MODEL, {
       queries: [query],
       instruction: KNOWLEDGE_QUERY_INSTRUCTION,
-    })
+    }, bindingOptions(signal)), WORKERS_AI_EMBEDDING_TIMEOUT_MS)
   },
-  async runReranker(query, contexts, topK) {
+  runReranker(query, contexts, topK) {
     const input = { query, contexts, top_k: topK }
-    return (await workersAi()).run(RERANKER_MODEL, input)
+    return runWorkersAiWithDeadline(workersAi, (ai, signal) => ai.run(
+      RERANKER_MODEL, input, bindingOptions(signal),
+    ), WORKERS_AI_RERANK_TIMEOUT_MS)
   },
 })
 

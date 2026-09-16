@@ -35,6 +35,14 @@ function validateEmbedding(value: unknown): number[] {
   return value as number[]
 }
 
+function normalizeEmbedding(vector: number[]): number[] {
+  const magnitude = Math.hypot(...vector)
+  if (!Number.isFinite(magnitude) || magnitude === 0) {
+    throw new Error('Embedding response has zero magnitude')
+  }
+  return vector.map((item) => item / magnitude)
+}
+
 export async function embedKnowledgeTexts(inputs: string[], inputType: EmbeddingInputType): Promise<number[][]> {
   if (inputs.length === 0) return []
 
@@ -61,4 +69,10 @@ export async function embedKnowledgeTexts(inputs: string[], inputType: Embedding
   }
 
   return embeddings
+}
+
+export async function embedKnowledgeQueryLocally(query: string): Promise<number[]> {
+  const [embedding] = await embedKnowledgeTexts([query], 'query')
+  if (!embedding) throw new Error('Embedding response count does not match the request')
+  return normalizeEmbedding(embedding)
 }

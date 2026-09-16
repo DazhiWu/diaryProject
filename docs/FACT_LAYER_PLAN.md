@@ -1,10 +1,12 @@
 # Fact Layer (Phase 2) Development Plan
 
+> Phase 2 acceptance history is retained below. The current extension is the [Private Diary Recall Assistant](PRIVATE_RECALL_ASSISTANT.md), with bounded multi-direction retrieval, optional current-experience context, up to eight cited excerpts, and no persistent understanding. The historical Phase 3 next-step plan is paused.
+
 ## Purpose
 
 Phase 2 turns the existing administrator knowledge search into evidence-backed natural-language question answering over private diary content. It must remain a factual archive interface: answers come from retrieved diary excerpts, cite their sources, state when evidence is insufficient, and do not create long-term memory or personality conclusions.
 
-This document is the handoff entry point for the next development conversation. Read it together with [`../AGENTS.md`](../AGENTS.md), [`DATABASE.md`](DATABASE.md), [`DEPLOY.md`](DEPLOY.md), and the post-Fact-Layer [`DIGITAL_TWIN_ROADMAP.md`](DIGITAL_TWIN_ROADMAP.md).
+This document preserves the implemented Fact Layer boundary. Read it together with [`../AGENTS.md`](../AGENTS.md), [`DATABASE.md`](DATABASE.md), [`DEPLOY.md`](DEPLOY.md), and the current [`PRIVATE_RECALL_ASSISTANT.md`](PRIVATE_RECALL_ASSISTANT.md). The former digital-twin route is retained only in the [Phase 3 archive](archive/phase3/README.md).
 
 ## Confirmed Phase 1 foundation
 
@@ -162,7 +164,7 @@ Extend the existing administrator knowledge-base view:
 
 Do not add chat history, conversation memory, editable AI conclusions, or public access in this phase.
 
-These deferred capabilities are not abandoned. Their intended order, review requirements, privacy boundaries, and completion gates are preserved in [`DIGITAL_TWIN_ROADMAP.md`](DIGITAL_TWIN_ROADMAP.md).
+These capabilities are outside the active product boundary. Their former order, review requirements, privacy boundaries, and completion gates remain available in the [Phase 3 archive](archive/phase3/README.md) as historical context.
 
 ## Required tests
 

@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
-import { ThemeTimeline } from '@/components/theme-timeline'
 import { KNOWLEDGE_SEARCH_DEFAULT_START_DATE, localDateInputValue } from '@/lib/dateInput'
 import {
   answerKnowledgeQuestion,
@@ -123,11 +122,34 @@ function KnowledgeAnswerResult({
   onOpenDiary: (sourceId: number) => Promise<void>
 }) {
   const supported = result.evidenceStatus === 'supported'
+  const [expandedCitations, setExpandedCitations] = useState<Set<string>>(() => new Set())
+
+  useEffect(() => {
+    setExpandedCitations(new Set())
+  }, [result])
+
+  function toggleCitation(citationId: string) {
+    setExpandedCitations((current) => {
+      const next = new Set(current)
+      if (next.has(citationId)) next.delete(citationId)
+      else next.add(citationId)
+      return next
+    })
+  }
+
   return (
     <div className="space-y-4 border-t pt-5">
       <div className={`rounded-md border px-3 py-2 text-sm ${supported ? 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-amber-500/40 bg-amber-500/5 text-amber-800 dark:text-amber-300'}`}>
-        {supported ? '已有日记证据支持此回答。' : '当前日记证据不足，系统未作推测。'}
+        {result.clarification ? '需要补充当前经历' : supported ? '回答附有日记引用；AI 解读仍需结合原文判断。' : '当前日记证据不足，系统未作推测。'}
       </div>
+      {result.retrieval && (
+        <p className="text-xs leading-6 text-muted-foreground">
+          {result.retrieval.partial && '补充检索暂时失败，本次仅依据已取得的片段回答，查找范围不完整。'}
+          本次范围：{result.retrieval.startDate || '最早已索引记录'} 至 {result.retrieval.endDate || '最新已索引记录'}。
+          选读 {result.retrieval.readDiaryCount} 篇日记中的 {result.retrieval.readExcerptCount} 个片段，非逐篇完整阅读。
+          {result.retrieval.followupDays > 0 && ` 已按线索补查随后 ${result.retrieval.followupDays} 天的相关片段。`}
+        </p>
+      )}
       <div className="space-y-2">
         <h3 className="font-semibold">回答</h3>
         <p className="whitespace-pre-wrap text-sm leading-7">{result.answer}</p>
@@ -138,32 +160,50 @@ function KnowledgeAnswerResult({
       {result.citations.length > 0 && (
         <div className="space-y-3">
           <h3 className="font-semibold">来源引用</h3>
-          {result.citations.map((citation) => (
-            <Card key={citation.citationId} className="gap-3 py-4">
-              <CardHeader className="px-4 sm:px-6">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-base">
-                      [{citation.citationId}] {citation.sourceTitle || `日记 ${citation.sourceDate}`}
-                    </CardTitle>
-                    <CardDescription className="mt-1">
-                      {citation.sourceDate} · 第 {citation.chunkIndex + 1}{citation.chunkEndIndex === citation.chunkIndex ? '' : `–${citation.chunkEndIndex + 1}`} 个片段
-                    </CardDescription>
+          {result.citations.map((citation) => {
+            const expanded = expandedCitations.has(citation.citationId)
+            const contentId = `knowledge-citation-${citation.citationId}`
+            return (
+              <Card key={citation.citationId} className="gap-3 py-4">
+                <CardHeader className="px-4 sm:px-6">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <CardTitle className="text-base">
+                        [{citation.citationId}] {citation.sourceTitle || `日记 ${citation.sourceDate}`}
+                      </CardTitle>
+                      <CardDescription className="mt-1">
+                        {citation.sourceDate} · 第 {citation.chunkIndex + 1}{citation.chunkEndIndex === citation.chunkIndex ? '' : `–${citation.chunkEndIndex + 1}`} 个片段
+                      </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        aria-controls={contentId}
+                        aria-expanded={expanded}
+                        onClick={() => toggleCitation(citation.citationId)}
+                      >
+                        <ChevronRightIcon className={`h-4 w-4 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                        {expanded ? '收起内容' : '展开内容'}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void openKnowledgeCitation(citation, onOpenDiary)}
+                      >
+                        打开原日记
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void openKnowledgeCitation(citation, onOpenDiary)}
-                  >
-                    打开原日记
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="px-4 sm:px-6">
-                <p className="whitespace-pre-wrap text-sm leading-7">{citation.excerpt}</p>
-              </CardContent>
-            </Card>
-          ))}
+                </CardHeader>
+                <CardContent id={contentId} className="px-4 sm:px-6" hidden={!expanded}>
+                  <p className="whitespace-pre-wrap text-sm leading-7">{citation.excerpt}</p>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       )}
     </div>
@@ -173,7 +213,8 @@ function KnowledgeAnswerResult({
 export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number) => Promise<void> }) {
   const [status, setStatus] = useState(EMPTY_STATUS)
   const [question, setQuestion] = useState('')
-  const [answerStartDate, setAnswerStartDate] = useState(KNOWLEDGE_SEARCH_DEFAULT_START_DATE)
+  const [answerStartDate, setAnswerStartDate] = useState('')
+  const [context, setContext] = useState('')
   const [answerEndDate, setAnswerEndDate] = useState('')
   const [answerResult, setAnswerResult] = useState<KnowledgeAnswerResponse | null>(null)
   const [query, setQuery] = useState('')
@@ -219,7 +260,6 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
 
   useEffect(() => {
     const today = localDateInputValue(new Date())
-    setAnswerEndDate(today)
     setEndDate(today)
   }, [])
 
@@ -303,11 +343,12 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
     try {
       const response = await answerKnowledgeQuestion({
         question: question.trim(),
+        context: context.trim() || undefined,
         startDate: answerStartDate || undefined,
         endDate: answerEndDate || undefined,
       })
       setAnswerResult(response)
-      if (response.evidenceStatus === 'insufficient') toast.info('当前日记语料中没有足够证据')
+      if (response.evidenceStatus === 'insufficient' && !response.clarification) toast.info('当前日记语料中没有足够证据')
     } catch (error) {
       console.error('Failed to answer knowledge question:', error)
       toast.error(error instanceof Error ? error.message : '日记事实问答失败')
@@ -320,8 +361,8 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>个人知识库</CardTitle>
-          <CardDescription>管理员专用的日记语义索引。当前模型：Qwen3-Embedding-0.6B。</CardDescription>
+          <CardTitle>私人日记回顾助手</CardTitle>
+          <CardDescription>查找往事、回顾应对办法，回答附原日记引用。回答和解读不会写入长期记忆。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {loadingStatus ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="h-4 w-4" />正在读取索引状态...</div> : (
@@ -336,7 +377,7 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
             <div className={`rounded-md border px-3 py-2 text-sm ${localIndexingEnabled ? 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-amber-500/40 bg-amber-500/5 text-amber-800 dark:text-amber-300'}`}>
               {localIndexingEnabled
                 ? '本地索引执行已启用：请确认本机 FastAPI Embedding 服务正在 127.0.0.1:8000 运行。'
-                : '生产环境仅提供索引状态与知识搜索。索引同步、重建和失败任务重试必须在本地启动项目后执行。'}
+                : '线上可搜索日记并获取回顾回答。索引同步、重建和失败任务重试必须在本地启动项目后执行。'}
             </div>
           )}
           <div className="flex flex-wrap gap-2">
@@ -345,16 +386,15 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
             <Button variant="outline" onClick={() => void retryFailed()} disabled={!localIndexingEnabled || syncing || status.failed === 0}>重试失败任务</Button>
             <Button variant="ghost" onClick={() => void refreshStatus()} disabled={syncing}>刷新状态</Button>
           </div>
-          <p className="text-xs text-muted-foreground">日记保存不会等待 Embedding；新增或修改后的内容会进入待处理队列。本地同步时每个任务间隔 2 秒，连续 3 篇失败会停止本次同步；重建只重新排队，不会立即删除现有可搜索片段。</p>
+          <p className="text-xs text-muted-foreground">搜索仅覆盖已索引内容，待处理或失败的日记不代表已查阅。日记保存不会等待 Embedding；新增或修改后的内容会进入待处理队列。本地同步时每个任务间隔 2 秒，连续 3 篇失败会停止本次同步；重建只重新排队，不会立即删除现有可搜索片段。</p>
         </CardContent>
       </Card>
 
-      <ThemeTimeline localProcessingEnabled={localIndexingEnabled} onOpenDiary={onOpenDiary} />
 
       <Card>
         <CardHeader>
-          <CardTitle>日记事实问答</CardTitle>
-          <CardDescription>只依据检索到的日记原文回答，并为事实陈述附上可打开的来源引用。</CardDescription>
+          <CardTitle>问问过去的自己</CardTitle>
+          <CardDescription>默认查找全部已索引历史；可指定日期。涉及“这件事”时，请在下方补充当前经历。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <form onSubmit={submitAnswer} className="space-y-3">
@@ -362,8 +402,16 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
               maxLength={500}
-              placeholder="例如：我什么时候开始认真考虑个人知识库？当时记录了哪些原因？"
+              aria-label="回顾问题"
+              placeholder="例如：我以前怎么度过低落的时候？"
             />
+            <label className="block space-y-1 text-sm">
+              <span>当前经历（可选）</span>
+              <textarea className="min-h-24 w-full rounded-md border bg-background p-3" value={context}
+                onChange={(event) => setContext(event.target.value)} maxLength={2000}
+                placeholder="描述发生了什么、遇到了什么困难，帮助查找相似往事。" />
+            </label>
+            <p className="text-xs text-muted-foreground">日期留空时，根据问题识别去年、指定年份或最近的范围；无时间要求则查全部已索引历史。“最近”默认 30 天，日期框优先。</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-sm">
                 <span className="text-muted-foreground">开始日期（可选）</span>

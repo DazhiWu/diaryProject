@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import OpenAI from 'openai'
 
 import {
   isRetryableModelScopeRequestError,
@@ -6,6 +7,7 @@ import {
   ModelScopeModelsExhaustedError,
   parseModelScopeChatModels,
   runModelScopeChatFallback,
+  safeModelScopeErrorMetadata,
 } from '@/lib/server/modelScopeClient'
 import { HttpError } from '@/lib/server/session'
 
@@ -45,6 +47,7 @@ describe('ModelScope retryable request errors', () => {
     [{ name: 'AbortError' }],
     [{ name: 'APIConnectionTimeoutError' }],
     [{ name: 'APIConnectionError' }],
+    [new OpenAI.APIUserAbortError()],
     [{ code: 'ENOTFOUND' }],
     [{ code: 'ECONNREFUSED' }],
     [{ code: 'ECONNRESET' }],
@@ -52,6 +55,12 @@ describe('ModelScope retryable request errors', () => {
     [{ code: 'EAI_AGAIN' }],
   ])('classifies an upstream request failure as retryable: %j', (error) => {
     expect(isRetryableModelScopeRequestError(error)).toBe(true)
+  })
+
+  it('reports the concrete SDK error type when its public name is only Error', () => {
+    expect(safeModelScopeErrorMetadata(new OpenAI.APIUserAbortError())).toMatchObject({
+      name: 'APIUserAbortError',
+    })
   })
 
   it.each([

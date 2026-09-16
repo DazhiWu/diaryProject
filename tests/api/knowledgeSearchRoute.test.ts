@@ -103,7 +103,7 @@ describe('knowledge search route Workers AI behavior', () => {
     const response = await knowledgeSearch(await adminRequest({ query: '目标' }))
 
     expect(response.status).toBe(503)
-    await expect(response.json()).resolves.toEqual({ error: 'Knowledge search is temporarily unavailable' })
+    await expect(response.json()).resolves.toMatchObject({ code: 'unknown', error: expect.any(String) })
   })
 
   it('returns vector results when the service reports reranker fallback', async () => {

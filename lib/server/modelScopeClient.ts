@@ -70,9 +70,17 @@ export type SafeModelScopeErrorMetadata = {
 
 export function safeModelScopeErrorMetadata(error: unknown): SafeModelScopeErrorMetadata {
   if (!error || typeof error !== 'object') return { name: 'UnknownError' }
-  const value = error as { name?: unknown; status?: unknown; code?: unknown; response?: { status?: unknown } }
+  const value = error as {
+    name?: unknown
+    status?: unknown
+    code?: unknown
+    response?: { status?: unknown }
+    constructor?: { name?: unknown }
+  }
+  const publicName = typeof value.name === 'string' ? value.name : undefined
+  const constructorName = typeof value.constructor?.name === 'string' ? value.constructor.name : undefined
   return {
-    name: typeof value.name === 'string' ? value.name : 'Error',
+    name: publicName && publicName !== 'Error' ? publicName : constructorName ?? publicName ?? 'Error',
     status: typeof value.status === 'number'
       ? value.status
       : typeof value.response?.status === 'number'
@@ -85,6 +93,7 @@ export function safeModelScopeErrorMetadata(error: unknown): SafeModelScopeError
 const RETRYABLE_ERROR_NAMES = new Set([
   'TimeoutError',
   'AbortError',
+  'APIUserAbortError',
   'APIConnectionTimeoutError',
   'APIConnectionError',
 ])

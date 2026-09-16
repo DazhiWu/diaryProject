@@ -62,6 +62,8 @@ describe('knowledge answer route boundary', () => {
 
   it.each([
     [{ question: '' }],
+    [{ question: '问题', context: 'x'.repeat(2001) }],
+    [{ question: '问题', context: { unsafe: true } }],
     [{ question: 'x'.repeat(501) }],
     [{ question: '问题', startDate: '2026-02-30' }],
     [{ question: '问题', startDate: '2026-07-20', endDate: '2026-07-19' }],
@@ -92,6 +94,7 @@ describe('knowledge answer route boundary', () => {
 
     const response = await knowledgeAnswer(await request({
       question: '  发生了什么？  ',
+      context: '  面试没有通过  ',
       startDate: '2026-07-01',
       endDate: '',
     }, 'admin'))
@@ -99,6 +102,7 @@ describe('knowledge answer route boundary', () => {
     expect(response.status).toBe(200)
     expect(mocks.answerPrivateKnowledgeQuestion).toHaveBeenCalledWith({
       question: '发生了什么？',
+      context: '面试没有通过',
       startDate: '2026-07-01',
       endDate: undefined,
     })
@@ -120,7 +124,7 @@ describe('knowledge answer route boundary', () => {
     mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeEmbeddingUnavailableError())
     const embeddingResponse = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
     expect(embeddingResponse.status).toBe(503)
-    await expect(embeddingResponse.json()).resolves.toEqual({ error: 'Knowledge answer is temporarily unavailable' })
+    await expect(embeddingResponse.json()).resolves.toMatchObject({ code: 'unknown', error: expect.any(String) })
 
     mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeAnswerProviderError('timeout'))
     const timeoutResponse = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
@@ -131,6 +135,16 @@ describe('knowledge answer route boundary', () => {
     const projectResponse = await knowledgeAnswer(await request({ question: '问题' }, 'admin'))
     expect(projectResponse.status).toBe(500)
     await expect(projectResponse.json()).resolves.toEqual({ error: '事实问答项目处理异常，请稍后重试' })
+  })
+
+  it('returns a classified Access failure with safe user guidance', async () => {
+    mocks.checkAiRateLimit.mockResolvedValue({ allowed: true, retryAfterSeconds: 60 })
+    mocks.answerPrivateKnowledgeQuestion.mockRejectedValueOnce(new KnowledgeEmbeddingUnavailableError('access'))
+    const response = await knowledgeAnswer(await request({ question: '怎么度过低落' }, 'admin'))
+    expect(response.status).toBe(503)
+    const body = await response.json()
+    expect(body).toMatchObject({ code: 'access', error: expect.stringContaining('Access') })
+    expect(body.error).not.toMatch(/workers\.dev|Bearer|CLIENT_SECRET/u)
   })
 
   it('reports complete ModelScope model exhaustion', async () => {

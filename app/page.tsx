@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect, useState } from 'react'
+
 import { AnonymousMessageBoard } from '@/components/anonymous-message-board'
 import { CalendarView } from '@/components/calendar-view'
 import { DiaryAppShell } from '@/components/diary-app-shell'
@@ -16,12 +18,23 @@ import { useDiaryController } from '@/hooks/useDiaryController'
 
 export default function DiaryApp() {
   const controller = useDiaryController()
+  const [detailReturnView, setDetailReturnView] = useState<'list' | 'knowledge'>('list')
+  const [knowledgeMounted, setKnowledgeMounted] = useState(false)
   const {
     auth, isGuest, entries, allEntries, entriesPerPage, totalEntriesCount, totalPages,
     view, setView, searchQuery, setSearchQuery, selectedDate, setSelectedDate, selectedEntry, setSelectedEntry,
     loading, currentPage, setCurrentPage, currentCalendarDate, setCurrentCalendarDate,
     addEntry, updateEntry, deleteEntry, loadEntries, navigateToEntry, openEntryById, selectCalendarDate, mergeEntry, navigation,
   } = controller
+
+  useEffect(() => {
+    if (view === 'knowledge') setKnowledgeMounted(true)
+  }, [view])
+
+  async function openKnowledgeDiary(sourceId: number) {
+    setDetailReturnView('knowledge')
+    await openEntryById(sourceId)
+  }
 
   return (
     <DiaryAppShell
@@ -33,7 +46,12 @@ export default function DiaryApp() {
       setView={setView}
       view={view}
     >
-      {loading ? (
+      {auth.isAdmin && (knowledgeMounted || view === 'knowledge') && (
+        <div hidden={view !== 'knowledge'}>
+          <KnowledgeBase onOpenDiary={openKnowledgeDiary} />
+        </div>
+      )}
+      {view === 'knowledge' ? null : loading ? (
         <div className="flex items-center justify-center py-12"><Spinner className="mr-2 h-6 w-6" /><span className="text-muted-foreground">正在加载日记...</span></div>
       ) : view === 'new' ? (
         <DiaryEntryComponent
@@ -46,7 +64,10 @@ export default function DiaryApp() {
       ) : view === 'detail' && selectedEntry ? (
         <DiaryDetail
           entry={selectedEntry}
-          onBack={() => { setView('list'); void loadEntries() }}
+          onBack={() => {
+            setView(detailReturnView)
+            if (detailReturnView === 'list') void loadEntries()
+          }}
           onDelete={deleteEntry}
           onEdit={(entry) => { setSelectedEntry(entry); setView('edit') }}
           onUpdateEntry={mergeEntry}
@@ -58,7 +79,7 @@ export default function DiaryApp() {
         <>
           <DiaryList
             entries={entries}
-            onViewDetail={(entry) => { setSelectedEntry(entry); setView('detail') }}
+            onViewDetail={(entry) => { setDetailReturnView('list'); setSelectedEntry(entry); setView('detail') }}
             onDelete={deleteEntry}
             onNewEntry={() => setView('new')}
             emptyMessage={searchQuery ? 'No entries found matching your search.' : 'No diary entries yet. Start writing your first entry!'}
@@ -66,7 +87,15 @@ export default function DiaryApp() {
           {totalEntriesCount > 0 && <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} totalEntries={totalEntriesCount} entriesPerPage={entriesPerPage} />}
         </>
       ) : view === 'calendar' ? (
-        <CalendarView entries={allEntries.length > 0 ? allEntries : entries} currentDate={currentCalendarDate} onDateChange={setCurrentCalendarDate} onDateSelect={selectCalendarDate} />
+        <CalendarView
+          entries={allEntries.length > 0 ? allEntries : entries}
+          currentDate={currentCalendarDate}
+          onDateChange={setCurrentCalendarDate}
+          onDateSelect={(date) => {
+            setDetailReturnView('list')
+            void selectCalendarDate(date)
+          }}
+        />
       ) : view === 'download' ? (
         <DiaryDownloader />
       ) : view === 'yearly-summary' ? (
@@ -75,8 +104,6 @@ export default function DiaryApp() {
         <MessageBoard />
       ) : view === 'anonymous-message-board' ? (
         <AnonymousMessageBoard />
-      ) : view === 'knowledge' ? (
-        <KnowledgeBase onOpenDiary={openEntryById} />
       ) : (
         <div className="text-center py-12 text-muted-foreground">未知视图</div>
       )}

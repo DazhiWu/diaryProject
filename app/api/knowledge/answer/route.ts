@@ -17,7 +17,7 @@ import { HttpError, readSession, requireAdmin } from '@/lib/server/session'
 function responseFor(error: unknown) {
   if (error instanceof HttpError) return NextResponse.json({ error: error.message }, { status: error.status })
   if (error instanceof KnowledgeEmbeddingUnavailableError) {
-    return NextResponse.json({ error: 'Knowledge answer is temporarily unavailable' }, { status: 503 })
+    return NextResponse.json({ error: error.message, code: error.reason }, { status: 503 })
   }
   if (error instanceof KnowledgeAnswerProviderError) {
     if (error.reason === 'all-models-failed') {
@@ -45,11 +45,14 @@ export async function POST(request: Request) {
     await assertAllowedOrigin(request)
     requireAdmin(await readSession(request.headers.get('cookie')))
     const body = await readJsonBody(request, REQUEST_LIMITS.modelJson) as {
+      context?: unknown
       question?: unknown
       startDate?: unknown
       endDate?: unknown
     } | null
     const question = stringField(body?.question, 'knowledge question', { min: 1, max: 500, trim: true })
+    const context = body?.context === undefined || body.context === '' ? undefined
+      : stringField(body.context, 'current experience', { min: 1, max: 2000, trim: true })
     const startDate = body?.startDate === undefined || body.startDate === ''
       ? undefined
       : exactDateField(body.startDate, 'start date')
@@ -66,7 +69,7 @@ export async function POST(request: Request) {
       )
     }
 
-    return NextResponse.json(await answerPrivateKnowledgeQuestion({ question, startDate, endDate }))
+    return NextResponse.json(await answerPrivateKnowledgeQuestion({ question, startDate, endDate, ...(context ? { context } : {}) }))
   } catch (error) {
     return responseFor(error)
   }

@@ -1,10 +1,12 @@
 # Phase 3 Auditable Understanding Development Plan
 
+> Historical / paused: the active product is now the [Private Diary Recall Assistant](../../PRIVATE_RECALL_ASSISTANT.md). Do not execute the rollout or development sequence below without a new explicit decision to resume it. Runtime code has been removed; applied Phase 3A–3C data remains dormant, and never-applied 3D/v4 SQL is archived outside the migration runner.
+
 ## Purpose
 
 Phase 3 adds an administrator-only, auditable understanding layer over multiple private diaries. It addresses questions that the synchronous Fact Layer cannot answer reliably with a fixed Top-K evidence window, including recurring themes, time-bounded change, cross-diary synthesis, and reproducible frequency summaries.
 
-This is the handoff document for the Phase 3 development conversation. Read it with [`FACT_LAYER_PLAN.md`](FACT_LAYER_PLAN.md), [`DIGITAL_TWIN_ROADMAP.md`](DIGITAL_TWIN_ROADMAP.md), [`DATABASE.md`](DATABASE.md), [`DEPLOY.md`](DEPLOY.md), and [`../AGENTS.md`](../AGENTS.md).
+This is the handoff document for the Phase 3 development conversation. Read it with [`FACT_LAYER_PLAN.md`](../../FACT_LAYER_PLAN.md), [`DIGITAL_TWIN_ROADMAP.md`](DIGITAL_TWIN_ROADMAP.md), [`DATABASE.md`](../../DATABASE.md), [`DEPLOY.md`](../../DEPLOY.md), and [`AGENTS.md`](../../../AGENTS.md).
 
 ## Entry state
 
@@ -71,7 +73,7 @@ Do not solve corpus analysis by only increasing the existing Top-K constants or 
 - Add claim/resume/failure behavior for explicit local administrator processing.
 - Start with one small administrator-selected date range and one understanding type.
 
-Implementation status: **development-complete and operator-accepted locally, with the database schema and stored-run read/review route deployed; refreshed full-corpus acceptance remains pending**. The finalized first type is `theme_timeline`; exact schema and lifecycle are documented in [`DATABASE.md`](DATABASE.md).
+Implementation status: **development-complete and operator-accepted locally, with the database schema and stored-run read/review route deployed; refreshed full-corpus acceptance remains pending**. The finalized first type is `theme_timeline`; exact schema and lifecycle are documented in [`DATABASE.md`](../../DATABASE.md).
 
 The exact table and enum names must be finalized against the current schema during implementation; this document does not pre-authorize an unreviewed migration.
 

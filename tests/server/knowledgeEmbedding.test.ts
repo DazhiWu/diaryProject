@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { embedKnowledgeTexts, KNOWLEDGE_EMBEDDING_DIMENSIONS } from '@/lib/server/knowledgeEmbedding'
+import { embedKnowledgeQueryLocally, embedKnowledgeTexts, KNOWLEDGE_EMBEDDING_DIMENSIONS } from '@/lib/server/knowledgeEmbedding'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -23,6 +23,20 @@ describe('local knowledge embeddings', () => {
       method: 'POST',
       body: JSON.stringify({ texts: ['搜索内容'], input_type: 'query', batch_size: 16 }),
     }))
+  })
+
+  it('normalizes a local query embedding before vector search', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      model: 'Qwen/Qwen3-Embedding-0.6B',
+      dimensions: 1024,
+      count: 1,
+      embeddings: [embedding(2)],
+    }), { status: 200 }))
+
+    const result = await embedKnowledgeQueryLocally('搜索内容')
+
+    expect(result).toHaveLength(1024)
+    expect(Math.hypot(...result)).toBeCloseTo(1, 12)
   })
 
   it('batches document requests and validates response counts', async () => {

@@ -52,9 +52,6 @@ ${content}
             },
           ],
           stream: false,
-          extra_body: {
-            enable_thinking: true,
-          },
         }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
 
         return parseAIAnalysisResult(readModelScopeChatContent(response));
@@ -98,9 +95,6 @@ ${content}
             },
           ],
           stream: false,
-          extra_body: {
-            enable_thinking: true,
-          },
         }, { signal: AbortSignal.timeout(MODELSCOPE_TIMEOUT_MS) });
 
         return readModelScopeChatContent(response);

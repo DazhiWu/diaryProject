@@ -75,7 +75,7 @@ export function DiaryAppShell({
           <Button data-liquid-active={view === 'list'} variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')} className="gap-2"><ListIcon className="h-4 w-4" />列表视图</Button>
           <Button data-liquid-active={view === 'calendar'} variant={view === 'calendar' ? 'default' : 'outline'} size="sm" onClick={() => setView('calendar')} className="gap-2"><CalendarIcon className="h-4 w-4" />日历视图</Button>
           <Button data-liquid-active={view === 'anonymous-message-board'} variant={view === 'anonymous-message-board' ? 'default' : 'outline'} size="sm" onClick={() => setView('anonymous-message-board')} className="gap-2"><MessageSquareIcon className="h-4 w-4" />匿名留言板</Button>
-          {isAdmin && <Button data-liquid-active={view === 'knowledge'} variant={view === 'knowledge' ? 'default' : 'outline'} size="sm" onClick={() => setView('knowledge')} className="gap-2"><SearchIcon className="h-4 w-4" />个人知识库</Button>}
+          {isAdmin && <Button data-liquid-active={view === 'knowledge'} variant={view === 'knowledge' ? 'default' : 'outline'} size="sm" onClick={() => setView('knowledge')} className="gap-2"><SearchIcon className="h-4 w-4" />日记回顾</Button>}
           <Button data-liquid-active={view === 'message-board'} variant={view === 'message-board' ? 'default' : 'outline'} size="sm" onClick={() => setView('message-board')} disabled={!isAdmin} className="gap-2 disabled:opacity-50 disabled:cursor-not-allowed" title={isAdmin ? '音频记录' : '需要管理员权限'}><MessageSquareIcon className="h-4 w-4" />音频记录</Button>
           {isAdmin && <Button variant="outline" size="sm" onClick={() => setHealthOpen(true)} className="gap-2"><SettingsIcon className="h-4 w-4" />生病异常设置</Button>}
         </div></div>}

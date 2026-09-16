@@ -1,5 +1,9 @@
 import 'server-only'
 
+import { workersAiFailureDetails, workersAiUserMessage, type WorkersAiFailureReason } from '@/lib/server/workersAiFailure'
+
+import { isProductionEnvironment } from '@/lib/server/env'
+import { embedKnowledgeQueryLocally, KNOWLEDGE_EMBEDDING_MODEL } from '@/lib/server/knowledgeEmbedding'
 import { getSupabaseAdmin } from '@/lib/server/supabaseAdmin'
 import {
   embedKnowledgeQuery,
@@ -133,8 +137,15 @@ export function mergeAndDiversifyKnowledgeResults(results: KnowledgeSearchResult
 }
 
 export class KnowledgeEmbeddingUnavailableError extends Error {
-  constructor() {
-    super('Knowledge embedding unavailable')
+  constructor(
+    public readonly reason: WorkersAiFailureReason = 'unknown',
+    public readonly provider: 'local' | 'workers-ai' = 'workers-ai',
+  ) {
+    super(provider === 'local'
+      ? reason === 'timeout'
+        ? '本地日记检索 Embedding 请求超时，请确认本地 Embedding 服务正常运行。'
+        : '无法连接本地日记检索 Embedding 服务，请确认本地服务已在 127.0.0.1:8000 启动。'
+      : workersAiUserMessage(reason))
     this.name = 'KnowledgeEmbeddingUnavailableError'
   }
 }
@@ -148,11 +159,13 @@ type KnowledgeSearchDependencies = {
     startDate?: string
     endDate?: string
   }): Promise<{ data: unknown[] | null; error: unknown }>
-  rerank: typeof rerankKnowledgeCandidates
+  rerank: typeof rerankKnowledgeCandidates | null
+  embeddingModel?: string
+  embeddingProvider?: 'local' | 'workers-ai'
 }
 
 const DEFAULT_DEPENDENCIES: KnowledgeSearchDependencies = {
-  embedQuery: embedKnowledgeQuery,
+  embedQuery: isProductionEnvironment() ? embedKnowledgeQuery : embedKnowledgeQueryLocally,
   async searchCandidates(input) {
     return (await getSupabaseAdmin()).rpc('search_private_knowledge', {
       p_query_embedding: input.queryEmbedding,
@@ -162,7 +175,9 @@ const DEFAULT_DEPENDENCIES: KnowledgeSearchDependencies = {
       p_end_date: input.endDate ?? null,
     })
   },
-  rerank: rerankKnowledgeCandidates,
+  rerank: isProductionEnvironment() ? rerankKnowledgeCandidates : null,
+  embeddingModel: isProductionEnvironment() ? QUERY_EMBEDDING_MODEL : KNOWLEDGE_EMBEDDING_MODEL,
+  embeddingProvider: isProductionEnvironment() ? 'workers-ai' : 'local',
 }
 
 function vectorFallback(candidates: KnowledgeCandidate[]): KnowledgeSearchResult[] {
@@ -192,10 +207,13 @@ export async function searchPrivateKnowledge(
     console.error('[knowledge-search]', {
       operation: 'embedding',
       outcome: 'failed',
-      model: QUERY_EMBEDDING_MODEL,
-      name: error instanceof Error ? error.name : 'UnknownError',
+      model: dependencies.embeddingModel ?? QUERY_EMBEDDING_MODEL,
+      ...workersAiFailureDetails(error),
     })
-    throw new KnowledgeEmbeddingUnavailableError()
+    throw new KnowledgeEmbeddingUnavailableError(
+      workersAiFailureDetails(error).reason,
+      dependencies.embeddingProvider ?? 'workers-ai',
+    )
   }
 
   const { data, error } = await dependencies.searchCandidates({
@@ -242,6 +260,14 @@ export async function searchPrivateKnowledge(
     }
   }
 
+  if (!dependencies.rerank) {
+    return {
+      results: mergeAndDiversifyKnowledgeResults(vectorFallback(candidates), RERANK_RESULT_COUNT),
+      rerankApplied: false,
+      ...(candidateDiagnostics ? { diagnostics: { candidates: candidateDiagnostics, reranked: [] } } : {}),
+    }
+  }
+
   try {
     const reranked = await dependencies.rerank(input.query, candidates, RERANK_RESULT_COUNT)
     return {
@@ -270,7 +296,7 @@ export async function searchPrivateKnowledge(
       operation: 'reranker',
       outcome: 'fallback',
       model: RERANKER_MODEL,
-      name: error instanceof Error ? error.name : 'UnknownError',
+      ...workersAiFailureDetails(error),
     })
     return {
       results: mergeAndDiversifyKnowledgeResults(vectorFallback(candidates), RERANK_RESULT_COUNT),
