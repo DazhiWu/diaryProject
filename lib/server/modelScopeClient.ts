@@ -62,10 +62,10 @@ export class ModelScopeInvalidKnowledgeAnswerError extends ModelScopeRetryableRe
   }
 }
 
-export class ModelScopeMalformedHttpResponseError extends ModelScopeRetryableResponseError {
+export class ModelScopeUnreadableHttpResponseError extends ModelScopeRetryableResponseError {
   constructor() {
-    super('ModelScope HTTP success response was not valid JSON', 'MALFORMED_HTTP_RESPONSE')
-    this.name = 'ModelScopeMalformedHttpResponseError'
+    super('ModelScope HTTP response body could not be read', 'UNREADABLE_HTTP_RESPONSE')
+    this.name = 'ModelScopeUnreadableHttpResponseError'
   }
 }
 
@@ -99,12 +99,14 @@ export function safeModelScopeErrorMetadata(error: unknown): SafeModelScopeError
 
 /**
  * The OpenAI SDK parses successful JSON responses after fetch resolves. A
- * truncated or otherwise malformed upstream body escapes as SyntaxError, so
- * normalize it at the SDK boundary before the shared fallback classifier runs.
+ * truncated body escapes as SyntaxError, while workerd can surface an aborted
+ * response-body read as TypeError. Normalize only at this SDK boundary so a
+ * TypeError from application code remains terminal.
  */
 export function normalizeModelScopeSdkError(error: unknown): unknown {
-  return error instanceof SyntaxError || safeModelScopeErrorMetadata(error).name === 'SyntaxError'
-    ? new ModelScopeMalformedHttpResponseError()
+  const name = safeModelScopeErrorMetadata(error).name
+  return error instanceof SyntaxError || error instanceof TypeError || name === 'SyntaxError' || name === 'TypeError'
+    ? new ModelScopeUnreadableHttpResponseError()
     : error
 }
 

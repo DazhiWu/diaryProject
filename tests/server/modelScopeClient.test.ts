@@ -4,7 +4,7 @@ import OpenAI from 'openai'
 import {
   isRetryableModelScopeRequestError,
   ModelScopeConfigurationError,
-  ModelScopeMalformedHttpResponseError,
+  ModelScopeUnreadableHttpResponseError,
   ModelScopeModelsExhaustedError,
   normalizeModelScopeSdkError,
   parseModelScopeChatModels,
@@ -96,19 +96,22 @@ describe('ModelScope retryable request errors', () => {
     expect(isRetryableModelScopeRequestError(new HttpError(502, '模型返回结果格式错误'))).toBe(false)
   })
 
-  it('normalizes a malformed SDK success body into a retryable provider response error', () => {
-    const normalized = normalizeModelScopeSdkError(new SyntaxError('private malformed response detail'))
+  it.each([
+    new SyntaxError('private malformed response detail'),
+    new TypeError('private aborted response-body detail'),
+  ])('normalizes an unreadable SDK response into a retryable provider error', (error) => {
+    const normalized = normalizeModelScopeSdkError(error)
 
-    expect(normalized).toBeInstanceOf(ModelScopeMalformedHttpResponseError)
+    expect(normalized).toBeInstanceOf(ModelScopeUnreadableHttpResponseError)
     expect(safeModelScopeErrorMetadata(normalized)).toMatchObject({
-      name: 'ModelScopeMalformedHttpResponseError',
-      code: 'MALFORMED_HTTP_RESPONSE',
+      name: 'ModelScopeUnreadableHttpResponseError',
+      code: 'UNREADABLE_HTTP_RESPONSE',
     })
     expect(isRetryableModelScopeRequestError(normalized)).toBe(true)
   })
 
-  it('does not rewrite an ordinary project error at the SDK boundary', () => {
-    const error = new TypeError('project bug')
+  it('does not rewrite an ordinary application error at the SDK boundary', () => {
+    const error = new Error('project bug')
     expect(normalizeModelScopeSdkError(error)).toBe(error)
   })
 })
