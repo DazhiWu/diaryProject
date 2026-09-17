@@ -153,6 +153,27 @@ describe('ModelScope ordered fallback', () => {
     expect(JSON.stringify(consoleInfo.mock.calls)).not.toContain('second result')
   })
 
+  it('reports model attempts and safe retry transitions', async () => {
+    const onAttempt = vi.fn()
+    const onRetry = vi.fn()
+    const attempt = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('private upstream body'), { status: 503 }))
+      .mockResolvedValueOnce('done')
+
+    await expect(runModelScopeChatFallback(
+      { operation: 'test', attempt, onAttempt, onRetry },
+      {
+        loadModels: async () => ['first/model', 'second/model'],
+        reserveQuota: vi.fn().mockResolvedValue({}),
+      },
+    )).resolves.toBe('done')
+    expect(onAttempt.mock.calls.map(([details]) => details)).toEqual([
+      { model: 'first/model', attempt: 1, totalAttempts: 2 },
+      { model: 'second/model', attempt: 2, totalAttempts: 2 },
+    ])
+    expect(onRetry).toHaveBeenCalledWith({ completedAttempt: 1, totalAttempts: 2 })
+  })
+
   it('does not switch models after an HTTP-successful response-validation error', async () => {
     const terminal = new Error('invalid response')
     const attempt = vi.fn().mockRejectedValue(terminal)

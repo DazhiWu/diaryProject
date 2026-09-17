@@ -17,6 +17,7 @@ import {
   retryKnowledgeIndex,
   searchKnowledge,
   type KnowledgeAnswerResponse,
+  type KnowledgeAnswerProgress,
   type KnowledgeIndexStatus,
   type KnowledgeSearchDiagnostics,
   type KnowledgeSearchResult,
@@ -40,6 +41,29 @@ const COLLAPSED_DIAGNOSTIC_SECTIONS = {
   candidates: false,
   reranked: false,
   final: false,
+}
+
+function knowledgeAnswerProgressLabel(progress: KnowledgeAnswerProgress): string {
+  if (progress.phase === 'retrieving') {
+    const action = progress.kind === 'followup'
+      ? '正在补充后续经历'
+      : progress.kind === 'direction'
+        ? '正在从另一个角度检索相关日记'
+        : '正在检索相关日记'
+    return `${action}（第 ${progress.searchCount}/最多 ${progress.maxSearchCount} 次检索）`
+  }
+  if (progress.phase === 'evidence-ready') {
+    const partial = progress.partial ? '；部分补充检索暂时不可用' : ''
+    return `已选出 ${progress.diaryCount} 篇日记中的 ${progress.excerptCount} 个片段${partial}`
+  }
+  if (progress.phase === 'retrying') {
+    return `当前模型未完成，正在尝试备用模型（已尝试 ${progress.completedAttempt}/${progress.totalAttempts}）`
+  }
+  const model = progress.model.startsWith('deepseek-ai/') ? 'DeepSeek' : progress.model.split('/').at(-1) || '当前模型'
+  if (progress.phase === 'generating') {
+    return `${model} 正在思考并生成引用回答（模型 ${progress.attempt}/${progress.totalAttempts}）`
+  }
+  return `正在校验引用和回答格式（模型 ${progress.attempt}/${progress.totalAttempts}）`
 }
 
 function scoreLabel(score: number | null): string {
@@ -217,6 +241,8 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
   const [context, setContext] = useState('')
   const [answerEndDate, setAnswerEndDate] = useState('')
   const [answerResult, setAnswerResult] = useState<KnowledgeAnswerResponse | null>(null)
+  const [answerProgress, setAnswerProgress] = useState<KnowledgeAnswerProgress | null>(null)
+  const [answerElapsedSeconds, setAnswerElapsedSeconds] = useState(0)
   const [query, setQuery] = useState('')
   const [startDate, setStartDate] = useState(KNOWLEDGE_SEARCH_DEFAULT_START_DATE)
   const [endDate, setEndDate] = useState('')
@@ -268,6 +294,12 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
     const interval = window.setInterval(() => { void refreshStatus(true) }, SYNC_BATCH_INTERVAL_MS)
     return () => window.clearInterval(interval)
   }, [refreshStatus, syncing])
+
+  useEffect(() => {
+    if (!answering) return
+    const interval = window.setInterval(() => setAnswerElapsedSeconds((seconds) => seconds + 1), 1000)
+    return () => window.clearInterval(interval)
+  }, [answering])
 
   async function syncAllPending() {
     setSyncing(true)
@@ -340,19 +372,22 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
     if (!question.trim() || answering) return
     setAnswering(true)
     setAnswerResult(null)
+    setAnswerProgress(null)
+    setAnswerElapsedSeconds(0)
     try {
       const response = await answerKnowledgeQuestion({
         question: question.trim(),
         context: context.trim() || undefined,
         startDate: answerStartDate || undefined,
         endDate: answerEndDate || undefined,
-      })
+      }, setAnswerProgress)
       setAnswerResult(response)
       if (response.evidenceStatus === 'insufficient' && !response.clarification) toast.info('当前日记语料中没有足够证据')
     } catch (error) {
       console.error('Failed to answer knowledge question:', error)
       toast.error(error instanceof Error ? error.message : '日记事实问答失败')
     } finally {
+      setAnswerProgress(null)
       setAnswering(false)
     }
   }
@@ -426,6 +461,19 @@ export function KnowledgeBase({ onOpenDiary }: { onOpenDiary: (sourceId: number)
               {answering ? <Spinner className="h-4 w-4" /> : null}
               获取有引用的回答
             </Button>
+            {answering && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex items-start gap-3 rounded-md border border-primary/25 bg-primary/5 px-3 py-3 text-sm"
+              >
+                <Spinner className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="space-y-1">
+                  <p>{answerProgress ? knowledgeAnswerProgressLabel(answerProgress) : '正在准备日记检索…'}</p>
+                  <p className="text-xs text-muted-foreground">已等待 {answerElapsedSeconds} 秒；较长的思考会继续显示当前阶段。</p>
+                </div>
+              </div>
+            )}
           </form>
           {answerResult && <KnowledgeAnswerResult result={answerResult} onOpenDiary={onOpenDiary} />}
         </CardContent>

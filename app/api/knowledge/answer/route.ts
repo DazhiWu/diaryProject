@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { checkAiRateLimit } from '@/lib/server/aiRateLimit'
+import type { KnowledgeAnswerProgress, KnowledgeAnswerProgressHandler } from '@/lib/knowledgeAnswerProgress'
 import {
   answerPrivateKnowledgeQuestion,
   KnowledgeAnswerProviderError,
@@ -53,10 +54,15 @@ function responseFor(error: unknown) {
   return NextResponse.json(details.body, { status: details.status })
 }
 
-export function streamAnswer(answer: ReturnType<typeof answerPrivateKnowledgeQuestion>): Response {
+type KnowledgeAnswerFactory = (
+  onProgress: KnowledgeAnswerProgressHandler,
+) => ReturnType<typeof answerPrivateKnowledgeQuestion>
+
+export function streamAnswer(createAnswer: KnowledgeAnswerFactory): Response {
   const encoder = new TextEncoder()
   let heartbeat: ReturnType<typeof setInterval> | undefined
   let canceled = false
+  let currentProgress: KnowledgeAnswerProgress | undefined
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -64,7 +70,16 @@ export function streamAnswer(answer: ReturnType<typeof answerPrivateKnowledgeQue
         if (!canceled) controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`))
       }
       send({ type: 'started', padding: ANSWER_HEARTBEAT_PADDING })
-      heartbeat = setInterval(() => send({ type: 'heartbeat', padding: ANSWER_HEARTBEAT_PADDING }), ANSWER_HEARTBEAT_INTERVAL_MS)
+      heartbeat = setInterval(() => send({
+        type: 'heartbeat',
+        ...(currentProgress ? { data: currentProgress } : {}),
+        padding: ANSWER_HEARTBEAT_PADDING,
+      }), ANSWER_HEARTBEAT_INTERVAL_MS)
+
+      const answer = createAnswer((progress) => {
+        currentProgress = progress
+        send({ type: 'progress', data: progress })
+      })
 
       void answer
         .then((data) => send({ type: 'result', data }))
@@ -121,7 +136,11 @@ export async function POST(request: Request) {
       )
     }
 
-    return streamAnswer(answerPrivateKnowledgeQuestion({ question, startDate, endDate, ...(context ? { context } : {}) }))
+    return streamAnswer((onProgress) => answerPrivateKnowledgeQuestion(
+      { question, startDate, endDate, ...(context ? { context } : {}) },
+      undefined,
+      onProgress,
+    ))
   } catch (error) {
     return responseFor(error)
   }

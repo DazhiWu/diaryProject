@@ -60,7 +60,7 @@ afterEach(() => {
 describe('knowledge answer route boundary', () => {
   it('emits padded heartbeats while a long answer remains pending', async () => {
     vi.useFakeTimers()
-    const response = streamAnswer(new Promise<never>(() => undefined))
+    const response = streamAnswer(() => new Promise<never>(() => undefined))
     const reader = response.body!.getReader()
     const decoder = new TextDecoder()
 
@@ -73,6 +73,34 @@ describe('knowledge answer route boundary', () => {
     const heartbeat = JSON.parse(decoder.decode((await next).value)) as { type: string; padding: string }
     expect(heartbeat).toMatchObject({ type: 'heartbeat' })
     expect(heartbeat.padding.length).toBeGreaterThanOrEqual(1_024)
+    await reader.cancel()
+  })
+
+  it('streams safe progress in order and repeats the current stage on heartbeats', async () => {
+    vi.useFakeTimers()
+    let finish: ((value: { answer: string }) => void) | undefined
+    const response = streamAnswer((onProgress) => {
+      onProgress({ phase: 'retrieving', searchCount: 1, maxSearchCount: 5, kind: 'primary' })
+      onProgress({ phase: 'generating', model: 'deepseek-ai/model', attempt: 1, totalAttempts: 2 })
+      return new Promise((resolve) => { finish = resolve }) as ReturnType<typeof mocks.answerPrivateKnowledgeQuestion>
+    })
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+
+    expect(JSON.parse(decoder.decode((await reader.read()).value))).toMatchObject({ type: 'started' })
+    expect(JSON.parse(decoder.decode((await reader.read()).value))).toMatchObject({
+      type: 'progress', data: { phase: 'retrieving', searchCount: 1 },
+    })
+    expect(JSON.parse(decoder.decode((await reader.read()).value))).toMatchObject({
+      type: 'progress', data: { phase: 'generating', model: 'deepseek-ai/model' },
+    })
+
+    const next = reader.read()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(JSON.parse(decoder.decode((await next).value))).toMatchObject({
+      type: 'heartbeat', data: { phase: 'generating', attempt: 1 },
+    })
+    finish?.({ answer: 'done' })
     await reader.cancel()
   })
 
@@ -134,12 +162,16 @@ describe('knowledge answer route boundary', () => {
       expect.objectContaining({ type: 'started' }),
       expect.objectContaining({ type: 'result', data: expect.objectContaining({ answer: '回答。[S1]' }) }),
     ])
-    expect(mocks.answerPrivateKnowledgeQuestion).toHaveBeenCalledWith({
-      question: '发生了什么？',
-      context: '面试没有通过',
-      startDate: '2026-07-01',
-      endDate: undefined,
-    })
+    expect(mocks.answerPrivateKnowledgeQuestion).toHaveBeenCalledWith(
+      {
+        question: '发生了什么？',
+        context: '面试没有通过',
+        startDate: '2026-07-01',
+        endDate: undefined,
+      },
+      undefined,
+      expect.any(Function),
+    )
   })
 
   it.each([

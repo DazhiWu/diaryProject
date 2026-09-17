@@ -44,7 +44,10 @@ function dependencies(options: {
     evidenceStatus: 'supported',
     citationIds: ['S1'],
   }))
-  const runFallback = vi.fn(async (fallback: ModelScopeFallbackOptions<Omit<KnowledgeAnswerResponse, 'rerankApplied'>>) => fallback.attempt('first/model'))
+  const runFallback = vi.fn(async (fallback: ModelScopeFallbackOptions<Omit<KnowledgeAnswerResponse, 'rerankApplied'>>) => {
+    fallback.onAttempt?.({ model: 'first/model', attempt: 1, totalAttempts: 1 })
+    return fallback.attempt('first/model', 1, 1)
+  })
   return {
     search: vi.fn().mockResolvedValue({
       results: options.results ?? [result()],
@@ -72,6 +75,22 @@ async function useActualFallback(
 }
 
 describe('knowledge factual answer orchestration', () => {
+  it('reports retrieval, evidence, generation, and validation stages without private content', async () => {
+    const deps = dependencies({})
+    const onProgress = vi.fn()
+
+    await answerPrivateKnowledgeQuestion({ question: '私人问题' }, deps, onProgress)
+
+    expect(onProgress.mock.calls.map(([progress]) => progress.phase)).toEqual([
+      'retrieving', 'evidence-ready', 'generating', 'finalizing',
+    ])
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({
+      phase: 'evidence-ready', diaryCount: 1, excerptCount: 1,
+    }))
+    const serialized = JSON.stringify(onProgress.mock.calls)
+    expect(serialized).not.toContain('私人问题')
+    expect(serialized).not.toContain(result().content)
+  })
   it('returns insufficient evidence without preparing or running ModelScope when retrieval is empty', async () => {
     const deps = dependencies({ results: [], rerankApplied: false })
 

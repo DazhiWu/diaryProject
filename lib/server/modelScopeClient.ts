@@ -207,7 +207,9 @@ export function modelScopeTerminalHttpError(error: unknown, operationLabel: stri
 
 export type ModelScopeFallbackOptions<T> = {
   operation: 'analyze' | 'translate' | 'knowledge-answer' | 'test'
-  attempt(model: string): Promise<T>
+  attempt(model: string, attempt: number, totalAttempts: number): Promise<T>
+  onAttempt?(details: { model: string; attempt: number; totalAttempts: number }): void
+  onRetry?(details: { completedAttempt: number; totalAttempts: number }): void
 }
 
 export type ModelScopeFallbackDependencies = {
@@ -227,12 +229,14 @@ export async function runModelScopeChatFallback<T>(
   const models = await dependencies.loadModels()
   if (models.length === 0) throw new ModelScopeConfigurationError()
 
-  for (const model of models) {
+  for (const [index, model] of models.entries()) {
     await dependencies.reserveQuota()
+    const attempt = index + 1
+    options.onAttempt?.({ model, attempt, totalAttempts: models.length })
     const started = Date.now()
 
     try {
-      const result = await options.attempt(model)
+      const result = await options.attempt(model, attempt, models.length)
       console.info('[modelscope]', {
         operation: options.operation,
         outcome: 'succeeded',
@@ -249,6 +253,9 @@ export async function runModelScopeChatFallback<T>(
         elapsedMs: Date.now() - started,
         ...safeModelScopeErrorMetadata(error),
       })
+      if (attempt < models.length) {
+        options.onRetry?.({ completedAttempt: attempt, totalAttempts: models.length })
+      }
     }
   }
 

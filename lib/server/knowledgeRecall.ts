@@ -1,5 +1,9 @@
 import 'server-only'
 
+import {
+  KNOWLEDGE_ANSWER_MAX_SEARCHES,
+  type KnowledgeAnswerProgressHandler,
+} from '@/lib/knowledgeAnswerProgress'
 import { buildRecallPlan, shiftRecallDays, type RecallInput, type RecallTrace } from '@/lib/knowledgeRecall'
 import { KnowledgeEmbeddingUnavailableError, searchPrivateKnowledge, type KnowledgeSearchResult } from '@/lib/server/knowledgeSearch'
 
@@ -29,21 +33,39 @@ function selectEvidence(groups: KnowledgeSearchResult[][], limit: number): Knowl
   return selected
 }
 
-export async function retrieveRecallEvidence(input: RecallInput, search = searchPrivateKnowledge) {
+export async function retrieveRecallEvidence(
+  input: RecallInput,
+  search = searchPrivateKnowledge,
+  onProgress?: KnowledgeAnswerProgressHandler,
+) {
   const plan = buildRecallPlan(input)
   const trace: RecallTrace = {
     mode: plan.mode, startDate: plan.startDate, endDate: plan.endDate,
     searchCount: 0, readDiaryCount: 0, readExcerptCount: 0, followupDays: 0,
   }
   if (plan.clarification) return { results: [], rerankApplied: false, trace, clarification: plan.clarification }
+  onProgress?.({
+    phase: 'retrieving', searchCount: 1, maxSearchCount: KNOWLEDGE_ANSWER_MAX_SEARCHES, kind: 'primary',
+  })
   const primary = await search({ query: plan.queries[0], startDate: plan.startDate, endDate: plan.endDate })
   const responses = [primary]
   trace.searchCount = 1
   const inBounds = (result: KnowledgeSearchResult) => (!plan.startDate || result.sourceDate >= plan.startDate)
     && (!plan.endDate || result.sourceDate <= plan.endDate)
   const groups = [primary.results.filter(inBounds)]
-  async function supplement(query: string, startDate?: string, endDate?: string) {
+  async function supplement(
+    query: string,
+    kind: 'direction' | 'followup',
+    startDate?: string,
+    endDate?: string,
+  ) {
     trace.searchCount += 1
+    onProgress?.({
+      phase: 'retrieving',
+      searchCount: trace.searchCount,
+      maxSearchCount: KNOWLEDGE_ANSWER_MAX_SEARCHES,
+      kind,
+    })
     try {
       const response = await search({ query, startDate, endDate })
       responses.push(response)
@@ -61,7 +83,7 @@ export async function retrieveRecallEvidence(input: RecallInput, search = search
     }
   }
   for (const query of plan.queries.slice(1)) {
-    if (!await supplement(query, plan.startDate, plan.endDate)) break
+    if (!await supplement(query, 'direction', plan.startDate, plan.endDate)) break
   }
   const seeds = selectEvidence(groups, 5)
   // A bounded follow-up searches indexed excerpts only; it is not a full period scan.
@@ -71,7 +93,7 @@ export async function retrieveRecallEvidence(input: RecallInput, search = search
       const startDate = shiftRecallDays(date, 1)
       const endDate = [shiftRecallDays(date, 7), plan.endDate].filter((value): value is string => !!value).sort()[0]
       if (startDate > endDate) continue
-      if (!await supplement(plan.queries[2], startDate, endDate)) break
+      if (!await supplement(plan.queries[2], 'followup', startDate, endDate)) break
       trace.followupDays = 7
     }
   }

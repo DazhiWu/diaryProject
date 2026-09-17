@@ -1,5 +1,6 @@
 import 'server-only'
 
+import type { KnowledgeAnswerProgressHandler } from '@/lib/knowledgeAnswerProgress'
 import type { RecallInput, RecallTrace } from '@/lib/knowledgeRecall'
 import { retrieveRecallEvidence } from '@/lib/server/knowledgeRecall'
 
@@ -251,8 +252,17 @@ function logProviderFailure(operation: 'prepare' | 'generate', error: unknown, r
 export async function answerPrivateKnowledgeQuestion(
   input: RecallInput,
   dependencies: KnowledgeAnswerDependencies = DEFAULT_DEPENDENCIES,
+  onProgress?: KnowledgeAnswerProgressHandler,
 ): Promise<KnowledgeAnswerResponse> {
-  const searchResponse = await retrieveRecallEvidence(input, dependencies.search)
+  const searchResponse = await retrieveRecallEvidence(input, dependencies.search, onProgress)
+
+  onProgress?.({
+    phase: 'evidence-ready',
+    searchCount: searchResponse.trace.searchCount,
+    diaryCount: searchResponse.trace.readDiaryCount,
+    excerptCount: searchResponse.trace.readExcerptCount,
+    partial: searchResponse.trace.partial === true,
+  })
 
   if (searchResponse.results.length === 0) {
     return {
@@ -284,10 +294,17 @@ export async function answerPrivateKnowledgeQuestion(
   try {
     parsed = await dependencies.runFallback({
       operation: 'knowledge-answer',
-      attempt: async (model) => parseKnowledgeAnswer(
-        await complete(model, prompts),
-        citationsById,
-      ),
+      onAttempt: ({ model, attempt, totalAttempts }) => onProgress?.({
+        phase: 'generating', model, attempt, totalAttempts,
+      }),
+      onRetry: ({ completedAttempt, totalAttempts }) => onProgress?.({
+        phase: 'retrying', completedAttempt, totalAttempts,
+      }),
+      attempt: async (model, attempt, totalAttempts) => {
+        const raw = await complete(model, prompts)
+        onProgress?.({ phase: 'finalizing', model, attempt, totalAttempts })
+        return parseKnowledgeAnswer(raw, citationsById)
+      },
     })
   } catch (error) {
     if (error instanceof ModelScopeModelsExhaustedError) {

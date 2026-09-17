@@ -1,4 +1,10 @@
 import type { RecallTrace } from '@/lib/knowledgeRecall'
+import {
+  isKnowledgeAnswerProgress,
+  type KnowledgeAnswerProgressHandler,
+} from '@/lib/knowledgeAnswerProgress'
+
+export type { KnowledgeAnswerProgress } from '@/lib/knowledgeAnswerProgress'
 
 export type KnowledgeIndexStatus = {
   executionMode: 'local' | 'status-only'
@@ -146,7 +152,7 @@ export function answerKnowledgeQuestion(input: {
   question: string
   startDate?: string
   endDate?: string
-}): Promise<KnowledgeAnswerResponse> {
+}, onProgress?: KnowledgeAnswerProgressHandler): Promise<KnowledgeAnswerResponse> {
   return fetch('/api/knowledge/answer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -175,6 +181,9 @@ export function answerKnowledgeQuestion(input: {
         error?: unknown
       }
       if (event.type === 'result' && event.data) result = event.data
+      if ((event.type === 'progress' || event.type === 'heartbeat') && isKnowledgeAnswerProgress(event.data)) {
+        onProgress?.(event.data)
+      }
       if (event.type === 'error') {
         throw new Error(typeof event.error === 'string' ? event.error : 'Knowledge answer failed')
       }
